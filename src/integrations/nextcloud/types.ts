@@ -1,3 +1,4 @@
+import type { Passage } from './passages.ts'
 export interface AppConfig {
 	enabled: boolean
 	serverUrl: string
@@ -94,6 +95,21 @@ export interface SearchResults {
 	explanation?: string
 	next_page?: number | null
 }
+export interface DocumentSearchResults {
+	kind: 'nextcloud-document-search'
+	search_mode: 'document'
+	provider: string
+	file: FileResource
+	matches: Passage[]
+	processed_match_count: number
+	total_matches: number | null
+	partial: boolean
+	matches_truncated: boolean
+	cache_hit: boolean
+	retrieval_ms: number
+	duration_ms: number
+}
+export type SearchViewResults = SearchResults | DocumentSearchResults
 
 export interface FileApi {
 	searchTransport?: SearchTransport

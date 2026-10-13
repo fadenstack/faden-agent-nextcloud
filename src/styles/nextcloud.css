@@ -48,3 +48,23 @@
 .fdn-chat .fdn-actions button { padding: 6px 12px; border-radius: 8px; }
 
 .fdn-chat .fdn-actions .fdn-primary { background: var(--fdn-accent); color: var(--fdn-on-accent); }
+
+.fdn-chat .fdn-search-results { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-block: 8px; background: var(--fdn-surface); border: 1px solid var(--fdn-border); border-radius: 8px; }
+
+.fdn-chat .fdn-search-title, .fdn-chat .fdn-search-name, .fdn-chat .fdn-search-actions { display: flex; align-items: center; gap: 8px; }
+
+.fdn-chat .fdn-search-title { justify-content: space-between; }
+
+.fdn-chat .fdn-search-file { padding-block: 8px; border-block-end: 1px solid var(--fdn-border); min-width: 0; }
+
+.fdn-chat .fdn-search-name { font-weight: 600; }
+
+.fdn-chat .fdn-search-name a, .fdn-chat .fdn-search-file p { overflow-wrap: anywhere; }
+
+.fdn-chat .fdn-search-actions { justify-content: space-between; flex-wrap: wrap; margin-block-start: 6px; }
+
+.fdn-chat .fdn-search-actions button { padding: 4px 8px; background: var(--fdn-bg); border: 1px solid var(--fdn-border); border-radius: 6px; }
+
+.fdn-chat .fdn-search-excerpt, .fdn-chat .fdn-search-passage p { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.fdn-chat .fdn-search-passage { margin: 0; padding-inline-start: 10px; border-inline-start: 3px solid var(--fdn-accent); }

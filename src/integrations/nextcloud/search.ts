@@ -1,4 +1,4 @@
-import type { FileApi, FileMetadata, FileResource, SearchFilters, SearchResults, FileContext } from './types.ts'
+import type { FileApi, FileMetadata, FileResource, SearchFilters, SearchResults, FileContext, DocumentSearchResults } from './types.ts'
 import { findPassages, type DocumentText } from './passages.ts'
 
 export function resourceId(value: unknown): number {
@@ -137,7 +137,7 @@ export class NextcloudSearchService {
 		return { file: result.context.file, resource: fileResource(result.context.file), ...document, cache_hit: result.cache_hit, retrieval_ms: result.retrieval_ms }
 	}
 
-	async inFile(id: string, query: unknown, mode: unknown, maximum: unknown, signal: AbortSignal, selected?: FileContext) {
+	async inFile(id: string, query: unknown, mode: unknown, maximum: unknown, signal: AbortSignal, selected?: FileContext): Promise<DocumentSearchResults> {
 		findPassages({ text: '', partial: false }, query, mode, maximum)
 		const started = performance.now()
 		const result = await this.load(id, signal, selected)

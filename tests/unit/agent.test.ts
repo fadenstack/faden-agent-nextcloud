@@ -37,6 +37,62 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('SDK integration and file boundary', () => {
+	it('renders native search cards, adds context lazily, finds a passage and gates a searched-file write', async () => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		let round = 0
+		const { host, files } = fixture({ agents: [{ slug: 'nc', version: 1, contract: [
+			...['nc_search_files', 'nc_get_file_metadata', 'nc_search_in_file', 'nc_search_content', 'nc_get_selected_file', 'nc_read_file', 'nc_list_folder'].map(name => ({ name, risk: 'read' as const })),
+			{ name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' },
+		] }], model: () => {
+			round++
+			if (round === 1) return { toolCalls: [{ name: 'nc_search_files', arguments: { query: 'source' }, id: 'search-call' }] }
+			if (round === 3) return { toolCalls: [{ name: 'nc_search_in_file', arguments: { query: 'termination' }, id: 'passage-call' }] }
+			if (round === 5) return { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: '# Summary\n30 days notice.', resource_id: 'nextcloud:files:2' }, id: 'searched-write' }] }
+			return { text: round === 2 ? 'Found the file.' : round === 4 ? '30 days written notice.' : 'Created summary.' }
+		} })
+		const source = { ...selected, file: { ...selected.file, url: new URL('/f/2', location.origin).href, modified: 1791797400 } }
+		vi.mocked(files.select).mockResolvedValue(source)
+		vi.mocked(files.read).mockResolvedValue({ file: source.file, text: 'Termination notice: 30 days written notice.', partial: false, totalCharacters: 42, processedCharacters: 42 })
+		files.searchTransport = {
+			plan: vi.fn(async () => ({ filters: { query: 'source', scope: 'all', limit: 20, sort_by: 'relevance', sort_direction: 'desc' }, queries: ['native query'], backend: 'webdav-search' })),
+			dav: vi.fn(async () => '<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:response><d:propstat><d:prop><oc:fileid>2</oc:fileid></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>'),
+			resolve: vi.fn(async () => [source.file]), capabilities: vi.fn(), content: vi.fn(),
+		}
+		await host.signIn('alice', 'test')
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(AgentChat, { host: markRaw(host) })
+		app.mount(root)
+		try {
+			const send = async (text: string) => {
+				const input = root.querySelector('textarea')!
+				input.value = text; input.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+				root.querySelector<HTMLButtonElement>('.fdn-send')!.click()
+			}
+			await send('Find the source file')
+			await vi.waitFor(() => expect(host.chat.isBusy).toBe(false))
+			await vi.waitFor(() => expect(root.querySelector('.fdn-search-file')?.textContent).toContain('source.md'))
+			expect(root.querySelector('.fdn-search-name a')?.getAttribute('href')).toBe(source.file.url)
+			expect(files.read).not.toHaveBeenCalled()
+			const attach = root.querySelector<HTMLButtonElement>('.fdn-search-actions button')!
+			expect(attach.disabled).toBe(false)
+			attach.click()
+			await vi.waitFor(() => expect(host.chat.attachments[0]?.title).toBe('source.md'))
+			expect(files.read).not.toHaveBeenCalled()
+			await send('Find the termination passage')
+			await vi.waitFor(() => expect(root.querySelector('.fdn-search-passage')?.textContent).toContain('30 days written notice'))
+			await vi.waitFor(() => expect(host.chat.isBusy).toBe(false))
+			expect(files.read).toHaveBeenCalledTimes(1)
+			await send('Create a Markdown summary')
+			await pending(host)
+			expect(files.commit).not.toHaveBeenCalled()
+			await nextTick()
+			root.querySelector<HTMLButtonElement>('.fdn-approval .fdn-primary')!.click()
+			await vi.waitFor(() => expect(host.chat.isBusy).toBe(false))
+			expect(files.commit).toHaveBeenCalledTimes(1)
+			expect(root.textContent).toContain('Created summary.')
+		} finally { app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals() }
+	})
 	it('sends from the Vue composer and gates real SDK writes through its approval buttons', async () => {
 		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 		let round = 0

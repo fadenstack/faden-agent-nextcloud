@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onScopeDispose } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onScopeDispose } from 'vue'
 import { t } from '@nextcloud/l10n'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { useObservable } from '../agent/useObservable.ts'
@@ -16,6 +16,7 @@ const props = defineProps<{ host: NextcloudAgent; context?: FileContext; loading
 const emit = defineEmits<{ 'signed-out': [] }>()
 const chat = props.host.chat
 const version = useObservable(chat)
+const composerContext = computed(() => { void version.value; return props.host.selection.snapshot() })
 const preparing = ref(false)
 const problem = ref('')
 const accountOpen = ref(false)
@@ -235,14 +236,14 @@ onScopeDispose(() => { observer?.disconnect(); document.removeEventListener('poi
 		</div>
 		<div class="fdn-context-bar">
 			<span v-if="loadingContext" class="fdn-status"><span class="fdn-spinner" />{{ t('fadenstack_agent', 'Reading file context…') }}</span>
-			<a v-else-if="context"
-				:href="context.file.url"
+			<a v-else-if="composerContext"
+				:href="composerContext.file.url"
 				target="_blank"
 				rel="noopener noreferrer"
-				:title="context.file.path"><ChatIcon name="page" :size="14" />{{ context.file.name }}</a>
+				:title="composerContext.file.path"><ChatIcon name="page" :size="14" />{{ composerContext.file.name }}</a>
 			<span v-else class="fdn-muted">{{ t('fadenstack_agent', 'Select a file or folder to add context.') }}</span>
 		</div>
-		<div v-if="documentContext && context" class="fdn-context-bar fdn-muted">
+		<div v-if="documentContext && composerContext" class="fdn-context-bar fdn-muted">
 			{{ t('fadenstack_agent', 'Saved document context. Save edits before sending.') }}
 		</div>
 		<div class="fdn-composer">
@@ -263,7 +264,7 @@ onScopeDispose(() => { observer?.disconnect(); document.removeEventListener('poi
 				@keydown="key" />
 			<div class="fdn-composer-bar">
 				<div class="fdn-composer-accessory">
-					<button v-if="context"
+					<button v-if="composerContext"
 						type="button"
 						class="fdn-icon-button fdn-small"
 						:title="t('fadenstack_agent', 'Summarize this document')"

@@ -4,7 +4,7 @@ import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalP
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { germanStrings } from './strings.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments } from '../integrations/nextcloud/tools.ts'
-import type { FileApi, FileContext, Identity, Proposal, WriteArguments } from '../integrations/nextcloud/types.ts'
+import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 
 export class NextcloudAgent {
@@ -17,6 +17,7 @@ export class NextcloudAgent {
 	readonly approvals = new ApprovalBroker()
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
+	readonly #toolResults = new Map<string, SearchViewResults>()
 	#active: FileContext | undefined
 	#read: unknown
 	#sending = false
@@ -107,6 +108,21 @@ export class NextcloudAgent {
 	}
 
 	contentSearch(args: Readonly<Record<string, unknown>>, signal: AbortSignal) { return this.discovery.content(args.query, args.limit ?? 20, args.page ?? 1, signal) }
+	recordResult(callId: string, value: unknown): void {
+		if (!value || typeof value !== 'object' || !('kind' in value) || !['nextcloud-search-results', 'nextcloud-document-search'].includes(String(value.kind))) return
+		this.#toolResults.set(callId, value as SearchViewResults)
+		while (this.#toolResults.size > 100) this.#toolResults.delete(this.#toolResults.keys().next().value!)
+	}
+
+	toolResult(callId: string): SearchViewResults | undefined { return this.#toolResults.get(callId) }
+	async addSearchContext(id: string): Promise<void> {
+		await this.discovery.metadata(id, this.#stop.signal)
+		const context = await this.selection.select(resourceId(id))
+		if (!context) throw new Error('The selection changed. Add the result again.')
+		this.offerSelection(context)
+		this.chat.requestComposerFocus()
+	}
+
 	private async writeContext(tool: string, id: unknown, signal: AbortSignal): Promise<FileContext> {
 		const selected = id === undefined ? this.context() : undefined
 		const key = id ?? `nextcloud:files:${selected!.file.id}`
@@ -201,6 +217,7 @@ export class NextcloudAgent {
 		this.chat.dispose()
 		this.selection.clear()
 		this.discovery.clear()
+		this.#toolResults.clear()
 		this.#active = undefined
 		this.#read = undefined
 		this.#proposals.clear()

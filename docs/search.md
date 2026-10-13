@@ -80,3 +80,28 @@ in these development instances; that positive backend remains unverified live.
 The same 68 HTTP/WebDAV/document checks also passed on Nextcloud 31, with a
 1489 ms PDF query and 257 ms cached follow-up. The sample's actual PDF.js page
 records, not an assumed fixed page count, are checked against each emitted match.
+
+## Phase 3: retrieval and chat results
+
+Results use one `nextcloud:files:ID` model with name, parent path, MIME type, size,
+modification timestamp, ETag, source URL, directory flag and read/open capabilities.
+`nc_get_file_metadata` and the extended `nc_read_file(resource_id?)` resolve a
+known search result or the user-included file. Unknown guessed IDs/paths/URLs are
+rejected. Only 150 issued references are retained in the authenticated page.
+
+The existing Vue renderer uses the SDK's public host-call ID and part lifecycle
+to display typed result cards. The SDK has no public untruncated tool-result getter
+for a custom card; host-produced results are associated with their call ID locally,
+without changing the SDK or parsing model text. Cards show file icons, names,
+parent folders, modified dates, excerpts and source links. Add to context retrieves
+authorized metadata only; reading stays lazy until a message is sent.
+
+Existing write tools accept an optional known `resource_id` for a searched file
+or destination folder/file parent. A discovered file must be read before an update;
+server read-ETag state, exact approval cards and one-use proposals are reused.
+No path-based writes or new execution engine are introduced.
+
+29 SDK/frontend tests passed. The new mounted Vue/real SDK test performs discovery,
+renders file cards, attaches metadata without reading, locates a termination
+passage with one cached read, then verifies a searched-file creation cannot commit
+before Allow once. English and German result labels are included.

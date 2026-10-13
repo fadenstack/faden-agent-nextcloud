@@ -6,9 +6,14 @@ import DOMPurify from 'dompurify'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { useObservable } from '../agent/useObservable.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
+import SearchResultsCard from './SearchResultsCard.vue'
 
 const props = defineProps<{ part: ResponsePart; host: NextcloudAgent }>()
 const version = useObservable(props.part)
+const searchResult = computed(() => {
+	void version.value
+	return props.part instanceof ToolCallPart && props.part.source === 'host' && props.part.state === 'succeeded' ? props.host.toolResult(props.part.callId) : undefined
+})
 const html = computed(() => {
 	void version.value
 	if (!(props.part instanceof MarkdownPart)) return ''
@@ -69,6 +74,7 @@ async function approve(part: ApprovalPart) {
 			</p>
 		</div>
 		<template v-else-if="part instanceof ToolCallPart">
+			<SearchResultsCard v-if="searchResult" :result="searchResult" :host="host" />
 			<button type="button" class="fdn-tool-line" @click="part.toggle()">
 				{{ part.title }}
 			</button>
