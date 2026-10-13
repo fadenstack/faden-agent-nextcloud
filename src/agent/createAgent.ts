@@ -1,8 +1,8 @@
 import { FadenstackClient, AgentTokenProvider, MemoryTokenStore, loginWithPassword, type FetchLike } from '@fadenstack/client'
 import { FadenstackAgent, MemorySessionStore, MemoryApprovalStore, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
-import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart } from '@fadenstack/ui'
+import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore } from '@fadenstack/ui'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
-import { germanStrings } from './strings.ts'
+import { nextcloudLanguages } from './strings.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments } from '../integrations/nextcloud/tools.ts'
 import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
@@ -19,9 +19,9 @@ export class NextcloudAgent {
 	readonly #proposals = new Map<string, Proposal>()
 	readonly #toolResults = new Map<string, SearchViewResults>()
 	#active: FileContext | undefined
-	#sending = false
 	#closed = false
-	#preparingStop: AbortController | undefined
+	#include: boolean | undefined
+	#prepareError: unknown
 	#attachment: AttachmentViewModel | undefined
 	readonly #fetch: FetchLike
 	readonly #developmentHttp: boolean
@@ -69,7 +69,17 @@ export class NextcloudAgent {
 			.describeApp({ name: 'Nextcloud Files', version: '0.1.0', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }] })
 			.build()
 		const locale = config.locale ?? navigator.language
-		this.chat = new AgentChatViewModel(this.agent, this.approvals, { locale, strings: locale.startsWith('de') ? germanStrings : undefined })
+		this.chat = new AgentChatViewModel(this.agent, this.approvals, {
+			locale,
+			// The user picks the language in the panel's settings; Automatic is the Nextcloud user's language.
+			automaticLanguage: locale,
+			languages: nextcloudLanguages,
+			preferences: userPreferences(config.userId),
+			// Every message, from the composer, a suggestion or Retry, first checks the Nextcloud session and
+			// takes the file context it includes; the turn's tools read that context until it ends.
+			beforeSend: (_message, signal) => this.#prepare(signal),
+			afterSend: () => this.#finish(),
+		})
 	}
 
 	async signIn(email: string, password: string): Promise<void> {
@@ -182,29 +192,46 @@ export class NextcloudAgent {
 		} catch (error) { this.#active = undefined; throw error }
 	}
 
-	async send(text: string, include = this.#attachment?.sends ?? false): Promise<void> {
+	/**
+	 * Sends a message, with the selected file when `include` (by default: when its chip is on). Throws what stopped
+	 * it before it went (a changed Nextcloud session, no file selected); the composer sends through the same steps.
+	 */
+	async send(text: string, include?: boolean): Promise<void> {
 		if (this.#closed) throw new Error('This connection has ended. Sign in again.')
-		if (this.#sending || this.chat.isBusy || !text.trim()) return
-		this.#sending = true
-		this.#preparingStop = new AbortController()
-		const signal = AbortSignal.any([this.#stop.signal, this.#preparingStop.signal])
-		this.#active = include ? this.selection.snapshot() : undefined
+		if (this.chat.isBusy || !text.trim()) return
+		this.#include = include
+		this.#prepareError = undefined
+		try { await this.chat.send(text) } finally { this.#include = undefined }
+		if (this.#prepareError) throw this.#prepareError
+	}
+
+	/** Before a message goes: the Nextcloud session still holds, and the file context it includes is taken. */
+	async #prepare(signal: AbortSignal): Promise<void> {
+		const include = this.#include ?? this.#attachment?.sends ?? false
+		this.#include = undefined
 		try {
+			if (this.#closed) throw new Error('This connection has ended. Sign in again.')
+			const stopped = AbortSignal.any([signal, this.#stop.signal])
+			this.#active = include ? this.selection.snapshot() : undefined
 			await this.files.assertIdentity()
-			signal.throwIfAborted()
+			stopped.throwIfAborted()
 			if (include && !this.#active) throw new Error('Select a file first.')
 			if (this.#active) this.discovery.remember(this.#active.file)
 			if (this.#active && !this.#attachment) this.chat.addAttachment(new AttachmentViewModel({ title: this.#active.file.name, resolve: signal => this.resolveAttachment(signal) }))
-			await this.chat.send(text)
-		} finally {
+		} catch (error) {
 			this.#active = undefined
-			this.#proposals.clear()
-			this.#sending = false
-			this.#preparingStop = undefined
+			this.#prepareError = error
+			throw error
 		}
 	}
 
-	stop(): void { this.#preparingStop?.abort(); this.chat.stop() }
+	/** After the turn: its file context and any proposals it left are gone. */
+	#finish(): void {
+		this.#active = undefined
+		this.#proposals.clear()
+	}
+
+	stop(): void { this.chat.stop() }
 
 	async dispose(): Promise<void> {
 		if (this.#closed) return
@@ -221,4 +248,18 @@ export class NextcloudAgent {
 		await this.agent.dispose()
 	}
 
+}
+
+/** The language the user picked, in this browser, per Nextcloud user (a shared computer keeps each user's own). */
+function userPreferences(userId: string): PreferenceStore {
+	const key = (name: string) => `fadenstack_agent.${userId}.${name}`
+	return {
+		get: (name) => { try { return localStorage.getItem(key(name)) ?? undefined } catch { return undefined } },
+		set: (name, value) => {
+			try {
+				if (value === undefined) localStorage.removeItem(key(name))
+				else localStorage.setItem(key(name), value)
+			} catch { /* storage refused (private mode): the pick holds for this page */ }
+		},
+	}
 }

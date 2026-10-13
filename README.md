@@ -20,8 +20,10 @@ including a user-tested real-server conversation from the full-screen Text edito
 - Header mascot and app-menu entry open a Vue 3 right drawer without leaving Files.
 - The full-screen Viewer titlebar also has a mascot toggle. Its drawer attaches
   the open saved document and keeps desktop editing space available alongside it.
-- Browser-agent-style SDK chat, compact mode/history/account menus, streaming,
-  stop, Enter-to-send, attachment pills and Nextcloud light/dark theme colors.
+- The Fadenstack SDK's own Vue chat panel (`@fadenstack/ui-vue`, the look every
+  Fadenstack client shares) in the user's Nextcloud theme: tool modes, history,
+  streaming, stop, Enter-to-send, attachment chips, and a settings menu with the
+  language and the account.
 - The current single file selection appears as a removable composer attachment;
   selecting it transmits no file contents. Content is read when you send.
 - UTF-8 TXT, Markdown, CSV and JSON; text PDFs through maintained Mozilla PDF.js.
@@ -33,11 +35,13 @@ including a user-tested real-server conversation from the full-screen Text edito
 - Individual write cards with full target/replacement/original; one-use server
   proposals, safe creation and ETag conflict checks on updates.
 - Per-user session capabilities, server permissions, CSRF, CSP, sanitized Markdown,
-  English and primary German interface strings.
+  the chat in English, German, French, Spanish and Simplified Chinese (the user
+  picks it in the settings; Automatic is their Nextcloud language), the app's own
+  screens in English and German.
 
 ## Build and install
 
-Use Node 24 and npm 11. Published SDK 0.2.0-rc.1 dependencies are pinned in the
+Use Node 24 and npm 11. Published SDK 0.2.0-rc.2 dependencies are pinned in the
 lockfile; sibling repositories are not needed to build.
 
 ```sh

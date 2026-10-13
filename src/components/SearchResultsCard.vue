@@ -4,7 +4,7 @@ import { t } from '@nextcloud/l10n'
 import type { SearchViewResults, FileResource } from '../integrations/nextcloud/types.ts'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
-import ChatIcon from './ChatIcon.vue'
+import { Icon } from '@fadenstack/ui-vue'
 import { useObservable } from '../agent/useObservable.ts'
 
 const props = defineProps<{ result: SearchViewResults; host: NextcloudAgent }>()
@@ -41,7 +41,7 @@ async function attach(file: FileResource) {
 		</p>
 		<article v-for="file in files" :key="file.resource_id" class="fdn-search-file">
 			<div class="fdn-search-name">
-				<span v-if="file.is_directory" aria-hidden="true">📁</span><ChatIcon v-else name="page" :size="16" />
+				<span v-if="file.is_directory" aria-hidden="true">📁</span><Icon v-else name="page" :size="16" />
 				<a v-if="link(file)"
 					:href="link(file)"
 					target="_blank"

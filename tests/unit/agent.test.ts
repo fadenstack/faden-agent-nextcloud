@@ -40,7 +40,7 @@ describe('SDK integration and file boundary', () => {
 	it('uses the Nextcloud language for SDK labels independently of browser language', async () => {
 		const { host, files, gateway } = fixture()
 		const german = new NextcloudAgent({ ...identity, locale: 'de-DE' }, files, gateway.fetch)
-		expect(german.chat.strings.allow).toBe('Einmal erlauben')
+		expect([german.chat.strings.language, german.chat.strings.allow, german.chat.strings.approvalClass.destructive]).toEqual(['de', 'Zulassen', 'Einzelne Freigabe'])
 		await german.dispose()
 		await host.dispose()
 	})
@@ -293,6 +293,36 @@ describe('SDK integration and file boundary', () => {
 		await host.dispose()
 	})
 })
+describe('The SDK panel in Nextcloud', () => {
+	it('keeps Esc in the panel and has the account in its settings', async () => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		const { host } = fixture()
+		await host.signIn('alice', 'test')
+		const drawer = document.createElement('div')
+		const root = document.createElement('div')
+		drawer.append(root)
+		document.body.append(drawer)
+		let reachedDrawer = 0
+		drawer.addEventListener('keydown', (event) => { if (event.key === 'Escape') reachedDrawer++ })
+		const signedOut = vi.fn()
+		const app = createApp(AgentChat, { host: markRaw(host), onSignedOut: signedOut })
+		app.mount(root)
+		try {
+			host.chat.setSettingsOpen(true)
+			await nextTick()
+			expect(root.textContent).toContain('Sign out')
+			root.querySelector('.fdn-chat')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+			await nextTick()
+			expect([host.chat.isSettingsOpen, reachedDrawer]).toEqual([false, 0]) // the menu closed, the drawer did not
+			host.chat.setSettingsOpen(true)
+			await nextTick()
+			const signOut = [...root.querySelectorAll<HTMLButtonElement>('.fdn-menu-item')].find(button => button.textContent?.includes('Sign out'))!
+			signOut.click()
+			expect([signedOut.mock.calls.length, host.chat.isSettingsOpen]).toEqual([1, false])
+		} finally { app.unmount(); drawer.remove(); await host.dispose(); vi.unstubAllGlobals() }
+	})
+})
+
 describe('Selection and arguments', () => {
 	it('discards late metadata lookups', async () => {
 		const { files } = fixture()

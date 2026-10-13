@@ -18,8 +18,19 @@ fallback. It does not access private Vue/Pinia stores. PHP reauthorizes all IDs.
 Reference inspection: `../faden-agent-chrome/src/panel/browserAgent.ts`, context
 tools, PDF handling, and `../fadenstack-sdk-typescript/packages/{client,agents,ui}`.
 The browser reference uses older `FadenAgent`/`FadenClient` exports; this app uses
-the published 0.2.0-rc.1 `FadenstackAgent`/`FadenstackClient` contracts. No Chrome
-storage, React components, local agent definitions or model selection are copied.
+the published 0.2.0-rc.2 `FadenstackAgent`/`FadenstackClient` contracts. No Chrome
+storage, local agent definitions or model selection are copied.
+
+The chat is the SDK's Vue panel (`@fadenstack/ui-vue` with the `@fadenstack/ui-web`
+stylesheet), not a copy of it. The app adds what is Nextcloud's through the panel's
+extension points: part renderers for search result cards and for file-write approvals
+(the exact proposal, registered before Allow), the context bar and Summarize button
+slots, the account in the settings slot, and `beforeSend`/`afterSend` for the
+Nextcloud session check and the file context a turn includes. `src/styles/nextcloud.css`
+maps the panel's tokens onto the user's Nextcloud theme; the build scopes the SDK
+stylesheet under the drawer (`vite.config.ts`), because Nextcloud's global button and
+field styles outrank one-class rules. Esc inside the panel closes its menus or stops
+an answer, and never also the drawer.
 
 ## Boundaries
 

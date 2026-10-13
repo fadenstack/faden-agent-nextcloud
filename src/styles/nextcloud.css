@@ -1,5 +1,5 @@
-/* SDK layout and interactions, with Nextcloud's active user theme. */
-.fdn-chat[data-theme=nextcloud] {
+/* The SDK's chat panel (@fadenstack/ui-web's stylesheet) in the user's active Nextcloud theme. */
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] {
 	--fdn-bg: var(--color-main-background);
 	--fdn-surface: var(--color-background-hover);
 	--fdn-surface-high: var(--color-background-dark);
@@ -13,42 +13,42 @@
 	--fdn-on-accent: var(--color-primary-element-text);
 	--fdn-accent-soft: var(--color-primary-element-light);
 	--fdn-on-accent-soft: var(--color-primary-element-light-text);
-	--fdn-danger: var(--color-error);
-	--fdn-danger-soft: var(--color-error-hover);
-	--fdn-warning: var(--color-warning-text);
-	--fdn-warning-soft: var(--color-warning);
-	--fdn-success: var(--color-success);
+	/* Text in the theme's readable status colours, on a soft tint of them (badges, cards, states). */
+	--fdn-danger: var(--color-error-text, var(--color-error));
+	--fdn-danger-soft: color-mix(in srgb, var(--color-error) 16%, transparent);
+	--fdn-warning: var(--color-warning-text, var(--color-warning));
+	--fdn-warning-soft: color-mix(in srgb, var(--color-warning) 18%, transparent);
+	--fdn-success: var(--color-success-text, var(--color-success));
 	--fdn-code-bg: var(--color-background-dark);
 	--fdn-focus: var(--color-primary-element);
+	--fdn-font: var(--font-face);
+	/* The agent's plates follow the theme's text (navy on light, light on dark); the thread stays rose. */
+	--fdn-agent-plate: var(--color-main-text);
+	--fdn-agent-plate-side: var(--color-text-maxcontrast);
+	--fdn-agent-eye: var(--color-main-background);
+	--fdn-agent-pupil: var(--color-main-text);
 	color-scheme: inherit;
+	height: 100%;
 }
 
+/* Nextcloud styles every button and text field; the panel draws its own. */
 .fdn-chat button { min-height: 0; margin: 0; }
 
 .fdn-chat textarea { margin: 0; box-shadow: none; }
 
+/* The file the next message can include, above the composer. */
 .fdn-context-bar { display: flex; padding: 6px 14px; font-size: 11px; min-width: 0; }
 
 .fdn-context-bar a { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.fdn-chat pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 350px; overflow-y: auto; }
+/* A write's proposal: its target, and the current and proposed content. */
+.fdn-chat .fdn-approval-target { margin-block: 6px; overflow-wrap: anywhere; }
 
-.fdn-chat .fdn-approval pre { padding: 10px; background: var(--fdn-code-bg); border-radius: 8px; }
+.fdn-chat .fdn-approval details { margin-block: 6px; }
 
-.fdn-chat .fdn-user-bubble { white-space: pre-wrap; }
+.fdn-chat .fdn-approval pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 350px; overflow-y: auto; }
 
-.fdn-chat .fdn-chip-toggle { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; padding: 4px 8px; }
-
-.fdn-chat .fdn-chip-title { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.fdn-chat .fdn-chip-off { opacity: .6; }
-
-.fdn-chat .fdn-actions { display: flex; gap: 8px; margin-top: 10px; }
-
-.fdn-chat .fdn-actions button { padding: 6px 12px; border-radius: 8px; }
-
-.fdn-chat .fdn-actions .fdn-primary { background: var(--fdn-accent); color: var(--fdn-on-accent); }
-
+/* Search results: files with their folder, date and excerpt, and passages in a document. */
 .fdn-chat .fdn-search-results { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-block: 8px; background: var(--fdn-surface); border: 1px solid var(--fdn-border); border-radius: 8px; }
 
 .fdn-chat .fdn-search-title, .fdn-chat .fdn-search-name, .fdn-chat .fdn-search-actions { display: flex; align-items: center; gap: 8px; }

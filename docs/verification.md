@@ -1,5 +1,23 @@
 # Pilot verification — 13 October 2026
 
+## The SDK's Vue panel (SDK 0.2.0-rc.2)
+
+The hand-made chat was replaced by `@fadenstack/ui-vue` with `@fadenstack/ui-web`, from npm.
+
+| Check | Result |
+| --- | --- |
+| Typecheck, eslint, stylelint, build, package | clean; the package carries the ui-vue and ui-web LICENSE and NOTICE |
+| Unit tests (Vitest, the SDK's fake server) | 33 passed, including composer send, write approval through the card, Esc and the account in the settings |
+| `tests/integration/nextcloud.mjs` | 40 HTTP checks on 35 (:8090) and on 31 (:8088) |
+| `search.mjs` (Node 24) | 73 checks on 35 and on 31 |
+| `search-security.mjs` (Node 24) | 56 API checks on 35, 55 on 31 |
+| Browser, Nextcloud 35, dark | sign-in to the real server, the panel and its settings (five languages, account); "find the latest supplier contract and its notice period": search cards, two tool approvals, the October contract's 30 days |
+| Browser, Nextcloud 31, light | sign-in, panel and settings |
+| Browser, Nextcloud 35, a German user | the panel in German; a question answered after three tool approvals |
+
+The real server's agent lists the app's tools without classes until an administrator
+accepts them on the agent's Apps tab; until then reading tools ask too.
+
 ## v0.1 Search and Document Discovery release checks
 
 The search implementation is committed as independent functional increments:

@@ -2,7 +2,7 @@
 
 The official Nextcloud template and app retain AGPL-3.0-or-later, with the original
 LICENSE included. Nextcloud dependencies retain their original terms. Published
-Fadenstack SDK 0.2.0-rc.1 packages remain Apache-2.0; PDF.js is Apache-2.0, Vue is MIT,
+Fadenstack SDK 0.2.0-rc.2 packages remain Apache-2.0; PDF.js is Apache-2.0, Vue is MIT,
 DOMPurify is dual Apache-2.0/MPL-2.0.
 
 Builds emit `.mjs.license` attribution summaries. Packaging preserves original
@@ -12,8 +12,8 @@ provide recipients the corresponding source/build materials for applicable sourc
 obligations. Review notices and source availability before public distribution.
 This pilot does not publish to the App Store or change upstream licenses.
 
-The Vue chat skin adapts the layout/CSS and Material icon paths of
-`@fadenstack/ui-react` from the sibling SDK. It does not load React. The original
-Apache-2.0 LICENSE and NOTICE are preserved in `licenses/`, including Google's
-Material Icons attribution. `src/styles/fadenstack.css` is the unmodified SDK
-stylesheet; `src/styles/nextcloud.css` maps its tokens to Nextcloud themes.
+The chat is the SDK's `@fadenstack/ui-vue` panel and `@fadenstack/ui-web` stylesheet,
+used as published npm packages; no SDK code or stylesheet is copied into the app. Their
+Apache-2.0 LICENSE and NOTICE, including Google's Material Icons attribution for the
+SDK's icons, ship in `third-party` with the other production dependencies.
+`src/styles/nextcloud.css` maps the panel's tokens to Nextcloud themes.
