@@ -53,7 +53,7 @@ export class NextcloudFiles implements FileApi {
 
 	async approve(id: string, signal?: AbortSignal): Promise<void> { await this.post(`/proposals/${encodeURIComponent(id)}/approve`, {}, signal) }
 	async commit(id: string, signal?: AbortSignal): Promise<WriteResult> {
-		const result = await this.post<WriteResult | DavCreatePlan>(`/proposals/${encodeURIComponent(id)}/commit`, {}, signal)
+		const result = await this.post<WriteResult | DavCreatePlan>(`/proposals/${encodeURIComponent(id)}/commit`, { createProtocol: 1 }, signal)
 		if (!('kind' in result)) return result
 		const prefix = `/files/${encodeURIComponent(this.initial.userId)}/`
 		if (result.kind !== 'dav-create' || !result.dav_path.startsWith(prefix) || /[?#\r\n]/.test(result.dav_path)) throw new Error('Invalid approved Nextcloud creation plan.')

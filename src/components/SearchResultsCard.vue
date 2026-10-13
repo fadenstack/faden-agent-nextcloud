@@ -19,7 +19,7 @@ function link(file: FileResource) {
 	} catch { return undefined }
 }
 function modified(date: string | null) {
-	return date && Number.isFinite(Date.parse(date)) ? new Intl.DateTimeFormat(navigator.language, { dateStyle: 'medium' }).format(new Date(date)) : t('fadenstack_agent', 'Date unavailable')
+	return date && Number.isFinite(Date.parse(date)) ? new Intl.DateTimeFormat(props.host.config.locale ?? navigator.language, { dateStyle: 'medium' }).format(new Date(date)) : t('fadenstack_agent', 'Date unavailable')
 }
 async function attach(file: FileResource) {
 	adding.value = file.resource_id

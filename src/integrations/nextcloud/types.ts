@@ -5,7 +5,7 @@ export interface AppConfig {
 	agent: string
 	development: boolean
 }
-export interface Identity extends AppConfig { userId: string; binding: string }
+export interface Identity extends AppConfig { userId: string; binding: string; locale?: string }
 export interface FileMetadata {
 	id: number
 	name: string

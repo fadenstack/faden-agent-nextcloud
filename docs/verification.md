@@ -1,5 +1,65 @@
 # Pilot verification — 13 October 2026
 
+## v0.1 Search and Document Discovery release checks
+
+The search implementation is committed as independent functional increments:
+native discovery, document/capability search, chat result cards, then bounded
+pagination and governed retrieval. The original interface Phase 1 below refers
+to the earlier native-drawer specification, not this search specification.
+
+| Check | Nextcloud 35.0.1 | Nextcloud 31.0.14 |
+| --- | --- | --- |
+| Native filename/folder/type/date/size discovery and document passages | 73 authenticated checks passed | 73 passed |
+| Sharing, revocation, signed cursors and nested/racing creation | 56 passed | 55 passed; creation-date filter truthfully unavailable |
+| Existing file workflow regression | 40 passed | 40 passed |
+| Latest-contract query measured locally | 405 ms | 365 ms |
+| First real PDF passage / cached follow-up | 1,714 / 549 ms | 1,883 / 447 ms |
+
+These are local Docker/SQLite measurements, not promises for arbitrary deployments.
+The PDF checks parsed once across repeated searches and compared emitted page
+locations to actual PDF.js records. The native indexed Files capability is absent
+on both instances and returns an explicit unavailable response. Positive provider
+behavior and withholding revoked excerpts have PHP contract coverage; no configured
+live indexing platform was available to verify.
+
+32 frontend/SDK/Vue tests and 17 PHP tests / 29 assertions passed. They cover
+actual SDK host orchestration, typed result cards, lazy Add to context, included
+folder creation, exact individual approval, cache authorization/revision changes
+and byte bounds. Type checking, lint, styles, production build, strict Composer
+validation and zero production npm vulnerabilities passed. CI now runs the native
+search and security suites on both version images; remote CI has not run yet.
+
+The supplied real Fadenstack `nextcloud-agent` v1 completed three turns using the
+production SDK/host and real authenticated Nextcloud 35 APIs. It selected the
+October synthetic contract (file 401), retrieved its termination passage rather
+than inferring it from the name, and answered **30 days' written notice** with the
+source link. An exact Markdown proposal in deliberately included folder 400 was
+approved once before native creation. Actual file **455** was read back with the
+30-day passage and source link. Turn durations were 40.0, 37.9 and 110.9 seconds;
+model generation and approval timing are distinct from native search duration.
+Artifacts are in ignored `build/live-search`; fixtures are explicitly synthetic.
+All 22 real-server TLS/CORS/CSRF checks passed with certificate validation enabled.
+
+After adding the creation-client upgrade guard, the complete real workflow passed
+again and saved file **486**. Its three turns took 77.9, 41.7 and 98.4 seconds.
+Old clients now receive a reload error before any creation; the updated adapter
+handles the native creation plan. SDK labels and result dates follow the Nextcloud
+account language independently of the browser language, with German unit coverage.
+
+The packaged app passed 40 workflow, 73 discovery/document and 55 security checks
+in an isolated Nextcloud 35 runtime on port 8092 with no `vendor` or `node_modules`.
+The final upgrade-guard/locale package then passed 40 workflow, 73 discovery and
+56 security checks on port 8093, again without development dependencies. The
+temporary package containers are stopped and their test volume retained.
+
+The saved live-search Markdown was also opened in the actual Nextcloud Text
+viewer for screenshot verification. A separate live browser search prompt is
+prepared in the fixture folder. Automation clicks/keys did not reliably reach the
+controls, and the latest tab is awaiting a manual Sign in before Send. Connection
+verification failures now show their reason instead of silently clearing the UI.
+This does not count as completed browser search acceptance. Original real
+browser PDF/editor acceptance remains recorded below.
+
 This is an installable development pilot. The mandatory real-server PDF → model
 summary → individually approved Markdown scenario passed in the Nextcloud 35
 browser drawer. Remaining browser/storage coverage is documented separately.

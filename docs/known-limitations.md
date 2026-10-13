@@ -40,3 +40,30 @@ it never reads private Vue instances. This was exercised in Nextcloud 35 Text.
 Other embedded Office editors and private editor buffers have not been verified.
 Only the saved file is attached. Save edits before sending; a missing or mismatched
 document ID/name is rejected rather than attaching the file selected behind it.
+
+## v0.1 search
+
+- Filename and metadata discovery use native WebDAV SEARCH. The agent turns
+  natural instructions into those filters; there is no semantic search engine.
+- `created_after` is verified only on 35. Earlier supported versions return an
+  explicit unsupported-filter explanation. Imported creation timestamps may be absent.
+- Relevance uses exact/prefix/substring filename tiers, not provider semantics.
+  Modification sorting is explicitly labelled as such.
+- Native offset paging is available only for metadata ordering in one-storage
+  scopes. Nested mounts and relevance tiers return a bounded first page. Concurrent
+  changes can shift native offset pages. Narrow a partial result set.
+- Parsed content remains bounded to the existing formats, bytes/pages/characters.
+  Matches beyond processed text cannot be counted or assigned source locations.
+- Cross-document indexed search requires an existing supported native Files
+  full-text platform. None is installed in the pilots; missing capability and the
+  positive contract are tested, but a configured platform is not verified live.
+  Index metadata/comments can also match; verify facts in document contents.
+- Creates use native atomic no-overwrite PUT and a one-use verified receipt.
+  Parent reauthorization and receipt verification are separate requests, not a
+  distributed transaction around folder renames or storage I/O. On failure,
+  inspect the destination before retrying; no false success is returned.
+- The complete latest-contract workflow passed with the real server/model and
+  synthetic fixtures through the production SDK host. The new browser search
+  demonstration is awaiting manual Sign in/Send because browser automation input
+  did not reliably reach the controls. Mounted Vue/SDK rendering and approval
+  tests pass; original real browser PDF/editor acceptance remains valid.

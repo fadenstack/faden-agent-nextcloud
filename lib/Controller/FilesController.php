@@ -99,8 +99,8 @@ class FilesController extends Controller {
 	}
 	#[NoAdminRequired]
 	#[UseSession]
-	public function commit(string $id): Response {
-		return $this->run(fn () => $this->files->commit($id));
+	public function commit(string $id, int $createProtocol = 0): Response {
+		return $this->run(fn () => $this->files->commit($id, $createProtocol));
 	}
 	#[NoAdminRequired]
 	#[UseSession]

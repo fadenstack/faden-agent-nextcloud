@@ -53,6 +53,30 @@ Artifacts in ignored `build/live` contain no tokens or passwords. It allows ten
 minutes per turn by default; `FADENSTACK_TURN_TIMEOUT_MS` changes that limit.
 Browser checks additionally cover the browser PDF worker and actual Vue UI.
 
+## Search release tests and representative data
+
+Run `node --experimental-transform-types tests/integration/search.mjs` and
+`node --experimental-transform-types tests/integration/search-security.mjs` on
+each local instance. The first checks native discovery, PDF passages, cache
+invalidation and missing-index reporting; the second shares and revokes synthetic
+data, checks signed cursors, and exercises approved nested creation and races.
+CI runs both on Nextcloud 31 and 35 without real Fadenstack credentials.
+
+`node scripts/seed-search.mjs` creates a named synthetic folder with two dated
+supplier contracts. They deliberately differ: the current October contract has
+30 days' termination notice; the superseded September contract has 90 days.
+Only the named fixture files are uploaded; no user collection is crawled. The
+local-only test client refuses a remote Nextcloud destination.
+
+Run `node --experimental-transform-types tests/integration/live-search.mjs` with
+the same ephemeral credential/CA mechanism above for the real published-agent
+discovery → supporting passage → individually approved current-folder Markdown
+demonstration. It uses production SDK/host services, validates each write preview,
+checks server approval before commit and reads back the resulting file. Credential
+values are never written to its `build/live-search` artifacts. Test approvals are
+automatic only in this explicit integration runner; the product always displays
+the individual write card.
+
 Set `FADENSTACK_SCENARIO=deny` with the ID of a local fixture in
 `NEXTCLOUD_FILE_ID` for a real model write-denial test. It rejects the exact
 proposal, stops follow-on model work and checks that WebDAV returns 404.

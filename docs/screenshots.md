@@ -3,6 +3,16 @@
 Captured against the real Fadenstack server on 13 October 2026. Documents are
 public Nextcloud sample content and pilot results. No credentials are shown.
 
+## Search workflow: actual saved summary
+
+The real published agent discovered synthetic contract 401, verified its 30-day
+termination passage, and created summary 455 after one exact approval through the
+production SDK host. The screenshot shows the saved Nextcloud Text document and
+its working source links. Browser search result-card acceptance is still awaiting
+the manual browser interaction described in [verification](verification.md).
+
+![Saved live search summary](screenshots/live-search-summary-created-dark.jpg)
+
 ## Full-screen Text editor
 
 The mascot beside the native titlebar controls opens the shared drawer. The

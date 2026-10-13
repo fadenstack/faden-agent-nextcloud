@@ -68,8 +68,8 @@ onUnmounted(() => { ++selectionRevision })
 			<p>{{ runtime.state.signedIn ? t('fadenstack_agent', 'Connected') : t('fadenstack_agent', 'Sign in to Fadenstack') }}</p>
 		</header>
 		<div class="fadenstack-panel-body">
-			<p v-if="problem" role="alert">
-				{{ problem }}
+			<p v-if="problem || runtime.state.error" role="alert">
+				{{ problem || runtime.state.error }}
 			</p>
 			<form v-if="!runtime.state.signedIn" class="fadenstack-signin" @submit.prevent="signIn">
 				<p>{{ runtime.config.serverUrl }}</p>

@@ -37,6 +37,7 @@ class User {
     assert.ok(authenticated.includes('fadenstack_agent-assistant'), 'Native drawer assets registered')
   }
   async api(path, body, status = 200, headers = {}) {
+    if(path.endsWith('/commit')) body = {...body,createProtocol:1}
     const res = await this.request(`/index.php/apps/fadenstack_agent${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', requesttoken: this.token, 'X-Fadenstack-Session': this.binding, ...headers }, body: JSON.stringify(body) })
     const data = await res.json()
     assert.equal(res.status, status, `${path}: ${data.message || 'unexpected status'}`)

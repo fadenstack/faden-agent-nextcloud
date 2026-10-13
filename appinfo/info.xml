@@ -3,8 +3,8 @@
 	  xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
 	<id>fadenstack_agent</id>
 	<name>Fadenstack Agent</name>
-	<summary>A governed file assistant in a native chat drawer</summary>
-	<description>Use a published Fadenstack agent with deliberately included file context and individually approved text file operations.</description>
+	<summary>Discover files and document passages in a governed chat drawer</summary>
+	<description>Find authorized Nextcloud files, search selected documents and continue individually approved text workflows with a published Fadenstack agent. Uses native search APIs; no additional RAG service is required.</description>
 	<version>0.1.0</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author homepage="https://fadenstack.com">Fadenstack</author>

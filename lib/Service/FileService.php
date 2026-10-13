@@ -300,10 +300,13 @@ class FileService {
 		return ['approved' => true];
 	}
 
-	public function commit(string $id): array {
+	public function commit(string $id, int $createProtocol = 0): array {
 		$p = $this->proposal($id);
 		if (!$p['approved']) {
 			throw new Problem('This operation requires explicit approval.', 403);
+		}
+		if ($p['operation'] === 'create' && $createProtocol !== 1) {
+			throw new Problem('Reload the Nextcloud page to load the updated file-creation client. No file was created.', 409);
 		}
 		$s = $this->state();
 		unset($s['proposals'][$id]); // one attempt, including failed attempts

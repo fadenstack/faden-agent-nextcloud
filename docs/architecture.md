@@ -35,8 +35,9 @@ storage, React components, local agent definitions or model selection are copied
 - Selecting a file creates an opaque session-scoped context capability and reads
   metadata only. The SDK's implicit `AttachmentViewModel` offers a chip in the
   composer that can be excluded, following the Chrome agent's lazy attachments.
-  A send freezes the included capability. Tool arguments cannot
-  redirect reads to another file. Folder listing is bounded and never reads children.
+  A send freezes the included capability. Known search resources can also be
+  retrieved, after fresh permission checks; paths and external URLs are rejected.
+  Folder listing is bounded and never reads children.
 - Supported reads are UTF-8 text, Markdown, CSV, JSON and text PDFs extracted by
   Mozilla PDF.js in the browser. Byte, page, character and time limits are explicit.
 - Each write is a one-use server proposal. Its target, original text, revision and
@@ -44,12 +45,20 @@ storage, React components, local agent definitions or model selection are copied
   approves that exact proposal; the host tool then commits it. Write tools use the
   SDK's stricter destructive class to require individual approval in every mode.
   Updates open the public `File::fopen('r+')` write stream and compare storage ETags
-  under its exclusive lock before truncating/writing; creations
-  lock the destination folder and refuse existing names. No overwrite fallback.
+  under its exclusive lock before truncating/writing. Creations reauthorize the
+  parent and use native DAV `If-None-Match: *` with an expiring one-use receipt
+  verifying the exact content and destination. There is no overwrite fallback.
 - Fadenstack calls go directly from the browser to the configured origin, with
   SDK credentials and an origin guard. There is no AI proxy backend, database table,
   conversion service, or independent execution loop. CSP permits only that origin;
   administrators must configure matching CORS on Fadenstack.
+
+One reusable `NextcloudSearchService` composes those existing boundaries for
+discovery, metadata, authorized extraction and passages. Its PHP counterpart
+validates bounded native DAV plans and optionally uses Nextcloud's public
+FullTextSearch manager for the indexed Files provider. Result cards associate
+host-produced typed data with the SDK's public call ID and lifecycle; neither
+SDK internals nor model-produced JSON drive the cards. See [search](search.md).
 
 ## Validation
 

@@ -68,7 +68,8 @@ export class NextcloudAgent {
 			})
 			.describeApp({ name: 'Nextcloud Files', version: '0.1.0', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }] })
 			.build()
-		this.chat = new AgentChatViewModel(this.agent, this.approvals, { locale: navigator.language, strings: navigator.language.startsWith('de') ? germanStrings : undefined })
+		const locale = config.locale ?? navigator.language
+		this.chat = new AgentChatViewModel(this.agent, this.approvals, { locale, strings: locale.startsWith('de') ? germanStrings : undefined })
 	}
 
 	async signIn(email: string, password: string): Promise<void> {

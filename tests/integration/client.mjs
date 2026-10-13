@@ -27,6 +27,7 @@ export class User {
     this.binding = this.config.binding
   }
   async api(path, body, expected = 200, signal) {
+    if(path.endsWith('/commit')) body = {...body,createProtocol:1}
     const response = await this.request('/index.php/apps/fadenstack_agent'+path, {method:'POST',signal,headers:{'Content-Type':'application/json','X-Fadenstack-Session':this.binding},body:JSON.stringify(body)})
     const data = await response.json()
     assert.equal(response.status,expected, `${path}: ${JSON.stringify(data)}`)

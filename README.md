@@ -4,10 +4,12 @@ A native global chat drawer for an organization-published Fadenstack agent. The 
 authentication, streaming, sessions, governance and approvals. Nextcloud owns file
 access. Supports Nextcloud 31–35, with 35 as the primary target.
 
-**Pilot status:** the real PDF → model summary → individually approved Markdown
-scenario passed against the supplied Fadenstack server on Nextcloud 35. File
-operations and permission checks pass on Nextcloud 31 and 35. This is a development
-pilot with documented browser/storage limits. See
+**v0.1 search implementation:** native filename/folder/recent discovery, selected
+document passages, source-linked result cards and capability-aware indexed search.
+The real latest-contract → termination passage → approved Markdown workflow passed
+against the supplied Fadenstack server on Nextcloud 35. File operations and permission
+checks pass on Nextcloud 31 and 35. Browser search acceptance and an installed native
+index remain separately documented; this is not an App Store publication. See
 [verification](docs/verification.md) and [limitations](docs/known-limitations.md).
 
 Phase 1 (native interface and connection) is complete for the Nextcloud 35 pilot,
@@ -24,7 +26,10 @@ including a user-tested real-server conversation from the full-screen Text edito
   selecting it transmits no file contents. Content is read when you send.
 - UTF-8 TXT, Markdown, CSV and JSON; text PDFs through maintained Mozilla PDF.js.
 - Bounded extraction with explicit partial results, revisions and source links.
-- Five host tools for metadata, reading, listing, creating and updating.
+- Nine host tools reuse metadata, reading, listing, creating and updating, adding
+  filename/metadata discovery, document passages and optional native indexed search.
+- Readable result cards with parent folder, modified date, excerpts, Open in
+  Nextcloud and Add to context. No separate RAG or indexing service is required.
 - Individual write cards with full target/replacement/original; one-use server
   proposals, safe creation and ETag conflict checks on updates.
 - Per-user session capabilities, server permissions, CSRF, CSP, sanitized Markdown,
@@ -67,6 +72,8 @@ certificate trusted by the browser. See [integration](docs/integration.md).
 docker compose up -d nextcloud35
 node scripts/setup-dev.mjs nextcloud35
 npm run test:integration
+node --experimental-transform-types tests/integration/search.mjs
+node --experimental-transform-types tests/integration/search-security.mjs
 ```
 
 35 is at `http://localhost:8090`; the isolated local administrator is `pilot-admin`
@@ -79,5 +86,7 @@ For 31, start service `nextcloud`, run its setup script and pass
 
 Read [architecture](docs/architecture.md), [development](docs/development.md),
 [security](docs/security.md), [integration](docs/integration.md) and
-[licenses](docs/licenses.md). App/template code is AGPL-3.0-or-later; Fadenstack SDK
+[search tool contracts](docs/search.md), [user guide](docs/user-guide.md),
+[administrator guide](docs/admin-guide.md) and [licenses](docs/licenses.md).
+App/template code is AGPL-3.0-or-later; Fadenstack SDK
 packages retain their Apache-2.0 licenses.

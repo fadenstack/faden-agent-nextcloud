@@ -10,7 +10,11 @@ before importing. The supplied server now has `nextcloud-agent` v1 published wit
 | Tool | Host class | Scope |
 | --- | --- | --- |
 | nc_get_selected_file | read | Included turn's fixed metadata |
-| nc_read_file | read | Included file only |
+| nc_get_file_metadata | read | Known searched or explicitly included resource |
+| nc_search_files | read | Current user's native filename/metadata discovery |
+| nc_search_in_file | read | Literal passages in a known or included document |
+| nc_search_content | read | Optional indexed native Files provider; truthful unavailability |
+| nc_read_file | read | Included file or known search result; current permission/revision |
 | nc_list_folder | read | Included folder or file's parent; output ≤200 entries |
 | nc_create_text_file | destructive | Individually approved .txt/.md creation |
 | nc_update_text_file | destructive | Individually approved .txt/.md replacement with read ETag |
@@ -18,7 +22,7 @@ before importing. The supplied server now has `nextcloud-agent` v1 published wit
 The write tools use the stricter SDK destructive class so Auto, remembered approvals
 and contract downgrades cannot skip individual cards. A nonempty published contract
 omitting a tool prevents offering it. On the first SDK connection, the server
-automatically discovers the manifest's five tools. Approve them through Fadenstack's
+automatically discovers the manifest's nine tools. Approve them through Fadenstack's
 own discovery/governance interface, then reconnect to load the published policy.
 No manual tool-schema entry is needed. An empty contract in this SDK means
 unclassified tools requiring approval. SDK
@@ -59,3 +63,8 @@ it. Verify streaming and a usable source link. Request a Markdown summary, inspe
 the target/full replacement, allow once, and open the actual result. Repeat with
 Deny, a stale update and the second user's unauthorized source ID/context. Record
 completion only after the complete live scenario succeeds.
+
+The search acceptance scenario is documented in [the search guide](search.md).
+Use the two dated synthetic supplier fixtures, discover the latest authorized
+contract, verify the 30-day termination passage, then approve a Markdown summary
+in the deliberately included current folder. No additional RAG service is used.

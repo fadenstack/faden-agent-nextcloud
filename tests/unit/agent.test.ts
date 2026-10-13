@@ -37,6 +37,13 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('SDK integration and file boundary', () => {
+	it('uses the Nextcloud language for SDK labels independently of browser language', async () => {
+		const { host, files, gateway } = fixture()
+		const german = new NextcloudAgent({ ...identity, locale: 'de-DE' }, files, gateway.fetch)
+		expect(german.chat.strings.allow).toBe('Einmal erlauben')
+		await german.dispose()
+		await host.dispose()
+	})
 	it('allows an explicitly included folder reference as a destination without reading document bytes', async () => {
 		let round = 0
 		const { host, files } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: '# Summary', resource_id: 'nextcloud:files:9' }, id: 'folder-write' }] } : { text: 'Created in folder' } })

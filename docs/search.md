@@ -136,10 +136,40 @@ A renamed destination during the separate requests is detected, but there is no
 distributed folder transaction; an I/O failure or changed receipt returns no
 claimed success. Inspect the destination before retrying.
 
-On 35, 55 authenticated security checks passed; 54 passed on 31, including the
+On 35, 56 authenticated security checks passed; 55 passed on 31, including the
 explicit older-version creation-filter response. Both cover private users,
 read-only sharing, revoked cached passages, revoked old contexts, literal `%`/`_`,
 favorites, native paging, cursor tampering/session/filter isolation, nested approved
 creation and a concurrent author winning without being overwritten. Forty existing
 HTTP workflow checks passed on each version, including creation/editing, approval,
 denial and actual ETag conflicts. Unit tests cover byte bounds and cache identity.
+An already-open page with the older creation protocol is rejected before any
+creation plan or bytes are issued and gets an explicit reload message. Reload
+Files after upgrading to load the new tool registry and creation client.
+
+## Tool reference
+
+| Tool | Parameters | Result |
+| --- | --- | --- |
+| `nc_search_files` | Optional `query`; `scope` = `all` or folder resource ID; `file_types` = extensions/MIME types; `modified_after`, `modified_before`, `created_after` = timezone-qualified ISO timestamps; nonnegative `min_size`, `max_size`; boolean `favorites_only`; `sort_by` = relevance/modified/name/size; `sort_direction` = asc/desc; `limit` = 1–50, default 20; optional signed `cursor` | Filename-mode source-linked resources, ordering, duration, partial flag and optional native cursor |
+| `nc_search_in_file` | Known/included `resource_id` (optional if included); required `query` of 1–200 characters; `match_mode` = exact_phrase/terms, default exact_phrase; `max_matches` = 1–50, default 10 | Resource, excerpts, real page or extracted-text line, accurate total or null, processed count, partial flag, cache/retrieval/query timing |
+| `nc_search_content` | Required `query` of 1–200 characters; `limit` = 1–50, default 20; `page` = 1–100, default 1 | Indexed-content mode, availability/explanation/provider, reauthorized resources/excerpts, partial flag, duration and optional next page |
+| `nc_get_file_metadata` | Known `resource_id`, or omitted for included context | Standard source resource, reauthorized without downloading contents |
+| `nc_read_file` | Known `resource_id`, or omitted for included context | Existing bounded read result plus standard resource, explicit partial status and retrieval/cache metrics |
+| Existing create/update tools | Existing filename/content/read-ETag fields plus optional known `resource_id` destination/target | Existing exact individual approval and confirmed file result |
+
+The common file resource contains `resource_id`, `name`, parent `path`, `mime_type`,
+`size`, UTC `modified_at` (or null when absent), `etag`, `web_url`, `is_directory`
+and read/open `capabilities`. Content search may add a bounded `excerpt`.
+Identifiers, permissions, revisions and URLs are always resolved from Nextcloud.
+
+Example discovery arguments for a recent scoped query:
+
+```json
+{"query":"supplier contract","scope":"nextcloud:files:400","file_types":["md","pdf"],"sort_by":"modified","sort_direction":"desc","limit":10}
+```
+
+This illustrative resource must first come from a real authorized result or
+included folder. The agent reviews bounded results, selects a relevant resource,
+then retrieves only necessary document text/passages. A source-linked answer can
+continue with the existing approved creation or revision-guarded editing tools.

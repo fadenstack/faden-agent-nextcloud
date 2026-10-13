@@ -70,3 +70,9 @@ jobs:
       - run: npm run test:integration
         env:
           NEXTCLOUD_URL: http://localhost:${{ matrix.port }}
+      - run: node --experimental-transform-types tests/integration/search.mjs
+        env:
+          NEXTCLOUD_URL: http://localhost:${{ matrix.port }}
+      - run: node --experimental-transform-types tests/integration/search-security.mjs
+        env:
+          NEXTCLOUD_URL: http://localhost:${{ matrix.port }}
