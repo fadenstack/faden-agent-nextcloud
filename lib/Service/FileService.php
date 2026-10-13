@@ -77,7 +77,30 @@ class FileService {
 		return ['id' => $n->getId(), 'name' => $n->getName(), 'path' => $home->getRelativePath($n->getPath()),
 			'mime' => $n->getMimetype(), 'size' => $n->getSize(), 'etag' => $n->getEtag(),
 			'folder' => $n instanceof Folder, 'permissions' => $n->getPermissions(),
+			'modified' => $n->getMtime(), 'created' => $n->getCreationTime(),
 			'url' => $this->urls->linkToRouteAbsolute('files.viewcontroller.showFile', ['fileid' => $n->getId()])];
+	}
+
+	/** Resolve every resource through the current user's tree, including shares. */
+	public function resource(string $resourceId): array {
+		if (!preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $resourceId, $match)) {
+			throw new Problem('Use a Nextcloud file resource ID, not a path or URL.');
+		}
+		return $this->metadata($this->node((int)$match[1]));
+	}
+
+	public function searchScope(string $scope): array {
+		$path = '';
+		$id = $this->root->getUserFolder($this->uid())->getId();
+		if ($scope !== 'all') {
+			$file = $this->resource($scope);
+			if (!$file['folder']) {
+				throw new Problem('Search scope must be an accessible folder.');
+			}
+			$path = $file['path'];
+			$id = $file['id'];
+		}
+		return ['href' => '/files/' . rawurlencode($this->uid()) . implode('/', array_map('rawurlencode', explode('/', $path))), 'id' => $id];
 	}
 
 	public function select(int $fileId): array {

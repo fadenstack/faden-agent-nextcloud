@@ -106,7 +106,7 @@ describe('SDK integration and file boundary', () => {
 		await host.signIn('alice', 'test')
 		await vi.waitFor(() => expect(gateway.manifests).toHaveLength(1))
 		const manifest = gateway.manifests[0]!.manifest
-		expect((manifest.tools as { name: string }[]).map(tool => tool.name)).toEqual(['nc_get_selected_file', 'nc_read_file', 'nc_list_folder', 'nc_create_text_file', 'nc_update_text_file'])
+		expect((manifest.tools as { name: string }[]).map(tool => tool.name)).toEqual(['nc_search_files', 'nc_get_selected_file', 'nc_read_file', 'nc_list_folder', 'nc_create_text_file', 'nc_update_text_file'])
 		expect(JSON.stringify(manifest)).not.toContain('Source text')
 		await host.dispose()
 	})

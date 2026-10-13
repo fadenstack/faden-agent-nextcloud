@@ -1,10 +1,29 @@
 import axios from '@nextcloud/axios'
-import { generateUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult } from './types.ts'
+import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata } from './types.ts'
 
 export class NextcloudFiles implements FileApi {
 
 	constructor(readonly initial: Identity) {}
+	readonly searchTransport: SearchTransport = {
+		plan: (filters, signal) => this.post<SearchPlan>('/search/plan', { filters }, signal),
+		resolve: (resourceIds, scope, signal) => this.post<FileMetadata[]>('/search/resolve', { resourceIds, scope }, signal),
+		dav: async (xml, signal) => {
+			await this.assertIdentity()
+			const response = await axios.request<string>({
+				url: generateRemoteUrl('dav/'),
+				method: 'SEARCH',
+				data: xml,
+				headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+				responseType: 'text',
+				signal,
+				timeout: 15000,
+			})
+			if (response.status !== 207) throw new Error('Native WebDAV SEARCH is unavailable on this Nextcloud server.')
+			return response.data
+		},
+	}
+
 	async identity(): Promise<Identity> {
 		return (await axios.get<Identity>(generateUrl('/apps/fadenstack_agent/config'))).data
 	}

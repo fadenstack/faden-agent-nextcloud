@@ -6,6 +6,7 @@ namespace OCA\FadenstackAgent\Controller;
 
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
+use OCA\FadenstackAgent\Service\SearchAccessService;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\UseSession;
@@ -19,6 +20,7 @@ class FilesController extends Controller {
 		string $appName,
 		IRequest $request,
 		private FileService $files,
+		private SearchAccessService $search,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -49,6 +51,16 @@ class FilesController extends Controller {
 	#[UseSession]
 	public function select(int $fileId): Response {
 		return $this->run(fn () => $this->files->select($fileId));
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function searchPlan(array $filters): Response {
+		return $this->run(fn () => $this->search->plan($filters));
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function searchResolve(array $resourceIds, string $scope = 'all'): Response {
+		return $this->run(fn () => $this->search->resolve($resourceIds, $scope));
 	}
 	#[NoAdminRequired]
 	#[UseSession]

@@ -15,6 +15,8 @@ export interface FileMetadata {
 	folder: boolean
 	permissions: number
 	url: string
+	modified?: number
+	created?: number
 }
 export interface FileContext {
 	id: string
@@ -43,7 +45,50 @@ export interface Proposal extends WriteArguments {
 	contextId: string
 }
 export interface WriteResult { operation: string; file: FileMetadata }
+export interface SearchFilters {
+	query?: string
+	scope?: string
+	file_types?: string[]
+	modified_after?: string
+	modified_before?: string
+	created_after?: string
+	min_size?: number
+	max_size?: number
+	favorites_only?: boolean
+	sort_by?: 'relevance' | 'modified' | 'name' | 'size'
+	sort_direction?: 'asc' | 'desc'
+	limit?: number
+}
+export interface SearchPlan { filters: Required<Pick<SearchFilters, 'query' | 'scope' | 'limit' | 'sort_by' | 'sort_direction'>> & SearchFilters; queries: string[]; backend: string }
+export interface SearchTransport {
+	plan(filters: SearchFilters, signal: AbortSignal): Promise<SearchPlan>
+	dav(xml: string, signal: AbortSignal): Promise<string>
+	resolve(resourceIds: string[], scope: string, signal: AbortSignal): Promise<FileMetadata[]>
+}
+export interface FileResource {
+	resource_id: string
+	name: string
+	path: string
+	mime_type: string
+	size: number
+	modified_at: string | null
+	etag: string
+	web_url: string
+	is_directory: boolean
+	capabilities: string[]
+}
+export interface SearchResults {
+	kind: 'nextcloud-search-results'
+	search_mode: 'filenames' | 'indexed-content' | 'document'
+	provider: string
+	ordering: string
+	results: FileResource[]
+	partial: boolean
+	duration_ms: number
+}
+
 export interface FileApi {
+	searchTransport?: SearchTransport
 	identity(): Promise<Identity>
 	assertIdentity(): Promise<void>
 	select(fileId: number, signal?: AbortSignal): Promise<FileContext>

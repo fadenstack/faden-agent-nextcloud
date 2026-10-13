@@ -5,10 +5,12 @@ import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { germanStrings } from './strings.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments } from '../integrations/nextcloud/tools.ts'
 import type { FileApi, FileContext, Identity, Proposal, WriteArguments } from '../integrations/nextcloud/types.ts'
+import { NextcloudSearchService } from '../integrations/nextcloud/search.ts'
 
 export class NextcloudAgent {
 
 	readonly selection: SelectedContext
+	readonly discovery: NextcloudSearchService
 	readonly tokens: AgentTokenProvider
 	readonly agent: FadenstackAgent
 	readonly chat: AgentChatViewModel
@@ -28,6 +30,7 @@ export class NextcloudAgent {
 		const url = new URL(config.serverUrl)
 		this.#developmentHttp = config.development && url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
 		this.selection = new SelectedContext(files)
+		this.discovery = new NextcloudSearchService(files)
 		this.#fetch = async (input, init) => {
 			this.#stop.signal.throwIfAborted()
 			if (new URL(String(input)).origin !== new URL(config.serverUrl).origin) throw new Error('The request origin is not approved.')
@@ -94,6 +97,7 @@ export class NextcloudAgent {
 	}
 
 	list(signal: AbortSignal): Promise<unknown> { return this.files.list(this.context().id, signal) }
+	search(filters: Parameters<NextcloudSearchService['search']>[0], signal: AbortSignal) { return this.discovery.search(filters, signal) }
 	async write(_args: WriteArguments, call: ToolCallContext): Promise<unknown> {
 		const proposal = this.#proposals.get(call.callId)
 		if (!proposal) throw new Error('No individually approved proposal exists for this tool call.')
@@ -174,6 +178,7 @@ export class NextcloudAgent {
 		this.chat.stop()
 		this.chat.dispose()
 		this.selection.clear()
+		this.discovery.clear()
 		this.#active = undefined
 		this.#read = undefined
 		this.#proposals.clear()
