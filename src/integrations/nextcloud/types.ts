@@ -60,10 +60,14 @@ export interface SearchFilters {
 	limit?: number
 }
 export interface SearchPlan { filters: Required<Pick<SearchFilters, 'query' | 'scope' | 'limit' | 'sort_by' | 'sort_direction'>> & SearchFilters; queries: string[]; backend: string }
+export interface SearchCapabilities { filename_search: boolean; document_search: boolean; indexed_content_search: boolean; provider: string | null; explanation: string }
+export interface NativeContentResults { available: boolean; provider: string | null; explanation: string; results: { file: FileMetadata; excerpt: string | null }[]; partial?: boolean; next_page?: number | null }
 export interface SearchTransport {
 	plan(filters: SearchFilters, signal: AbortSignal): Promise<SearchPlan>
 	dav(xml: string, signal: AbortSignal): Promise<string>
-	resolve(resourceIds: string[], scope: string, signal: AbortSignal): Promise<FileMetadata[]>
+	resolve(resourceIds: string[], scope: string, signal: AbortSignal, content?: boolean): Promise<FileMetadata[]>
+	capabilities(signal: AbortSignal): Promise<SearchCapabilities>
+	content(query: string, limit: number, page: number, signal: AbortSignal): Promise<NativeContentResults>
 }
 export interface FileResource {
 	resource_id: string
@@ -76,6 +80,7 @@ export interface FileResource {
 	web_url: string
 	is_directory: boolean
 	capabilities: string[]
+	excerpt?: string | null
 }
 export interface SearchResults {
 	kind: 'nextcloud-search-results'
@@ -85,6 +90,9 @@ export interface SearchResults {
 	results: FileResource[]
 	partial: boolean
 	duration_ms: number
+	available?: boolean
+	explanation?: string
+	next_page?: number | null
 }
 
 export interface FileApi {

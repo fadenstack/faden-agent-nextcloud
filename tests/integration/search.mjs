@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 import { NextcloudSearchService } from '../../src/integrations/nextcloud/search.ts'
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { extractPdfWith } from '../../src/integrations/nextcloud/pdf-core.ts'
 
 const base = process.env.NEXTCLOUD_URL || 'http://localhost:8090'
 assert.match(base, /^http:\/\/(localhost|127\.0\.0\.1):\d+$/)
@@ -47,9 +49,16 @@ class User {
       assertIdentity: async () => { const config = await (await this.request('/index.php/apps/fadenstack_agent/config')).json(); assert.deepEqual(config,this.config) },
       select: (fileId,signal) => this.api('/context',{fileId}),
       read: (contextId,signal) => this.api('/context/read',{contextId}),
+      pdf: async (contextId,signal) => {
+        const response = await this.request('/index.php/apps/fadenstack_agent/context/content',{method:'POST',signal,headers:{'Content-Type':'application/json','X-Fadenstack-Session':this.binding},body:JSON.stringify({contextId})})
+        assert.equal(response.status,200)
+        return new Uint8Array(await response.arrayBuffer())
+      },
       searchTransport: {
         plan: (filters,signal) => this.api('/search/plan',{filters}),
-        resolve: (resourceIds,scope,signal) => this.api('/search/resolve',{resourceIds,scope}),
+        resolve: (resourceIds,scope,signal,content = false) => this.api('/search/resolve',{resourceIds,scope,content}),
+        capabilities: signal => this.api('/search/capabilities',{}),
+        content: (query,limit,page,signal) => this.api('/search/content',{query,limit,page}),
         dav: async (xml,signal) => {
           const response = await this.request('/remote.php/dav/',{method:'SEARCH',body:xml,signal,headers:{'Content-Type':'text/xml'}})
           assert.equal(response.status,207,await response.clone().text())
@@ -97,4 +106,48 @@ await bob.api('/context',{fileId},404)
 await bob.api('/search/plan',{filters:{scope}},404)
 for(const filters of [{scope:'../../alice'},{query:'</d:literal>/foo'},{limit:51},{modified_after:'2026-02-30T00:00:00Z'},{file_types:['../../php']},{min_size:-1},{sort_by:'invented'}]) await alice.api('/search/plan',{filters},400)
 await alice.api('/search/resolve',{resourceIds:['https://evil.invalid/file']},400)
+const controller = new AbortController()
+const rid = latest.results[0].resource_id
+const passage = await service.inFile(rid,'termination','exact_phrase',10,controller.signal)
+assert.equal(passage.total_matches,1)
+assert.ok(passage.matches[0].excerpt.includes('30 days written notice'))
+assert.equal(passage.matches[0].line,3)
+assert.equal(passage.cache_hit,false); checks++
+const repeated = await service.inFile(rid,'warranty','terms',10,controller.signal)
+assert.equal(repeated.cache_hit,true)
+assert.equal(repeated.total_matches,1); checks++
+const capabilities = await alice.api('/search/capabilities',{})
+assert.equal(capabilities.indexed_content_search,false)
+const content = await service.content('GDPR',20,1,controller.signal)
+assert.equal(content.available,false)
+assert.equal(content.search_mode,'indexed-content')
+assert.ok(content.explanation.includes('unavailable'))
+assert.deepEqual(content.results,[]); checks++
+assert.equal((await alice.dav(root+'/Engineering/supplier contract.md','PUT','# Revised contract\nTermination notice period: 45 days.')).status,204)
+const refreshed = await service.inFile(rid,'termination','exact_phrase',10,controller.signal)
+assert.equal(refreshed.cache_hit,false)
+assert.ok(refreshed.matches[0].excerpt.includes('45 days')); checks++
+await assert.rejects(service.inFile('nextcloud:files:999999999','x','terms',10,controller.signal),/returned by search/)
+await assert.rejects(service.inFile('https://evil.invalid','x','terms',10,controller.signal),/resource ID/)
+const admin = new User('pilot-admin','local-pilot-only')
+await admin.login()
+const sourcePdf = await admin.dav('Reasons to use Nextcloud.pdf','GET')
+assert.equal(sourcePdf.status,200)
+assert.equal((await alice.dav(root+'/Engineering/Reasons.pdf','PUT',new Uint8Array(await sourcePdf.arrayBuffer()),{'Content-Type':'application/pdf'})).status,201)
+const pdfFiles = alice.files()
+let parsed = 0
+const pdfService = new NextcloudSearchService(pdfFiles,async (context,signal) => {
+  parsed++
+  return context.file.mime === 'application/pdf' ? extractPdfWith(getDocument,await pdfFiles.pdf(context.id,signal),signal) : pdfFiles.read(context.id,signal)
+})
+const pdfRows = await pdfService.search({scope,file_types:['pdf']},controller.signal)
+const pdfResult = await pdfService.inFile(pdfRows.results[0].resource_id,'Nextcloud','exact_phrase',50,controller.signal)
+assert.ok(pdfResult.total_matches > 1)
+const extractedPages = pdfService.cache.get(pdfRows.results[0].resource_id).document.pages
+assert.ok(pdfResult.matches.every(match => Number.isInteger(match.page) && extractedPages.find(page => page.page === match.page)?.text.includes(match.matched_text)))
+assert.ok(pdfResult.matches[0].excerpt.toLowerCase().includes('nextcloud')); checks++
+const pdfAgain = await pdfService.inFile(pdfRows.results[0].resource_id,'security','terms',10,controller.signal)
+assert.equal(pdfAgain.cache_hit,true)
+assert.equal(parsed,1); checks++
+console.log(`PDF passage query ${pdfResult.duration_ms}ms; cached query ${pdfAgain.duration_ms}ms, one PDF.js parse.`)
 console.log(`${checks} native search checks passed on ${base}; ${latest.duration_ms}ms latest-contract query. Fixtures retained: ${root}`)

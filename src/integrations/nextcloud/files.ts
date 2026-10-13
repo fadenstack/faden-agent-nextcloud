@@ -1,13 +1,15 @@
 import axios from '@nextcloud/axios'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults } from './types.ts'
 
 export class NextcloudFiles implements FileApi {
 
 	constructor(readonly initial: Identity) {}
 	readonly searchTransport: SearchTransport = {
 		plan: (filters, signal) => this.post<SearchPlan>('/search/plan', { filters }, signal),
-		resolve: (resourceIds, scope, signal) => this.post<FileMetadata[]>('/search/resolve', { resourceIds, scope }, signal),
+		resolve: (resourceIds, scope, signal, content = false) => this.post<FileMetadata[]>('/search/resolve', { resourceIds, scope, content }, signal),
+		capabilities: signal => this.post<SearchCapabilities>('/search/capabilities', {}, signal),
+		content: (query, limit, page, signal) => this.post<NativeContentResults>('/search/content', { query, limit, page }, signal),
 		dav: async (xml, signal) => {
 			await this.assertIdentity()
 			const response = await axios.request<string>({
@@ -25,7 +27,7 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async identity(): Promise<Identity> {
-		return (await axios.get<Identity>(generateUrl('/apps/fadenstack_agent/config'))).data
+		return (await axios.get<Identity>(generateUrl('/apps/fadenstack_agent/config'), { timeout: 10000 })).data
 	}
 
 	async assertIdentity(): Promise<void> {
@@ -38,7 +40,7 @@ export class NextcloudFiles implements FileApi {
 
 	async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
 		return (await axios.post<T>(generateUrl(`/apps/fadenstack_agent${path}`), body, {
-			headers: { 'X-Fadenstack-Session': this.initial.binding }, signal,
+			headers: { 'X-Fadenstack-Session': this.initial.binding }, signal, timeout: 20000,
 		})).data
 	}
 
@@ -53,7 +55,7 @@ export class NextcloudFiles implements FileApi {
 	commit(id: string, signal?: AbortSignal): Promise<WriteResult> { return this.post(`/proposals/${encodeURIComponent(id)}/commit`, {}, signal) }
 	async pdf(contextId: string, signal?: AbortSignal): Promise<Uint8Array> {
 		const response = await axios.post<ArrayBuffer>(generateUrl('/apps/fadenstack_agent/context/content'), { contextId }, {
-			headers: { 'X-Fadenstack-Session': this.initial.binding }, responseType: 'arraybuffer', signal,
+			headers: { 'X-Fadenstack-Session': this.initial.binding }, responseType: 'arraybuffer', signal, timeout: 20000,
 		})
 		return new Uint8Array(response.data)
 	}

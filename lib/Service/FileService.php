@@ -89,6 +89,21 @@ class FileService {
 		return $this->metadata($this->node((int)$match[1]));
 	}
 
+	public function assertContentAccess(string $resourceId): void {
+		$file = $this->resource($resourceId);
+		$n = $this->node($file['id']);
+		if (!$n instanceof File) {
+			throw new Problem('Document contents require a file, not a folder.', 415);
+		}
+		// Opening through the active storage enforces wrappers such as access-control
+		// rules too. No file bytes are read or returned by this authorization probe.
+		$stream = $n->fopen('rb');
+		if (!is_resource($stream)) {
+			throw new Problem('You cannot read this document.', 403);
+		}
+		fclose($stream);
+	}
+
 	public function searchScope(string $scope): array {
 		$path = '';
 		$id = $this->root->getUserFolder($this->uid())->getId();

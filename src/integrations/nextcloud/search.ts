@@ -1,4 +1,5 @@
-import type { FileApi, FileMetadata, FileResource, SearchFilters, SearchResults } from './types.ts'
+import type { FileApi, FileMetadata, FileResource, SearchFilters, SearchResults, FileContext } from './types.ts'
+import { findPassages, type DocumentText } from './passages.ts'
 
 export function resourceId(value: unknown): number {
 	if (typeof value !== 'string' || !/^nextcloud:files:[1-9]\d{0,14}$/.test(value)) throw new Error('Use a Nextcloud file resource ID, not a path or URL.')
@@ -40,10 +41,20 @@ export function davResourceIds(xml: string): string[] {
 export class NextcloudSearchService {
 
 	readonly issued = new Map<string, FileMetadata>()
-	constructor(readonly files: FileApi) {}
+	readonly cache = new Map<string, { context: FileContext; document: DocumentText; expires: number }>()
+	constructor(readonly files: FileApi, readonly extract: (context: FileContext, signal: AbortSignal) => Promise<DocumentText> = async (context, signal) => {
+		if (context.file.mime !== 'application/pdf') return files.read(context.id, signal)
+		const { extractPdf } = await import('./pdf.ts')
+		return extractPdf(await files.pdf(context.id, signal), signal)
+	}) {}
+
+	async authorize() {
+		try { await this.files.assertIdentity() } catch (error) { this.clear(); throw error }
+	}
+
 	async search(filters: SearchFilters, signal: AbortSignal): Promise<SearchResults> {
 		const started = performance.now()
-		await this.files.assertIdentity()
+		await this.authorize()
 		const transport = this.files.searchTransport
 		if (!transport) throw new Error('Native search transport is unavailable.')
 		const deadline = AbortSignal.any([signal, AbortSignal.timeout(20000)])
@@ -82,6 +93,88 @@ export class NextcloudSearchService {
 		while (this.issued.size > 150) this.issued.delete(this.issued.keys().next().value!)
 	}
 
-	clear() { this.issued.clear() }
+	async metadata(id: unknown, signal: AbortSignal, selected?: FileContext, content = false): Promise<FileMetadata> {
+		const number = resourceId(id)
+		if (selected?.file.id === number) this.remember(selected.file)
+		if (!this.issued.has(String(id))) throw new Error('Use a resource returned by search or explicitly attached by the user first.')
+		await this.authorize()
+		signal.throwIfAborted()
+		const found = this.files.searchTransport
+			? (await this.files.searchTransport.resolve([String(id)], 'all', signal, content))[0]
+			: (await this.files.select(number, signal)).file
+		if (!found) { this.cache.delete(String(id)); this.issued.delete(String(id)); throw new Error('This file was deleted, moved out of your access, or permission was revoked.') }
+		const old = this.issued.get(String(id))!
+		if (found.etag !== old.etag || found.path !== old.path) this.cache.delete(String(id))
+		this.remember(found)
+		return found
+	}
+
+	async load(id: string, signal: AbortSignal, selected?: FileContext) {
+		const started = performance.now()
+		const current = await this.metadata(id, signal, selected, true)
+		if (selected && (selected.file.etag !== current.etag || selected.file.path !== current.path)) throw new Error('The included file changed. Reattach it before sending.')
+		const cached = this.cache.get(id)
+		if (this.files.searchTransport && cached && cached.expires > Date.now() && cached.context.expires * 1000 > Date.now()
+			&& cached.context.file.etag === current.etag && cached.context.file.path === current.path) {
+			return { ...cached, cache_hit: true, retrieval_ms: Math.round(performance.now() - started) }
+		}
+		const context = selected ?? await this.files.select(resourceId(id), signal)
+		const document = await this.extract(context, signal)
+		signal.throwIfAborted()
+		const after = await this.metadata(id, signal, context, true)
+		if (context.file.etag !== after.etag || context.file.path !== after.path) throw new Error('The document changed during extraction. Search it again.')
+		const entry = { context, document, expires: Date.now() + 300000 }
+		this.cache.delete(id)
+		this.cache.set(id, entry)
+		while (this.cache.size > 4) this.cache.delete(this.cache.keys().next().value!)
+		return { ...entry, cache_hit: false, retrieval_ms: Math.round(performance.now() - started) }
+	}
+
+	async read(id: string, signal: AbortSignal, selected?: FileContext) {
+		const result = await this.load(id, signal, selected)
+		const document = { ...result.document }
+		delete document.pages
+		return { file: result.context.file, resource: fileResource(result.context.file), ...document, cache_hit: result.cache_hit, retrieval_ms: result.retrieval_ms }
+	}
+
+	async inFile(id: string, query: unknown, mode: unknown, maximum: unknown, signal: AbortSignal, selected?: FileContext) {
+		findPassages({ text: '', partial: false }, query, mode, maximum)
+		const started = performance.now()
+		const result = await this.load(id, signal, selected)
+		return {
+			kind: 'nextcloud-document-search',
+			search_mode: 'document',
+			provider: result.context.file.mime === 'application/pdf' ? 'pdfjs' : 'nextcloud-text',
+			file: fileResource(result.context.file),
+			...findPassages(result.document, query, mode, maximum),
+			cache_hit: result.cache_hit,
+			retrieval_ms: result.retrieval_ms,
+			duration_ms: Math.round(performance.now() - started),
+		}
+	}
+
+	async content(query: unknown, limit: unknown, page: unknown, signal: AbortSignal): Promise<SearchResults> {
+		if (typeof query !== 'string' || !query.trim() || query.length > 200 || /[\x00-\x1f\x7f]/.test(query)
+			|| typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 50 || typeof page !== 'number' || !Number.isInteger(page) || page < 1 || page > 100) throw new Error('Invalid native content-search query, limit or page.')
+		await this.authorize()
+		const started = performance.now()
+		if (!this.files.searchTransport) throw new Error('Native content search is unavailable.')
+		const data = await this.files.searchTransport.content(query, limit, page, AbortSignal.any([signal, AbortSignal.timeout(20000)]))
+		for (const { file } of data.results) this.remember(file)
+		return {
+			kind: 'nextcloud-search-results',
+			search_mode: 'indexed-content',
+			provider: data.provider ?? 'unavailable',
+			available: data.available,
+			explanation: data.explanation,
+			ordering: 'native provider relevance',
+			results: data.results.map(({ file, excerpt }) => ({ ...fileResource(file), excerpt })),
+			partial: data.partial ?? false,
+			next_page: data.next_page,
+			duration_ms: Math.round(performance.now() - started),
+		}
+	}
+
+	clear() { this.issued.clear(); this.cache.clear() }
 
 }

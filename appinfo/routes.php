@@ -8,6 +8,8 @@ return ['routes' => [
 	['name' => 'files#select', 'url' => '/context', 'verb' => 'POST'],
 	['name' => 'files#searchPlan', 'url' => '/search/plan', 'verb' => 'POST'],
 	['name' => 'files#searchResolve', 'url' => '/search/resolve', 'verb' => 'POST'],
+	['name' => 'files#searchCapabilities', 'url' => '/search/capabilities', 'verb' => 'POST'],
+	['name' => 'files#searchContent', 'url' => '/search/content', 'verb' => 'POST'],
 	['name' => 'files#read', 'url' => '/context/read', 'verb' => 'POST'],
 	['name' => 'files#content', 'url' => '/context/content', 'verb' => 'POST'],
 	['name' => 'files#listing', 'url' => '/context/list', 'verb' => 'POST'],

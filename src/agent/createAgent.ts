@@ -5,7 +5,7 @@ import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { germanStrings } from './strings.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments } from '../integrations/nextcloud/tools.ts'
 import type { FileApi, FileContext, Identity, Proposal, WriteArguments } from '../integrations/nextcloud/types.ts'
-import { NextcloudSearchService } from '../integrations/nextcloud/search.ts'
+import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 
 export class NextcloudAgent {
 
@@ -51,7 +51,8 @@ export class NextcloudAgent {
 			.useApprovals({
 				request: async (request, signal) => {
 					if (WRITE_TOOLS.has(request.toolName) && request.source === 'host') {
-						const proposal = await files.propose(this.context().id, writeArguments(request.toolName, request.arguments), signal)
+						const target = await this.writeContext(request.toolName, request.arguments.resource_id, signal)
+						const proposal = await files.propose(target.id, writeArguments(request.toolName, request.arguments), signal)
 						this.#proposals.set(request.callId, proposal)
 						request = {
 							...request,
@@ -83,21 +84,42 @@ export class NextcloudAgent {
 		return this.#active
 	}
 
-	async read(signal: AbortSignal): Promise<unknown> {
-		if (this.#read) return this.#read
-		const context = this.context()
-		if (context.file.mime === 'application/pdf') {
-			const { extractPdf } = await import('../integrations/nextcloud/pdf.ts')
-			const result = await extractPdf(await this.files.pdf(context.id, signal), signal)
-			this.#read = { ...result, file: context.file }
-		} else {
-			this.#read = await this.files.read(context.id, signal)
-		}
-		return this.#read
+	async read(signal: AbortSignal, id?: string): Promise<unknown> {
+		if (!id && this.#read) return this.#read
+		const selected = id ? undefined : this.context()
+		const result = await this.discovery.read(id ?? `nextcloud:files:${selected!.file.id}`, signal, selected)
+		if (!id) this.#read = result
+		return result
 	}
 
 	list(signal: AbortSignal): Promise<unknown> { return this.files.list(this.context().id, signal) }
 	search(filters: Parameters<NextcloudSearchService['search']>[0], signal: AbortSignal) { return this.discovery.search(filters, signal) }
+	async metadata(id: unknown, signal: AbortSignal) {
+		const selected = id === undefined ? this.context() : undefined
+		return fileResource(await this.discovery.metadata(id ?? `nextcloud:files:${selected!.file.id}`, signal, selected))
+	}
+
+	inFile(args: Readonly<Record<string, unknown>>, signal: AbortSignal) {
+		const selected = args.resource_id === undefined ? this.context() : undefined
+		const id = args.resource_id ?? `nextcloud:files:${selected!.file.id}`
+		resourceId(id)
+		return this.discovery.inFile(String(id), args.query, args.match_mode ?? 'exact_phrase', args.max_matches ?? 10, signal, selected)
+	}
+
+	contentSearch(args: Readonly<Record<string, unknown>>, signal: AbortSignal) { return this.discovery.content(args.query, args.limit ?? 20, args.page ?? 1, signal) }
+	private async writeContext(tool: string, id: unknown, signal: AbortSignal): Promise<FileContext> {
+		const selected = id === undefined ? this.context() : undefined
+		const key = id ?? `nextcloud:files:${selected!.file.id}`
+		if (id === undefined) this.discovery.remember(selected!.file)
+		await this.discovery.metadata(key, signal, selected)
+		if (tool === 'nc_update_text_file') {
+			const cache = this.discovery.cache.get(String(key))
+			if (!cache || cache.context.expires * 1000 <= Date.now()) throw new Error('Read the current document before proposing an edit.')
+			return cache.context
+		}
+		return selected ?? this.files.select(resourceId(key), signal)
+	}
+
 	async write(_args: WriteArguments, call: ToolCallContext): Promise<unknown> {
 		const proposal = this.#proposals.get(call.callId)
 		if (!proposal) throw new Error('No individually approved proposal exists for this tool call.')

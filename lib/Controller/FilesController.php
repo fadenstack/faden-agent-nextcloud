@@ -59,8 +59,18 @@ class FilesController extends Controller {
 	}
 	#[NoAdminRequired]
 	#[UseSession]
-	public function searchResolve(array $resourceIds, string $scope = 'all'): Response {
-		return $this->run(fn () => $this->search->resolve($resourceIds, $scope));
+	public function searchResolve(array $resourceIds, string $scope = 'all', bool $content = false): Response {
+		return $this->run(fn () => $this->search->resolve($resourceIds, $scope, $content));
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function searchCapabilities(): Response {
+		return $this->run(fn () => $this->search->capabilities());
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function searchContent(string $query, int $limit = 20, int $page = 1): Response {
+		return $this->run(fn () => $this->search->content($query, $limit, $page));
 	}
 	#[NoAdminRequired]
 	#[UseSession]

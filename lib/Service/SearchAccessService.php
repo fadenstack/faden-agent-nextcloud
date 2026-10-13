@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace OCA\FadenstackAgent\Service;
 
+use OCP\App\IAppManager;
+use OCP\FullTextSearch\IFullTextSearchManager;
+
 /** Validated WebDAV query plans; the native DAV backend does the actual search. */
 class SearchAccessService {
 	public function __construct(
 		private FileService $files,
+		private IAppManager $apps,
+		private IFullTextSearchManager $fulltext,
 	) {
 	}
 
@@ -109,7 +114,7 @@ class SearchAccessService {
 		return ['filters' => $f, 'queries' => $queries, 'backend' => 'webdav-search'];
 	}
 
-	public function resolve(array $resourceIds, string $scope = 'all'): array {
+	public function resolve(array $resourceIds, string $scope = 'all', bool $content = false): array {
 		if (!array_is_list($resourceIds) || count($resourceIds) > 51) {
 			throw new Problem('Resolve at most 51 search results per request.');
 		}
@@ -118,12 +123,23 @@ class SearchAccessService {
 			throw new Problem('Search scope must be a folder.');
 		}
 		$results = [];
+		foreach ($resourceIds as $id) {
+			if (!is_string($id) || !preg_match('/^nextcloud:files:[1-9][0-9]{0,14}$/D', $id)) {
+				throw new Problem('Invalid file resource ID.');
+			}
+		}
 		foreach (array_unique($resourceIds) as $id) {
 			if (!is_string($id) || !preg_match('/^nextcloud:files:[1-9][0-9]{0,14}$/D', $id)) {
 				throw new Problem('Invalid file resource ID.');
 			}
 			try {
 				$f = $this->files->resource($id);
+				if ($content) {
+					if ($f['folder']) {
+						continue;
+					}
+					$this->files->assertContentAccess($id);
+				}
 				if ($folder && !str_starts_with($f['path'], rtrim($folder['path'], '/') . '/')) {
 					continue;
 				}
@@ -137,5 +153,55 @@ class SearchAccessService {
 			}
 		}
 		return $results;
+	}
+
+	public function capabilities(): array {
+		$available = $this->apps->isEnabledForUser('fulltextsearch')
+			&& $this->apps->isEnabledForUser('files_fulltextsearch')
+			&& $this->fulltext->isAvailable() && $this->fulltext->isProviderIndexed('files');
+		return ['filename_search' => true, 'document_search' => true, 'indexed_content_search' => $available,
+			'provider' => $available ? 'nextcloud-fulltextsearch:files' : null,
+			'explanation' => $available ? 'Searches the native file index. Verify passages with document search; provider metadata/comments may also match.'
+				: 'Cross-document content search is unavailable: no registered, indexed native Files full-text provider was detected. Filename search is a separate capability.'];
+	}
+
+	public function content(string $query, int $limit = 20, int $page = 1): array {
+		if ($query === '' || mb_strlen($query) > 200 || preg_match('/[\x00-\x1f\x7f]/', $query) || $limit < 1 || $limit > 50 || $page < 1 || $page > 100) {
+			throw new Problem('Use a search phrase of 1–200 characters, limit 1–50 and page 1–100.');
+		}
+		$status = $this->capabilities();
+		if (!$status['indexed_content_search']) {
+			return ['available' => false, ...$status, 'results' => []];
+		}
+		try {
+			$groups = $this->fulltext->search(['providers' => ['files'], 'search' => $query, 'size' => $limit, 'page' => $page]);
+		} catch (\Throwable $e) {
+			throw new Problem('The native content-search provider could not complete this query. No filename fallback was performed.', 503);
+		}
+		$results = [];
+		$received = 0;
+		foreach ($groups as $group) {
+			foreach ($group->getDocuments() as $document) {
+				if ($received >= $limit) {
+					break 2;
+				}
+				$received++;
+				$id = 'nextcloud:files:' . $document->getId();
+				if (!preg_match('/^nextcloud:files:[1-9][0-9]{0,14}$/D', $id)) {
+					continue;
+				}
+				$authorized = $this->resolve([$id], 'all', true);
+				if (!$authorized) {
+					continue;
+				}
+				$excerpts = $document->getExcerpts();
+				$excerpt = isset($excerpts[0]['excerpt']) && is_string($excerpts[0]['excerpt'])
+					? mb_substr(strip_tags($excerpts[0]['excerpt']), 0, 600) : null;
+				$results[] = ['file' => $authorized[0], 'excerpt' => $excerpt];
+			}
+		}
+		return ['available' => true, 'provider' => $status['provider'], 'results' => $results, 'partial' => $received >= $limit,
+			'next_page' => $received >= $limit && $page < 100 ? $page + 1 : null,
+			'explanation' => $status['explanation']];
 	}
 }
