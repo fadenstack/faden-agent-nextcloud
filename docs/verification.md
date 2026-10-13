@@ -52,13 +52,41 @@ The final upgrade-guard/locale package then passed 40 workflow, 73 discovery and
 56 security checks on port 8093, again without development dependencies. The
 temporary package containers are stopped and their test volume retained.
 
-The saved live-search Markdown was also opened in the actual Nextcloud Text
-viewer for screenshot verification. A separate live browser search prompt is
-prepared in the fixture folder. Automation clicks/keys did not reliably reach the
-controls, and the latest tab is awaiting a manual Sign in before Send. Connection
-verification failures now show their reason instead of silently clearing the UI.
-This does not count as completed browser search acceptance. Original real
-browser PDF/editor acceptance remains recorded below.
+The mandatory live browser search workflow is now complete on Nextcloud 35,
+using the supplied HTTPS Fadenstack server and published real model. Browser input
+worked after the user resumed the session. Native filename discovery displayed
+typed cards for contracts 401 and 402, ordered by modification date, with parent
+folder, date, Open in Nextcloud and Add to context actions. The two bounded native
+queries took 791 and 720 ms. Adding contract 401 through its card produced an
+included composer attachment. `nc_search_in_file` verified one exact occurrence
+of **30 days' written notice** at actual text line 12 in 484 ms; its passage card
+and final answer showed the supporting text and source link.
+
+The next request displayed the exact destination and full Markdown in the
+individual approval card. **Allow once** created file **488**:
+`/Fadenstack Search Pilot 2026-10-13/Discovery Browser Summary 2026-10-13.md`.
+Independent authenticated WebDAV read-back matched all **985 approved UTF-8 bytes**
+exactly and confirmed the source link to contract 401. The returned file link
+opened the saved summary in Nextcloud Text. Screenshots of the result cards,
+verified answer, approval, completed write and saved document are in the gallery.
+The three browser turns took 333.3, 92.9 and 241.5 seconds, including model
+generation and manual test approval timing; these are not native API latencies.
+
+The first request specified "current folder" without including a folder chip.
+The host correctly rejected selection-only listing/read tools; the agent explained
+the missing scope and explicitly searched accessible filenames instead. Include a
+folder for strict folder-scoped requests, or use a discovered folder resource ID.
+The included contract's parent matched the visible current folder for creation.
+One narrative link for the older contract used the wrong localhost port; the
+trusted result-card links, latest-contract answer and saved source link were
+correct. Model-written prose remains reviewable; canonical cards are the reliable
+opening actions. Connection verification failures show their reason instead of
+silently clearing the UI. Original PDF/editor acceptance remains recorded below.
+
+**v0.1 Search and Document Discovery: mandatory functional increments and the
+real-server browser demonstration complete.** Optional indexed content search
+degrades truthfully on this deployment; a live positive full-text provider and a
+broader browser/storage matrix remain unverified.
 
 This is an installable development pilot. The mandatory real-server PDF → model
 summary → individually approved Markdown scenario passed in the Nextcloud 35
