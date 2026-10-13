@@ -4,6 +4,10 @@ This is an installable development pilot. The mandatory real-server PDF → mode
 summary → individually approved Markdown scenario passed in the Nextcloud 35
 browser drawer. Remaining browser/storage coverage is documented separately.
 
+**Phase 1 (Native Agent Interface and Connection): complete for the Nextcloud 35
+pilot.** The user completed the additional full-screen editor Send test; its
+finished conversation was independently inspected in the existing browser tab.
+
 ## Tested environments
 
 | Component | Actual version/configuration |
@@ -79,9 +83,13 @@ and attached the open saved Markdown (file 317), with its exact source link.
 Desktop geometry leaves the editor alongside the drawer; below the desktop
 breakpoint it uses an overlay. Browser sizing was restored after both checks.
 The context is saved content, not unsaved editor buffers; the composer states this.
-An extra editor-specific model request could not be submitted reliably by browser
-automation and is not claimed as a completed model test. The completed live
-PDF/model/write acceptance below remains the end-to-end evidence.
+The earlier browser-automation submission check was inconclusive. The user then
+sent "can you edit this?" from this full-screen drawer, with the saved Markdown
+attached. Inspection of the existing tab confirmed the allowed `nc_read_file`
+call, its completed tool result, and a finished model reply referencing the
+document's five sections and asking what changes were wanted (77.4 seconds).
+This closes the editor Send acceptance check. It verifies a read/conversation;
+that request did not apply an edit. The screenshot is retained in the gallery.
 
 ## Completed real-server browser acceptance
 

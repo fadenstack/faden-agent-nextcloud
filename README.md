@@ -10,6 +10,9 @@ operations and permission checks pass on Nextcloud 31 and 35. This is a developm
 pilot with documented browser/storage limits. See
 [verification](docs/verification.md) and [limitations](docs/known-limitations.md).
 
+Phase 1 (native interface and connection) is complete for the Nextcloud 35 pilot,
+including a user-tested real-server conversation from the full-screen Text editor.
+
 ## Features
 
 - Header mascot and app-menu entry open a Vue 3 right drawer without leaving Files.

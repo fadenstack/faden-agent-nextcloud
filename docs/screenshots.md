@@ -10,6 +10,11 @@ attachment is the open saved Markdown, with its source link and saved-content hi
 
 ![Full-screen editor assistant](screenshots/fullscreen-editor-assistant-dark.jpg)
 
+The user's completed editor conversation, including an allowed `nc_read_file`
+call and the final model response, closes the editor Send check.
+
+![Completed full-screen editor response](screenshots/fullscreen-editor-live-response-dark.jpg)
+
 ## Live PDF summary
 
 ![Real PDF summary](screenshots/live-pdf-summary-dark.jpg)
