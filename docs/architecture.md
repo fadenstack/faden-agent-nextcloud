@@ -1,0 +1,59 @@
+# Architecture decisions
+
+The starting repository is the official Nextcloud app template (AGPL-3.0-or-later).
+The integration targets Nextcloud 31–35, PHP 8.2+, Vue 3 and Node 24. Nextcloud 35
+is the primary target. Docker HTTP checks cover 31 and 35; intermediate versions
+and external/encrypted storage need separate deployment verification.
+
+The global `BeforeTemplateRenderedEvent` loads the shell on authenticated user
+pages, following Nextcloud Assistant's header integration. A native `NcAppSidebar`
+renders an independent chat drawer; no tab is added to the file-info sidebar.
+33–35 use `@nextcloud/files` 4 public file actions/sidebar events; 31–32 use
+version 3 file actions through an npm alias. Navigation entry clicks open the
+drawer in place; opening that route in a new tab redirects to Files with the drawer.
+Neither version offers a public selected-row getter. A small DOM adapter reads
+the checked visible row's ID, with a public **Ask Fadenstack** file action as the
+fallback. It does not access private Vue/Pinia stores. PHP reauthorizes all IDs.
+
+Reference inspection: `../faden-agent-chrome/src/panel/browserAgent.ts`, context
+tools, PDF handling, and `../fadenstack-sdk-typescript/packages/{client,agents,ui}`.
+The browser reference uses older `FadenAgent`/`FadenClient` exports; this app uses
+the published 0.2.0-rc.1 `FadenstackAgent`/`FadenstackClient` contracts. No Chrome
+storage, React components, local agent definitions or model selection are copied.
+
+## Boundaries
+
+- Nextcloud registers a global header button, drawer and native administration settings. PHP
+  resolves nodes inside the active user's folder, checks permissions at operation
+  time and owns bounded reads, immutable write proposals and revision checks.
+- The frontend subscribes to the framework-neutral SDK observables without Vue
+  proxying SDK objects (which contain private fields). The SDK owns authentication,
+  streaming, sessions, tool governance, cancellation and approval decisions.
+- Tokens, transcripts and approvals use fresh memory stores. A server-issued
+  Nextcloud session binding is checked before sending requests and executing host
+  operations. A changed identity ends the frontend runtime.
+- Selecting a file creates an opaque session-scoped context capability and reads
+  metadata only. The SDK's implicit `AttachmentViewModel` offers a chip in the
+  composer that can be excluded, following the Chrome agent's lazy attachments.
+  A send freezes the included capability. Tool arguments cannot
+  redirect reads to another file. Folder listing is bounded and never reads children.
+- Supported reads are UTF-8 text, Markdown, CSV, JSON and text PDFs extracted by
+  Mozilla PDF.js in the browser. Byte, page, character and time limits are explicit.
+- Each write is a one-use server proposal. Its target, original text, revision and
+  replacement are displayed in the SDK approval card. The user's Allow click
+  approves that exact proposal; the host tool then commits it. Write tools use the
+  SDK's stricter destructive class to require individual approval in every mode.
+  Updates open the public `File::fopen('r+')` write stream and compare storage ETags
+  under its exclusive lock before truncating/writing; creations
+  lock the destination folder and refuse existing names. No overwrite fallback.
+- Fadenstack calls go directly from the browser to the configured origin, with
+  SDK credentials and an origin guard. There is no AI proxy backend, database table,
+  conversion service, or independent execution loop. CSP permits only that origin;
+  administrators must configure matching CORS on Fadenstack.
+
+## Validation
+
+Each phase is implemented as a vertical slice. Automated SDK simulation tests are
+distinct from actual Nextcloud HTTP/permission tests and from a live model pilot.
+The mandatory PDF → streamed summary → approved Markdown scenario must be recorded
+as unverified until it succeeds against a published Fadenstack agent and real model.

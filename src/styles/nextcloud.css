@@ -1,0 +1,50 @@
+/* SDK layout and interactions, with Nextcloud's active user theme. */
+.fdn-chat[data-theme=nextcloud] {
+	--fdn-bg: var(--color-main-background);
+	--fdn-surface: var(--color-background-hover);
+	--fdn-surface-high: var(--color-background-dark);
+	--fdn-surface-hover: var(--color-background-hover);
+	--fdn-text: var(--color-main-text);
+	--fdn-text-muted: var(--color-text-maxcontrast);
+	--fdn-text-faint: var(--color-text-maxcontrast);
+	--fdn-border: var(--color-border);
+	--fdn-hairline: var(--color-border-dark);
+	--fdn-accent: var(--color-primary-element);
+	--fdn-on-accent: var(--color-primary-element-text);
+	--fdn-accent-soft: var(--color-primary-element-light);
+	--fdn-on-accent-soft: var(--color-primary-element-light-text);
+	--fdn-danger: var(--color-error);
+	--fdn-danger-soft: var(--color-error-hover);
+	--fdn-warning: var(--color-warning-text);
+	--fdn-warning-soft: var(--color-warning);
+	--fdn-success: var(--color-success);
+	--fdn-code-bg: var(--color-background-dark);
+	--fdn-focus: var(--color-primary-element);
+	color-scheme: inherit;
+}
+
+.fdn-chat button { min-height: 0; margin: 0; }
+
+.fdn-chat textarea { margin: 0; box-shadow: none; }
+
+.fdn-context-bar { display: flex; padding: 6px 14px; font-size: 11px; min-width: 0; }
+
+.fdn-context-bar a { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.fdn-chat pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 350px; overflow-y: auto; }
+
+.fdn-chat .fdn-approval pre { padding: 10px; background: var(--fdn-code-bg); border-radius: 8px; }
+
+.fdn-chat .fdn-user-bubble { white-space: pre-wrap; }
+
+.fdn-chat .fdn-chip-toggle { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; padding: 4px 8px; }
+
+.fdn-chat .fdn-chip-title { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.fdn-chat .fdn-chip-off { opacity: .6; }
+
+.fdn-chat .fdn-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+.fdn-chat .fdn-actions button { padding: 6px 12px; border-radius: 8px; }
+
+.fdn-chat .fdn-actions .fdn-primary { background: var(--fdn-accent); color: var(--fdn-on-accent); }

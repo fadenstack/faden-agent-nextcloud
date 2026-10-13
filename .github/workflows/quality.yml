@@ -1,0 +1,72 @@
+name: Quality and pilot package
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run stylelint
+      - run: npm test
+      - run: npm audit --omit=dev
+      - run: npm run build
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fadenstack-agent-pilot
+          path: build/fadenstack_agent-*.tar.gz
+  php:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.3', '8.5']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:v2
+      - run: composer validate --strict
+      - run: composer install --no-interaction --no-progress
+      - run: find lib appinfo templates tests -name '*.php' -print0 | xargs -0 -n1 php -l
+      - run: composer test:unit
+      - run: composer cs:check
+        env:
+          PHP_CS_FIXER_IGNORE_ENV: 1
+  nextcloud:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: nextcloud
+            port: 8088
+          - service: nextcloud35
+            port: 8090
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci && npm run build
+      - run: docker compose up -d ${{ matrix.service }}
+      - name: Wait for Nextcloud installation
+        run: |
+          for i in $(seq 1 90); do
+            if docker compose exec -T -u www-data ${{ matrix.service }} php occ status --output=json 2>/dev/null | jq -e '.installed == true'; then exit 0; fi
+            sleep 2
+          done
+          docker compose logs ${{ matrix.service }}
+          exit 1
+      - run: node scripts/setup-dev.mjs ${{ matrix.service }}
+      - run: npm run test:integration
+        env:
+          NEXTCLOUD_URL: http://localhost:${{ matrix.port }}

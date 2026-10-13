@@ -1,10 +1,15 @@
 {
-  "name": "app_template",
-  "version": "1.0.0",
+  "name": "fadenstack_agent",
+  "version": "0.1.0",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
+    "prebuild": "node scripts/clean.mjs",
     "build": "vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:integration": "node tests/integration/nextcloud.mjs",
+    "package": "node scripts/package.mjs",
     "dev": "vite --mode development build",
     "lint": "eslint src",
     "stylelint": "stylelint src/**/*.vue src/**/*.scss src/**/*.css",
@@ -14,17 +19,36 @@
     "extends @nextcloud/browserslist-config"
   ],
   "dependencies": {
+    "@fadenstack/agents": "0.2.0-rc.1",
+    "@fadenstack/client": "0.2.0-rc.1",
+    "@fadenstack/ui": "0.2.0-rc.1",
+    "@nextcloud/auth": "^2.5.0",
+    "@nextcloud/axios": "^2.5.0",
+    "@nextcloud/event-bus": "^3.3.2",
+    "@nextcloud/files": "^4.0.0",
+    "@nextcloud/files-legacy": "npm:@nextcloud/files@^3.12.2",
+    "@nextcloud/initial-state": "^3.0.0",
+    "@nextcloud/l10n": "^3.1.0",
+    "@nextcloud/router": "^3.0.0",
     "@nextcloud/vue": "^9.8.2",
-    "vue": "^3.5.41"
+    "dompurify": "^3.4.16",
+    "pdfjs-dist": "^6.4.299",
+    "vue": "^3.5.42"
   },
   "devDependencies": {
+    "@fadenstack/testing": "0.2.0-rc.1",
     "@nextcloud/browserslist-config": "^3.1.2",
     "@nextcloud/eslint-config": "^8.4.2",
     "@nextcloud/stylelint-config": "^3.1.1",
     "@nextcloud/vite-config": "^2.5.2",
+    "@types/node": "^24.0.0",
+    "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1",
+    "jsdom": "^27.0.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.2"
+    "vite": "^7.3.2",
+    "vitest": "^4.0.0",
+    "vue-tsc": "^3.1.0"
   },
   "engines": {
     "node": "^24.0.0",

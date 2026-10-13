@@ -10,3 +10,7 @@
 /node_modules/
 /js/
 /css/
+/dist/
+/build/
+/dev/upstream-*
+/dev/trust/

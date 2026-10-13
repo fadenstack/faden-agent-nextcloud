@@ -1,8 +1,11 @@
 {
-	"extends": "@vue/tsconfig",
+	"extends": "@vue/tsconfig/tsconfig.dom.json",
 	"include": ["./src/**/*.ts", "./src/**/*.vue"],
 	"compilerOptions": {
-		"erasableSyntaxOnly": true,
+		"strict": true,
+		"moduleResolution": "Bundler",
+		"types": ["vite/client"],
+		"erasableSyntaxOnly": false,
 		"outDir": "js",
 		"rootDir": "src"
 	},

@@ -1,26 +1,31 @@
 <?xml version="1.0"?>
 <info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	  xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
-	<id>app_template</id>
-	<name>App Template</name>
-	<summary>An example summary</summary>
-	<description>An example description</description>
-	<version>1.0.0</version>
+	<id>fadenstack_agent</id>
+	<name>Fadenstack Agent</name>
+	<summary>A governed file assistant in a native chat drawer</summary>
+	<description>Use a published Fadenstack agent with deliberately included file context and individually approved text file operations.</description>
+	<version>0.1.0</version>
 	<licence>AGPL-3.0-or-later</licence>
-	<author mail="example@example.com" homepage="https://example.com">Example</author>
-	<namespace>AppTemplate</namespace>
+	<author homepage="https://fadenstack.com">Fadenstack</author>
+	<namespace>FadenstackAgent</namespace>
 	<category>customization</category>
-	<bugs>https://example.com/bugs</bugs>
+	<bugs>https://github.com/fadenstack/faden-agent-nextcloud/issues</bugs>
 	<dependencies>
+		<php min-version="8.2"/>
 		<nextcloud min-version="31" max-version="35"/>
 	</dependencies>
 	<navigations>
 		<navigation>
-			<id>app_template</id>
-			<name>App Template</name>
-			<route>app_template.page.index</route>
+			<id>fadenstack_agent</id>
+			<name>Fadenstack Agent</name>
+			<route>fadenstack_agent.page.index</route>
+			<order>40</order>
 			<icon>app.svg</icon>
 			<type>link</type>
 		</navigation>
 	</navigations>
+	<settings>
+		<admin>OCA\FadenstackAgent\Settings\Admin</admin>
+	</settings>
 </info>

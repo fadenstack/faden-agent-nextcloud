@@ -1,3 +1,4 @@
 module.exports = {
-	extends: 'stylelint-config-recommended-vue',
+	extends: '@nextcloud/stylelint-config',
+	ignoreFiles: ['src/styles/fadenstack.css'], // Unmodified, licensed upstream SDK skin.
 }

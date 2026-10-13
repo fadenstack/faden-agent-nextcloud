@@ -1,0 +1,234 @@
+import { describe, expect, it, vi } from 'vitest'
+import { FakeGateway } from '@fadenstack/testing'
+import { ApprovalPart } from '@fadenstack/ui'
+import { createApp, markRaw, nextTick } from 'vue'
+import AgentChat from '../../src/components/AgentChat.vue'
+import { NextcloudAgent } from '../../src/agent/createAgent.ts'
+import { SelectedContext } from '../../src/integrations/nextcloud/context.ts'
+import { writeArguments } from '../../src/integrations/nextcloud/tools.ts'
+import { installViewerIntegration } from '../../src/integrations/nextcloud/viewer.ts'
+import type { FileApi, FileContext, Identity, Proposal } from '../../src/integrations/nextcloud/types.ts'
+
+vi.mock('../../src/components/HeaderButton.vue', () => ({ default: { template: '<button>Fadenstack Agent</button>' } }))
+
+const identity: Identity = { userId: 'alice', binding: 'binding', enabled: true, serverUrl: 'https://faden.test', agent: 'nc', development: false }
+const selected: FileContext = { id: 'opaque-context', parentId: 1, expires: 9999999999, file: { id: 2, name: 'source.md', path: '/source.md', etag: 'revision-1', mime: 'text/markdown', size: 11, folder: false, permissions: 31, url: 'https://cloud.test/f/2' } }
+function fixture(options: ConstructorParameters<typeof FakeGateway>[0] = {}) {
+	const gateway = new FakeGateway({ agents: [{ slug: 'nc', version: 1, contract: [
+		{ name: 'nc_get_selected_file', risk: 'read' }, { name: 'nc_read_file', risk: 'read' }, { name: 'nc_list_folder', risk: 'read' },
+		{ name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' },
+	] }], users: [{ email: 'alice', password: 'test', agents: ['nc'] }], ...options })
+	const files: FileApi = {
+		identity: vi.fn(async () => identity), assertIdentity: vi.fn(async () => {}), select: vi.fn(async () => selected),
+		read: vi.fn(async () => ({ file: selected.file, text: 'Source text', partial: false, totalCharacters: 11, processedCharacters: 11 })),
+		pdf: vi.fn(async () => new Uint8Array()), list: vi.fn(async () => ({ folder: { ...selected.file, folder: true }, files: [], partial: false })),
+		propose: vi.fn(async (contextId, args) => ({ id: 'proposal', contextId, ...args, target: '/summary.md', before: null }) satisfies Proposal),
+		approve: vi.fn(async () => {}), commit: vi.fn(async () => ({ operation: 'create', file: { ...selected.file, id: 3, name: 'summary.md' } })),
+	}
+	return { gateway, files, host: new NextcloudAgent(identity, files, gateway.fetch) }
+}
+async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
+	let part: ApprovalPart | undefined
+	await vi.waitFor(() => {
+		part = host.chat.turns.flatMap(t => [...t.parts]).find(p => p instanceof ApprovalPart) as ApprovalPart | undefined
+		expect(part?.isPending).toBe(true)
+	})
+	return part!
+}
+
+describe('SDK integration and file boundary', () => {
+	it('sends from the Vue composer and gates real SDK writes through its approval buttons', async () => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		let round = 0
+		const { host, files, gateway } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: '# Summary' }, id: 'composer-write' }] } : { text: 'Approved result' } })
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(AgentChat, { host: markRaw(host), context: selected })
+		app.mount(root)
+		const disconnectViewer = installViewerIntegration({ drawer: root, state: { open: true }, toggle: () => {}, changed: () => {} })
+		const viewer = document.createElement('div')
+		viewer.id = 'viewer'
+		viewer.className = 'modal-mask viewer'
+		viewer.setAttribute('role', 'dialog')
+		viewer.innerHTML = '<div class="modal-header"><h2 class="modal-header__name">source.md</h2><div class="icons-menu"></div></div>'
+		document.body.append(viewer)
+		await vi.waitFor(() => expect(root.parentElement).toBe(viewer))
+		try {
+			const input = root.querySelector('textarea')!
+			input.value = 'Create a summary'
+			input.dispatchEvent(new Event('input', { bubbles: true }))
+			await nextTick()
+			const send = root.querySelector<HTMLButtonElement>('.fdn-send')!
+			expect(send.disabled).toBe(false)
+			send.click()
+			await pending(host)
+			await nextTick()
+			expect(files.commit).not.toHaveBeenCalled()
+			root.querySelector<HTMLButtonElement>('.fdn-approval .fdn-primary')!.click()
+			await vi.waitFor(() => expect(host.chat.isBusy).toBe(false))
+			expect(files.commit).toHaveBeenCalledTimes(1)
+			expect(root.textContent).toContain('Approved result')
+			input.value = 'Follow-up question'
+			input.dispatchEvent(new Event('input', { bubbles: true }))
+			await nextTick()
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }))
+			expect(gateway.modelCalls).toHaveLength(2)
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+			await vi.waitFor(() => expect(gateway.modelCalls).toHaveLength(3))
+			await vi.waitFor(() => expect(host.chat.isBusy).toBe(false))
+		} finally { disconnectViewer(); app.unmount(); root.remove(); viewer.remove(); await host.dispose(); vi.unstubAllGlobals() }
+	})
+	it('offers lazy composer context, respects exclusion, and freezes the sent chip', async () => {
+		const { host, files, gateway } = fixture({ model: () => ({ text: 'A grounded answer' }) })
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		const chip = host.chat.attachments[0]!
+		expect(chip.title).toBe('source.md')
+		expect(files.read).not.toHaveBeenCalled()
+		expect(gateway.modelCalls).toHaveLength(0)
+		chip.toggle()
+		await host.send('General question')
+		expect(files.read).not.toHaveBeenCalled()
+		expect(host.chat.turns.at(-1)?.attachments).toHaveLength(0)
+		chip.toggle()
+		await host.send('Summarize')
+		expect(files.read).toHaveBeenCalledTimes(1)
+		expect(host.chat.turns.at(-1)?.attachments[0]?.title).toBe('source.md')
+		expect(host.chat.attachments[0]).toBe(chip)
+		host.offerSelection()
+		expect(host.chat.attachments).toHaveLength(0)
+		await host.dispose()
+	})
+	it('reports the five tools through the SDK manifest for automatic discovery', async () => {
+		const { host, gateway } = fixture()
+		await host.signIn('alice', 'test')
+		await vi.waitFor(() => expect(gateway.manifests).toHaveLength(1))
+		const manifest = gateway.manifests[0]!.manifest
+		expect((manifest.tools as { name: string }[]).map(tool => tool.name)).toEqual(['nc_get_selected_file', 'nc_read_file', 'nc_list_folder', 'nc_create_text_file', 'nc_update_text_file'])
+		expect(JSON.stringify(manifest)).not.toContain('Source text')
+		await host.dispose()
+	})
+	it('selects metadata without reading or sending it, and includes only after deliberate send', async () => {
+		const { host, files, gateway } = fixture({ model: () => ({ text: 'A grounded answer' }) })
+		await host.signIn('alice', 'test')
+		await host.selection.select(2)
+		expect(files.read).not.toHaveBeenCalled()
+		expect(gateway.modelCalls).toHaveLength(0)
+		await host.send('General question', false)
+		expect(files.read).not.toHaveBeenCalled()
+		await host.send('Summarize', true)
+		expect(files.read).toHaveBeenCalledWith(selected.id, expect.any(AbortSignal))
+		expect(JSON.stringify(gateway.modelCalls.at(-1)?.messages)).toContain('Source text')
+		expect(host.chat.turns.at(-1)?.answerText).toBe('A grounded answer')
+		await host.dispose()
+	})
+	it('requires individual approval even in Auto and commits the exact proposal only once', async () => {
+		let round = 0
+		const { host, files } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: '# Summary' }, id: 'call1' }] } : { text: 'Created' } })
+		await host.signIn('alice', 'test')
+		await host.selection.select(2)
+		host.chat.selectToolMode('auto')
+		const sending = host.send('Create a summary', true)
+		const part = await pending(host)
+		expect(part.request.arguments.target).toBe('/summary.md')
+		expect(part.request.arguments.content).toBe('# Summary')
+		expect(part.canAllowForSession).toBe(false)
+		expect(files.commit).not.toHaveBeenCalled()
+		await host.approve(part)
+		await sending
+		expect(files.approve).toHaveBeenCalledWith('proposal', expect.any(AbortSignal))
+		expect(files.commit).toHaveBeenCalledTimes(1)
+		await host.dispose()
+	})
+	it('denial prevents writes', async () => {
+		let round = 0
+		const { host, files } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: 'Text' }, id: 'call1' }] } : { text: 'Denied' } })
+		await host.signIn('alice', 'test')
+		await host.selection.select(2)
+		const sending = host.send('Create', true)
+		;(await pending(host)).deny()
+		await sending
+		expect(files.approve).not.toHaveBeenCalled()
+		expect(files.commit).not.toHaveBeenCalled()
+		await host.dispose()
+	})
+	it('freezes a turn context when the selected file changes', async () => {
+		let round = 0
+		const { host, files } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: 'Text' }, id: 'call1' }] } : { text: 'Done' } })
+		await host.signIn('alice', 'test')
+		await host.selection.select(2)
+		const sending = host.send('Create', true)
+		const part = await pending(host)
+		vi.mocked(files.select).mockResolvedValueOnce({ ...selected, id: 'other-context', file: { ...selected.file, id: 9 } })
+		await host.selection.select(9)
+		expect(host.context().id).toBe(selected.id)
+		part.deny()
+		await sending
+		expect(() => host.context()).toThrow('Include')
+		await host.dispose()
+	})
+	it('respects a contract that omits tools and the administrator tool-mode ceiling', async () => {
+		const { host } = fixture({ agents: [{ slug: 'nc', ceiling: 'read_only', contract: [{ name: 'nc_read_file', risk: 'read' }] }] })
+		await host.signIn('alice', 'test')
+		expect(host.agent.tools.map(t => t.name)).toEqual(['nc_read_file'])
+		host.chat.selectToolMode('auto')
+		expect(host.chat.toolMode).toBe('read_only')
+		await host.dispose()
+	})
+	it('refuses failed authentication and lost grants', async () => {
+		const { host, gateway } = fixture()
+		await expect(host.signIn('alice', 'wrong')).rejects.toThrow()
+		await host.signIn('alice', 'test')
+		gateway.revoke()
+		gateway.expireAccessTokens()
+		await host.send('Question', false)
+		expect(host.chat.signInRequired).toBe(true)
+		await host.dispose()
+	})
+	it('uses fresh memory stores across Nextcloud identities and sign-out', async () => {
+		const { host, gateway } = fixture({ model: () => ({ text: 'Alice private answer' }) })
+		await host.signIn('alice', 'test')
+		await host.send('Alice private message', false)
+		expect(await host.agent.listSessions()).toHaveLength(1)
+		await host.dispose()
+		expect(await host.tokens.isSignedIn()).toBe(false)
+		const second = fixture().host
+		await second.signIn('alice', 'test')
+		expect(second.chat.turns).toHaveLength(0)
+		expect(await second.agent.listSessions()).toHaveLength(0)
+		expect(gateway.modelCalls).toHaveLength(1)
+		await second.dispose()
+	})
+	it('rejects changed Nextcloud sessions before sending content', async () => {
+		const { host, files, gateway } = fixture()
+		await host.signIn('alice', 'test')
+		await host.selection.select(2)
+		vi.mocked(files.assertIdentity).mockRejectedValue(new Error('Session changed'))
+		await expect(host.send('Summarize', true)).rejects.toThrow('Session changed')
+		expect(files.read).not.toHaveBeenCalled()
+		expect(gateway.modelCalls).toHaveLength(0)
+		await host.dispose()
+	})
+})
+describe('Selection and arguments', () => {
+	it('discards late metadata lookups', async () => {
+		const { files } = fixture()
+		let first!: (value: FileContext) => void
+		vi.mocked(files.select).mockReturnValueOnce(new Promise(resolve => { first = resolve }))
+		const selection = new SelectedContext(files)
+		const old = selection.select(1)
+		await selection.select(2)
+		first({ ...selected, id: 'old' })
+		expect(await old).toBeUndefined()
+		expect(selection.snapshot()?.id).toBe(selected.id)
+	})
+	it.each(['../secret.md', '/root.md', '.hidden.md', 'file.php', 'foo\\bar.md', 'name.md '])('rejects unsafe filename %s', filename => {
+		expect(() => writeArguments('nc_create_text_file', { filename, content: 'Text' })).toThrow()
+	})
+	it('requires a revision for updates and bounds content', () => {
+		expect(() => writeArguments('nc_update_text_file', { content: 'Text' })).toThrow('ETag')
+		expect(() => writeArguments('nc_create_text_file', { filename: 'ok.md', content: 'x'.repeat(262145) })).toThrow('256')
+	})
+})
