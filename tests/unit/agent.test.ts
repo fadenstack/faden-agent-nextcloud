@@ -4,6 +4,8 @@ import { ApprovalPart } from '@fadenstack/ui'
 import { createApp, markRaw, nextTick } from 'vue'
 import AgentChat from '../../src/components/AgentChat.vue'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
+import { APP_UI } from '../../src/agent/appUi.ts'
+import contract from '../../contracts/nextcloud-pilot.json'
 import { SelectedContext } from '../../src/integrations/nextcloud/context.ts'
 import { writeArguments } from '../../src/integrations/nextcloud/tools.ts'
 import { installViewerIntegration } from '../../src/integrations/nextcloud/viewer.ts'
@@ -189,6 +191,9 @@ describe('SDK integration and file boundary', () => {
 		const manifest = gateway.manifests[0]!.manifest
 		expect((manifest.tools as { name: string }[]).map(tool => tool.name)).toEqual(['nc_get_file_metadata', 'nc_search_in_file', 'nc_search_content', 'nc_search_files', 'nc_get_selected_file', 'nc_read_file', 'nc_list_folder', 'nc_create_text_file', 'nc_update_text_file'])
 		expect(JSON.stringify(manifest)).not.toContain('Source text')
+		// The greeting and suggestions an administrator can take in on the Apps tab, the same as the contract's.
+		expect(manifest.ui).toEqual({ greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] })
+		expect(contract.version.ui).toEqual(manifest.ui)
 		await host.dispose()
 	})
 	it('selects metadata without reading or sending it, and includes only after deliberate send', async () => {

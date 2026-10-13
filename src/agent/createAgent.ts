@@ -3,6 +3,7 @@ import { FadenstackAgent, MemorySessionStore, MemoryApprovalStore, type ToolCall
 import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore } from '@fadenstack/ui'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nextcloudLanguages } from './strings.ts'
+import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments } from '../integrations/nextcloud/tools.ts'
 import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
@@ -66,7 +67,9 @@ export class NextcloudAgent {
 					return result
 				},
 			})
-			.describeApp({ name: 'Nextcloud Files', version: '0.1.0', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }] })
+			// What the app brings, for the agent's Apps tab: its tools, the context it offers, and the greeting and
+			// suggestions an administrator can take in, so the empty chat starts with ready questions.
+			.describeApp({ name: 'Nextcloud Files', version: '0.1.0', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
 			.build()
 		const locale = config.locale ?? navigator.language
 		this.chat = new AgentChatViewModel(this.agent, this.approvals, {
@@ -170,7 +173,6 @@ export class NextcloudAgent {
 		if (!context) { this.selection.clear(); return }
 		this.#attachment = new AttachmentViewModel({
 			title: context.file.name,
-			subtitle: context.file.path,
 			implicit: true,
 			resolve: signal => this.resolveAttachment(signal),
 		})
