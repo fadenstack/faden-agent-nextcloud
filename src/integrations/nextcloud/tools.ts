@@ -92,6 +92,7 @@ export function nextcloudTools(host: ToolHost) {
 					sort_by: { type: 'string', enum: ['relevance', 'modified', 'name', 'size'] },
 					sort_direction: { type: 'string', enum: ['asc', 'desc'] },
 					limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+					cursor: { type: 'string', maxLength: 512, description: 'Opaque next_cursor from the preceding result. Repeat the same filters. Available for metadata sorts in a single-storage folder scope.' },
 				},
 			},
 			run: (args, c) => capture(host.search(args as SearchFilters, c.signal), c),

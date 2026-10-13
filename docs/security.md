@@ -6,12 +6,13 @@ read/create/update permissions. Fadenstack checks agent grants and centralized p
 
 Random context capabilities bind node, parent, path and ETag to the current PHP
 session/user. They expire after one hour (≤32 contexts). Model tool arguments accept
-no paths or alternative file IDs. Each turn freezes its deliberately included
+known `nextcloud:files:ID` references, never paths or external URLs. Each turn freezes its deliberately included
 context. Changing selection resets inclusion for the next request.
 
 Writes use immutable proposals (ten minutes, ≤10 pending, ≤256 KiB replacement and
 original preview). Only the user's Allow click marks that exact proposal approved;
-the SDK then commits it once. Creation locks the folder and checks nonexistence.
+the SDK then commits it once. Creation reauthorizes the parent, uses native WebDAV
+`If-None-Match: *`, and verifies an expiring one-use destination/content receipt.
 Updates use a permission-checked Nextcloud write stream and compare storage ETags
 under its exclusive lock before changing bytes. Storage failures after writing
 begins may leave partial content; the error asks the user to inspect the file.
@@ -39,3 +40,11 @@ pilot server instructions treat documents as data, not authorized instructions.
 
 External/encrypted storage, permission revocation during I/O and full browser/CA
 coverage remain deployment validation work. See limitations and verification.
+
+Search resolves all native IDs under the current user's root, including an active
+storage read-access probe before cached content or indexed excerpts are exposed.
+Parsed text is scoped to one runtime identity, four revisions and five minutes.
+Revision/path changes invalidate it. Strict XML escaping and literal wildcard
+escaping prevent query injection. Session-bound signed pagination cannot be reused
+by another session or with different filters. Search telemetry contains durations
+and counts; file contents are not logged. See [search details](search.md).

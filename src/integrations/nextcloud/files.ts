@@ -1,6 +1,6 @@
 import axios from '@nextcloud/axios'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan } from './types.ts'
 
 export class NextcloudFiles implements FileApi {
 
@@ -52,7 +52,22 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async approve(id: string, signal?: AbortSignal): Promise<void> { await this.post(`/proposals/${encodeURIComponent(id)}/approve`, {}, signal) }
-	commit(id: string, signal?: AbortSignal): Promise<WriteResult> { return this.post(`/proposals/${encodeURIComponent(id)}/commit`, {}, signal) }
+	async commit(id: string, signal?: AbortSignal): Promise<WriteResult> {
+		const result = await this.post<WriteResult | DavCreatePlan>(`/proposals/${encodeURIComponent(id)}/commit`, {}, signal)
+		if (!('kind' in result)) return result
+		const prefix = `/files/${encodeURIComponent(this.initial.userId)}/`
+		if (result.kind !== 'dav-create' || !result.dav_path.startsWith(prefix) || /[?#\r\n]/.test(result.dav_path)) throw new Error('Invalid approved Nextcloud creation plan.')
+		await this.assertIdentity()
+		const [parent] = await this.searchTransport.resolve([result.parent_resource_id], 'all', signal ?? AbortSignal.timeout(20000))
+		if (!parent?.folder || parent.path !== result.parent_path || parent.etag !== result.parent_etag || !(parent.permissions & 4)) throw new Error('The approved destination changed. No write was performed.')
+		const put = await axios.put(generateRemoteUrl('dav') + result.dav_path, result.content, {
+			headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-None-Match': '*', 'X-OC-CTime': String(Math.floor(Date.now() / 1000)) }, signal, timeout: 20000,
+		})
+		if (put.status !== 201) throw new Error('Nextcloud did not confirm a new file creation. No success is claimed.')
+		await this.assertIdentity()
+		return this.post('/creations/finish', { receiptId: result.receiptId }, signal)
+	}
+
 	async pdf(contextId: string, signal?: AbortSignal): Promise<Uint8Array> {
 		const response = await axios.post<ArrayBuffer>(generateUrl('/apps/fadenstack_agent/context/content'), { contextId }, {
 			headers: { 'X-Fadenstack-Session': this.initial.binding }, responseType: 'arraybuffer', signal, timeout: 20000,

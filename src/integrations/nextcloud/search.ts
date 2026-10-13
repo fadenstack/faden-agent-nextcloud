@@ -1,6 +1,19 @@
 import type { FileApi, FileMetadata, FileResource, SearchFilters, SearchResults, FileContext, DocumentSearchResults } from './types.ts'
 import { findPassages, type DocumentText } from './passages.ts'
 
+/** Bound metadata/excerpts separately from the existing document text limit. */
+export function boundedResults<T>(rows: T[]): { rows: T[]; truncated: boolean } {
+	const kept: T[] = []
+	let bytes = 0
+	for (const row of rows) {
+		const size = new TextEncoder().encode(JSON.stringify(row)).byteLength
+		if (bytes + size > 60 * 1024) return { rows: kept, truncated: true }
+		kept.push(row)
+		bytes += size
+	}
+	return { rows: kept, truncated: false }
+}
+
 export function resourceId(value: unknown): number {
 	if (typeof value !== 'string' || !/^nextcloud:files:[1-9]\d{0,14}$/.test(value)) throw new Error('Use a Nextcloud file resource ID, not a path or URL.')
 	const id = Number(value.slice('nextcloud:files:'.length))
@@ -64,7 +77,7 @@ export class NextcloudSearchService {
 		for (const xml of plan.queries) {
 			deadline.throwIfAborted()
 			const ids = davResourceIds(await transport.dav(xml, deadline))
-			const authorized = await transport.resolve(ids, plan.filters.scope, deadline)
+			const authorized = await transport.resolve(plan.next_cursor ? ids.slice(0, plan.filters.limit) : ids, plan.filters.scope, deadline)
 			authorized.sort((a, b) => {
 				const direction = plan.filters.sort_direction === 'asc' ? 1 : -1
 				const by = plan.filters.sort_by
@@ -75,16 +88,18 @@ export class NextcloudSearchService {
 			if (ids.length >= plan.filters.limit + 1) partial = true
 			if (found.length > plan.filters.limit) { partial = true; break }
 		}
-		const rows = found.slice(0, plan.filters.limit)
+		const bounded = boundedResults(found.slice(0, plan.filters.limit).map(fileResource))
+		const rows = found.slice(0, bounded.rows.length)
 		for (const file of rows) this.remember(file)
 		return {
 			kind: 'nextcloud-search-results',
 			search_mode: 'filenames',
 			provider: plan.backend,
 			ordering: plan.filters.sort_by === 'relevance' && plan.filters.query ? 'exact-name, prefix, substring; modified descending within each tier' : `${plan.filters.sort_by === 'relevance' ? 'modified' : plan.filters.sort_by} ${plan.filters.sort_by === 'relevance' ? 'desc' : plan.filters.sort_direction}`,
-			results: rows.map(fileResource),
-			partial,
+			results: bounded.rows,
+			partial: partial || bounded.truncated,
 			duration_ms: Math.round(performance.now() - started),
+			next_cursor: partial && !bounded.truncated ? plan.next_cursor : null,
 		}
 	}
 
@@ -111,6 +126,8 @@ export class NextcloudSearchService {
 
 	async load(id: string, signal: AbortSignal, selected?: FileContext) {
 		const started = performance.now()
+		const metadata = await this.metadata(id, signal, selected)
+		if (metadata.folder) throw new Error('Search a document, not a folder. Use file discovery or folder listing.')
 		const current = await this.metadata(id, signal, selected, true)
 		if (selected && (selected.file.etag !== current.etag || selected.file.path !== current.path)) throw new Error('The included file changed. Reattach it before sending.')
 		const cached = this.cache.get(id)
@@ -160,7 +177,8 @@ export class NextcloudSearchService {
 		const started = performance.now()
 		if (!this.files.searchTransport) throw new Error('Native content search is unavailable.')
 		const data = await this.files.searchTransport.content(query, limit, page, AbortSignal.any([signal, AbortSignal.timeout(20000)]))
-		for (const { file } of data.results) this.remember(file)
+		const bounded = boundedResults(data.results.map(({ file, excerpt }) => ({ ...fileResource(file), excerpt })))
+		for (const { file } of data.results.slice(0, bounded.rows.length)) this.remember(file)
 		return {
 			kind: 'nextcloud-search-results',
 			search_mode: 'indexed-content',
@@ -168,9 +186,9 @@ export class NextcloudSearchService {
 			available: data.available,
 			explanation: data.explanation,
 			ordering: 'native provider relevance',
-			results: data.results.map(({ file, excerpt }) => ({ ...fileResource(file), excerpt })),
-			partial: data.partial ?? false,
-			next_page: data.next_page,
+			results: bounded.rows,
+			partial: (data.partial ?? false) || bounded.truncated,
+			next_page: bounded.truncated ? null : data.next_page,
 			duration_ms: Math.round(performance.now() - started),
 		}
 	}

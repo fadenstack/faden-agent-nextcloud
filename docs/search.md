@@ -26,9 +26,10 @@ Nextcloud excludes the scope folder after native query limiting. The plan exclud
 that folder inside the query so it does not consume the extra-result probe.
 
 The official [WebDAV SEARCH API](https://docs.nextcloud.com/server/stable/developer_manual/client_apis/WebDAV/search.html)
-documents these metadata filters. Optional content providers use the
-[Unified Search API](https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/search.html);
-provider presence does not by itself establish safe content-search support.
+documents these metadata filters. The Unified Search API was inspected, but its
+Files provider is unnecessary for these filename operations. Optional indexed
+search uses Nextcloud's public FullTextSearch manager with the Files provider
+alone; provider presence does not by itself establish safe content-search support.
 
 ### Increment validation (13 October 2026)
 
@@ -105,3 +106,40 @@ No path-based writes or new execution engine are introduced.
 renders file cards, attaches metadata without reading, locates a termination
 passage with one cached read, then verifies a searched-file creation cannot commit
 before Allow once. English and German result labels are included.
+
+## Phase 4: bounds, native pagination and security
+
+Search requests have a 20-second client deadline and cancellation. DAV requests
+have a 15-second timeout. Results default to 20 and cannot exceed 50; serialized
+metadata/excerpts are additionally bounded to 60 KiB of UTF-8. Duration, retrieval
+time, count, partial status and cache-hit status are returned without logging text.
+
+Metadata sorting supports Nextcloud's native SearchDAV offset extension in scopes
+containing one storage cache. Repeat the same filters with the opaque `next_cursor`.
+Cursors expire in ten minutes, bind the PHP session and filters, and stop at an
+offset of 5,000. Relevance tiers and scopes containing nested mounts return a
+bounded first page without a cursor: Nextcloud offsets are per storage, not a
+reliable global merge. Concurrent edits can shift offset pages; this is not a
+snapshot. Output-budget truncation suppresses cursors to avoid skipping unseen
+results; reduce the limit or narrow the query.
+
+Creation-date filtering is verified on 35. Older supported installations return
+an explicit 422 explanation for `created_after`; modification filters still work.
+Imported files with unknown creation metadata cannot satisfy a creation bound.
+
+Approved creation uses same-origin native DAV PUT with `If-None-Match: *`, followed
+by an expiring one-use app receipt verifying destination, permission and exact
+content hash. The parent is reauthorized immediately before PUT. This fixes
+nested-folder creation while retaining core storage hooks and lock handling.
+The create timestamp is passed through Nextcloud's supported `X-OC-CTime` header.
+A renamed destination during the separate requests is detected, but there is no
+distributed folder transaction; an I/O failure or changed receipt returns no
+claimed success. Inspect the destination before retrying.
+
+On 35, 55 authenticated security checks passed; 54 passed on 31, including the
+explicit older-version creation-filter response. Both cover private users,
+read-only sharing, revoked cached passages, revoked old contexts, literal `%`/`_`,
+favorites, native paging, cursor tampering/session/filter isolation, nested approved
+creation and a concurrent author winning without being overwritten. Forty existing
+HTTP workflow checks passed on each version, including creation/editing, approval,
+denial and actual ETag conflicts. Unit tests cover byte bounds and cache identity.

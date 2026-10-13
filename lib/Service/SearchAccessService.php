@@ -17,7 +17,7 @@ class SearchAccessService {
 	}
 
 	public static function filters(array $input): array {
-		$allowed = ['query', 'scope', 'file_types', 'modified_after', 'modified_before', 'created_after', 'min_size', 'max_size', 'favorites_only', 'sort_by', 'sort_direction', 'limit'];
+		$allowed = ['query', 'scope', 'file_types', 'modified_after', 'modified_before', 'created_after', 'min_size', 'max_size', 'favorites_only', 'sort_by', 'sort_direction', 'limit', 'cursor'];
 		if (array_diff(array_keys($input), $allowed)) {
 			throw new Problem('Unsupported search parameter.');
 		}
@@ -38,10 +38,15 @@ class SearchAccessService {
 		}
 		foreach (['modified_after', 'modified_before', 'created_after'] as $key) {
 			if (array_key_exists($key, $f)) {
-				$date = is_string($f[$key]) ? \DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:sP', $f[$key]) : false;
+				$value = $f[$key];
+				$valid = is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/D', $value);
+				$date = $valid ? \DateTimeImmutable::createFromFormat(str_contains($value, '.') ? '!Y-m-d\TH:i:s.uP' : '!Y-m-d\TH:i:sP', $value) : false;
 				$errors = \DateTimeImmutable::getLastErrors();
 				if (!$date || ($errors && ($errors['warning_count'] || $errors['error_count']))) {
 					throw new Problem('Dates must be valid ISO 8601 timestamps with a timezone.');
+				}
+				if ($key !== 'modified_before' && (int)$date->format('u') > 0) {
+					$date = $date->modify('+1 second');
 				}
 				$f[$key] = $date->format(\DateTimeInterface::ATOM);
 			}
@@ -60,6 +65,9 @@ class SearchAccessService {
 			|| !in_array($f['sort_direction'], ['asc', 'desc'], true)) {
 			throw new Problem('Invalid search ordering, favorites flag or limit (1–50).');
 		}
+		if (array_key_exists('cursor', $f) && (!is_string($f['cursor']) || strlen($f['cursor']) > 512)) {
+			throw new Problem('Invalid search cursor.');
+		}
 		return $f;
 	}
 
@@ -72,7 +80,33 @@ class SearchAccessService {
 
 	public function plan(array $filters): array {
 		$f = self::filters($filters);
+		if (isset($f['created_after']) && \OCP\Server::get(\OCP\ServerVersion::class)->getMajorVersion() < 35) {
+			throw new Problem('Creation-date filtering requires the verified Nextcloud 35 WebDAV search backend. Use modification-date filters on this version.', 422);
+		}
 		$scope = $this->files->searchScope($f['scope']);
+		$canPage = ($scope['can_page'] ?? false) && $f['sort_by'] !== 'relevance';
+		$cursor = $f['cursor'] ?? null;
+		unset($f['cursor']);
+		$canonical = $f;
+		ksort($canonical);
+		$digest = hash('sha256', json_encode($canonical, JSON_THROW_ON_ERROR));
+		$offset = 0;
+		$binding = $canPage ? $this->files->identity()['binding'] : '';
+		if ($cursor !== null) {
+			if (!$canPage || !is_string($cursor) || !str_contains($cursor, '.')) {
+				throw new Problem('Native paging requires modified/name/size ordering in a single-storage scope.');
+			}
+			[$payload, $signature] = explode('.', $cursor, 2);
+			if (!hash_equals(hash_hmac('sha256', $payload, $binding), $signature)) {
+				throw new Problem('Invalid or cross-session search cursor.');
+			}
+			$data = json_decode(base64_decode(strtr($payload, '-_', '+/'), true) ?: '', true);
+			if (!is_array($data) || ($data['query'] ?? '') !== $digest || ($data['expires'] ?? 0) < time()
+				|| !is_int($data['offset'] ?? null) || $data['offset'] < 0 || $data['offset'] > 5000) {
+				throw new Problem('Search cursor expired or filters changed. Repeat the same filters or start a new search.');
+			}
+			$offset = $data['offset'];
+		}
 		$conditions = [self::comparison('gte', 'oc:size', '0'), '<d:not>' . self::comparison('eq', 'oc:fileid', (string)$scope['id']) . '</d:not>'];
 		foreach (['modified_after' => ['gte', 'd:getlastmodified'], 'modified_before' => ['lte', 'd:getlastmodified'], 'created_after' => ['gte', 'd:creationdate'], 'min_size' => ['gte', 'oc:size'], 'max_size' => ['lte', 'oc:size']] as $key => [$op, $property]) {
 			if (isset($f[$key])) {
@@ -105,13 +139,18 @@ class SearchAccessService {
 			. '<d:order><d:prop><d:displayname/></d:prop><d:ascending/></d:order>';
 		$queries = [];
 		foreach ($tiers as $tier) {
-			$queries[] = '<?xml version="1.0" encoding="UTF-8"?><d:searchrequest xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:basicsearch>'
+			$queries[] = '<?xml version="1.0" encoding="UTF-8"?><d:searchrequest xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" xmlns:s="https://github.com/icewind1991/SearchDAV/ns"><d:basicsearch>'
 				. '<d:select><d:prop><oc:fileid/></d:prop></d:select><d:from><d:scope><d:href>' . self::xml($scope['href'])
 				. '</d:href><d:depth>infinity</d:depth></d:scope></d:from><d:where><d:and>' . implode('', $conditions) . $tier
 				. '</d:and></d:where><d:orderby>' . $order . '</d:orderby><d:limit><d:nresults>' . ($f['limit'] + 1)
-				. '</d:nresults></d:limit></d:basicsearch></d:searchrequest>';
+				. '</d:nresults><s:firstresult>' . $offset . '</s:firstresult></d:limit></d:basicsearch></d:searchrequest>';
 		}
-		return ['filters' => $f, 'queries' => $queries, 'backend' => 'webdav-search'];
+		$next = null;
+		if ($canPage && $offset + $f['limit'] <= 5000) {
+			$payload = rtrim(strtr(base64_encode(json_encode(['query' => $digest, 'offset' => $offset + $f['limit'], 'expires' => time() + 600], JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+			$next = $payload . '.' . hash_hmac('sha256', $payload, $binding);
+		}
+		return ['filters' => $f, 'queries' => $queries, 'backend' => 'webdav-search', 'next_cursor' => $next];
 	}
 
 	public function resolve(array $resourceIds, string $scope = 'all', bool $content = false): array {

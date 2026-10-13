@@ -41,6 +41,15 @@ class User {
     const data = await res.json()
     assert.equal(res.status, status, `${path}: ${data.message || 'unexpected status'}`)
     checks++
+    if(res.status === 200 && data.kind === 'dav-create') {
+      assert.ok(data.dav_path.startsWith(`/files/${encodeURIComponent(this.name)}/`))
+      const [parent] = await this.api('/search/resolve',{resourceIds:[data.parent_resource_id]})
+      assert.equal(parent.path,data.parent_path)
+      assert.equal(parent.etag,data.parent_etag)
+      const put = await this.request('/remote.php/dav'+data.dav_path,{method:'PUT',body:data.content,headers:{requesttoken:this.token,'Content-Type':'text/plain; charset=utf-8','If-None-Match':'*'}})
+      assert.equal(put.status,201,await put.clone().text())
+      return this.api('/creations/finish',{receiptId:data.receiptId})
+    }
     return data
   }
   async dav(path, method = 'GET', body) {

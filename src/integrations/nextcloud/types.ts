@@ -46,6 +46,7 @@ export interface Proposal extends WriteArguments {
 	contextId: string
 }
 export interface WriteResult { operation: string; file: FileMetadata }
+export interface DavCreatePlan { kind: 'dav-create'; receiptId: string; dav_path: string; parent_resource_id: string; parent_path: string; parent_etag: string; content: string }
 export interface SearchFilters {
 	query?: string
 	scope?: string
@@ -59,8 +60,9 @@ export interface SearchFilters {
 	sort_by?: 'relevance' | 'modified' | 'name' | 'size'
 	sort_direction?: 'asc' | 'desc'
 	limit?: number
+	cursor?: string
 }
-export interface SearchPlan { filters: Required<Pick<SearchFilters, 'query' | 'scope' | 'limit' | 'sort_by' | 'sort_direction'>> & SearchFilters; queries: string[]; backend: string }
+export interface SearchPlan { filters: Required<Pick<SearchFilters, 'query' | 'scope' | 'limit' | 'sort_by' | 'sort_direction'>> & SearchFilters; queries: string[]; backend: string; next_cursor?: string | null }
 export interface SearchCapabilities { filename_search: boolean; document_search: boolean; indexed_content_search: boolean; provider: string | null; explanation: string }
 export interface NativeContentResults { available: boolean; provider: string | null; explanation: string; results: { file: FileMetadata; excerpt: string | null }[]; partial?: boolean; next_page?: number | null }
 export interface SearchTransport {
@@ -94,6 +96,7 @@ export interface SearchResults {
 	available?: boolean
 	explanation?: string
 	next_page?: number | null
+	next_cursor?: string | null
 }
 export interface DocumentSearchResults {
 	kind: 'nextcloud-document-search'

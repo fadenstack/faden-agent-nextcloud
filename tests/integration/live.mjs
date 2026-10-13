@@ -6,87 +6,32 @@ import { createInterface } from 'node:readline'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { ApprovalPart } from '@fadenstack/ui'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { User } from "./client.mjs"
+import { extractPdfWith } from "../../src/integrations/nextcloud/pdf-core.ts"
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
 
-const base = process.env.NEXTCLOUD_URL || 'http://localhost:8090'
-assert.match(base, /^http:\/\/(localhost|127\.0\.0\.1):\d+$/, 'Only explicitly local pilot files may be used.')
-const user = process.env.NEXTCLOUD_USER || 'pilot-admin'
-const password = process.env.NEXTCLOUD_PASSWORD || 'local-pilot-only'
+const user = process.env.NEXTCLOUD_USER || "pilot-admin"
+const password = process.env.NEXTCLOUD_PASSWORD || "local-pilot-only"
+const local = new User(user, password)
+await local.login()
+const base = local.config.nextcloudUrl || process.env.NEXTCLOUD_URL || "http://localhost:8090"
+const config = local.config
+assert.equal(config.serverUrl, process.env.FADENSTACK_SERVER || "https://10.250.10.61")
+assert.equal(config.agent, process.env.FADENSTACK_AGENT || "nextcloud-agent")
+const request = local.request.bind(local)
+const files = local.files()
+let committed
+const commit = files.commit
+files.commit = async (id, signal) => { committed = await commit(id, signal); return committed }
 const fileId = Number(process.env.NEXTCLOUD_FILE_ID || 73)
 const turnTimeout = Number(process.env.FADENSTACK_TURN_TIMEOUT_MS || 600000)
-const denialOnly = process.env.FADENSTACK_SCENARIO === 'deny'
-const cookies = new Map()
-let csrf = ''
-let config
-let committed
-async function request(path, options = {}) {
-  const res = await fetch(`${base}${path}`, { ...options, redirect: 'manual', headers: {
-    Origin: base, Cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join('; '), ...options.headers,
-  } })
-  for (const cookie of res.headers.getSetCookie()) { const pair = cookie.split(';')[0]; const at = pair.indexOf('='); cookies.set(pair.slice(0, at), pair.slice(at + 1)) }
-  return res
-}
-async function api(path, body, signal) {
-  const res = await request(`/index.php/apps/fadenstack_agent${path}`, { method: 'POST', signal, headers: {
-    'Content-Type': 'application/json', requesttoken: csrf, 'X-Fadenstack-Session': config.binding,
-  }, body: JSON.stringify(body) })
-  assert.equal(res.status, 200, `${path}: ${await res.clone().text()}`)
-  return res.json()
-}
-const loginPage = await (await request('/index.php/login')).text()
-csrf = loginPage.match(/data-requesttoken="([^"]+)"/)?.[1]
-assert.ok(csrf)
-assert.equal((await request('/index.php/login', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  body: new URLSearchParams({ user, password, requesttoken: csrf }) })).status, 303)
-const page = await (await request('/index.php/apps/files/files')).text()
-csrf = page.match(/data-requesttoken="([^"]+)"/)?.[1]
-assert.ok(csrf)
-config = await (await request('/index.php/apps/fadenstack_agent/config')).json()
-assert.equal(config.serverUrl, process.env.FADENSTACK_SERVER || 'https://10.250.10.61')
-assert.equal(config.agent, process.env.FADENSTACK_AGENT || 'nextcloud-agent')
-const files = {
-  identity: async () => (await request('/index.php/apps/fadenstack_agent/config')).json(),
-  assertIdentity: async () => { const current = await files.identity(); assert.deepEqual(current, config) },
-  select: (id, signal) => api('/context', { fileId: id }, signal),
-  read: (contextId, signal) => api('/context/read', { contextId }, signal),
-  list: (contextId, signal) => api('/context/list', { contextId }, signal),
-  propose: (contextId, args, signal) => api('/proposals', { contextId, ...args }, signal),
-  approve: async (id, signal) => { await api(`/proposals/${encodeURIComponent(id)}/approve`, {}, signal) },
-  commit: async (id, signal) => { committed = await api(`/proposals/${encodeURIComponent(id)}/commit`, {}, signal); return committed },
-  pdf: async (contextId, signal) => {
-    const res = await request('/index.php/apps/fadenstack_agent/context/content', { method: 'POST', signal, headers: {
-      'Content-Type': 'application/json', requesttoken: csrf, 'X-Fadenstack-Session': config.binding,
-    }, body: JSON.stringify({ contextId }) })
-    assert.equal(res.status, 200)
-    return new Uint8Array(await res.arrayBuffer())
-  },
-}
-// Only the platform PDF entry point differs: Node's maintained PDF.js build.
-// The production host, tool registry, identity checks and approvals are unchanged.
+const denialOnly = process.env.FADENSTACK_SCENARIO === "deny"
 class NodePilotAgent extends NextcloudAgent {
-  async read(signal) {
-    const context = this.context()
-    if (context.file.mime !== 'application/pdf') return files.read(context.id, signal)
-    const bytes = await files.pdf(context.id, signal)
-    assert.ok(bytes.byteLength <= 10 * 1024 * 1024)
-    const task = getDocument({ data: bytes, useSystemFonts: true })
-    const stop = () => { void task.destroy() }
-    const timer = setTimeout(stop, 30000)
-    signal.addEventListener('abort', stop, { once: true })
-    try {
-      const pdf = await task.promise
-      let text = '', processedPages = 0
-      for (let number = 1; number <= Math.min(pdf.numPages, 50) && text.length < 50000; number++) {
-        signal.throwIfAborted()
-        const page = await pdf.getPage(number)
-        const content = await page.getTextContent()
-        text += `\n[Page ${number}]\n${content.items.filter(item => 'str' in item).map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('')}`
-        processedPages = number
-        page.cleanup()
-      }
-      assert.ok(text.trim().length > 100)
-      return { file: context.file, text: text.slice(0, 50000), processedPages, totalPages: pdf.numPages, partial: text.length > 50000 || processedPages < pdf.numPages }
-    } finally { clearTimeout(timer); signal.removeEventListener('abort', stop); await task.destroy() }
+  constructor(...args) {
+    super(...args)
+    this.discovery.extract = async (context, signal) => context.file.mime === "application/pdf"
+      ? extractPdfWith(getDocument, await files.pdf(context.id, signal), signal)
+      : files.read(context.id, signal)
   }
 }
 let credentials

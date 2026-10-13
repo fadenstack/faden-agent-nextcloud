@@ -102,4 +102,9 @@ class FilesController extends Controller {
 	public function commit(string $id): Response {
 		return $this->run(fn () => $this->files->commit($id));
 	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function finishCreate(string $receiptId): Response {
+		return $this->run(fn () => $this->files->finishCreate($receiptId));
+	}
 }

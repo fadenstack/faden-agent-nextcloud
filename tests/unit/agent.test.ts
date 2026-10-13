@@ -37,6 +37,24 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('SDK integration and file boundary', () => {
+	it('allows an explicitly included folder reference as a destination without reading document bytes', async () => {
+		let round = 0
+		const { host, files } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: '# Summary', resource_id: 'nextcloud:files:9' }, id: 'folder-write' }] } : { text: 'Created in folder' } })
+		const folder = { ...selected, parentId: 9, file: { ...selected.file, id: 9, folder: true, name: 'Engineering', path: '/Engineering', mime: 'httpd/unix-directory' } }
+		vi.mocked(files.select).mockResolvedValue(folder)
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(9))
+		expect(host.discovery.issued.size).toBe(0)
+		const sending = host.send('Create a summary in this included folder')
+		const part = await pending(host)
+		expect(files.read).not.toHaveBeenCalled()
+		expect(files.pdf).not.toHaveBeenCalled()
+		expect(files.commit).not.toHaveBeenCalled()
+		await host.approve(part)
+		await sending
+		expect(files.commit).toHaveBeenCalledTimes(1)
+		await host.dispose()
+	})
 	it('renders native search cards, adds context lazily, finds a passage and gates a searched-file write', async () => {
 		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 		let round = 0

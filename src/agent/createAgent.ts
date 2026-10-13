@@ -19,7 +19,6 @@ export class NextcloudAgent {
 	readonly #proposals = new Map<string, Proposal>()
 	readonly #toolResults = new Map<string, SearchViewResults>()
 	#active: FileContext | undefined
-	#read: unknown
 	#sending = false
 	#closed = false
 	#preparingStop: AbortController | undefined
@@ -86,10 +85,8 @@ export class NextcloudAgent {
 	}
 
 	async read(signal: AbortSignal, id?: string): Promise<unknown> {
-		if (!id && this.#read) return this.#read
 		const selected = id ? undefined : this.context()
 		const result = await this.discovery.read(id ?? `nextcloud:files:${selected!.file.id}`, signal, selected)
-		if (!id) this.#read = result
 		return result
 	}
 
@@ -191,16 +188,15 @@ export class NextcloudAgent {
 		this.#preparingStop = new AbortController()
 		const signal = AbortSignal.any([this.#stop.signal, this.#preparingStop.signal])
 		this.#active = include ? this.selection.snapshot() : undefined
-		this.#read = undefined
 		try {
 			await this.files.assertIdentity()
 			signal.throwIfAborted()
 			if (include && !this.#active) throw new Error('Select a file first.')
+			if (this.#active) this.discovery.remember(this.#active.file)
 			if (this.#active && !this.#attachment) this.chat.addAttachment(new AttachmentViewModel({ title: this.#active.file.name, resolve: signal => this.resolveAttachment(signal) }))
 			await this.chat.send(text)
 		} finally {
 			this.#active = undefined
-			this.#read = undefined
 			this.#proposals.clear()
 			this.#sending = false
 			this.#preparingStop = undefined
@@ -219,7 +215,6 @@ export class NextcloudAgent {
 		this.discovery.clear()
 		this.#toolResults.clear()
 		this.#active = undefined
-		this.#read = undefined
 		this.#proposals.clear()
 		await this.tokens.signOut()
 		await this.agent.dispose()

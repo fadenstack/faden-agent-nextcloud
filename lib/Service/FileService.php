@@ -7,11 +7,11 @@ namespace OCA\FadenstackAgent\Service;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
+use OCP\Files\Mount\IMountManager;
 use OCP\Files\Node;
 use OCP\ISession;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
-use OCP\Lock\ILockingProvider;
 
 class FileService {
 	public const MAX_TEXT_BYTES = 2097152;
@@ -25,6 +25,7 @@ class FileService {
 		private ISession $session,
 		private IURLGenerator $urls,
 		private Configuration $config,
+		private IMountManager $mounts,
 	) {
 	}
 
@@ -40,7 +41,7 @@ class FileService {
 		$uid = $this->uid();
 		$state = $this->session->get(self::KEY);
 		if (!is_array($state) || ($state['user'] ?? '') !== $uid) {
-			$state = ['user' => $uid, 'binding' => bin2hex(random_bytes(32)), 'contexts' => [], 'proposals' => []];
+			$state = ['user' => $uid, 'binding' => bin2hex(random_bytes(32)), 'contexts' => [], 'proposals' => [], 'receipts' => []];
 			$this->session->set(self::KEY, $state);
 		}
 		return $state;
@@ -106,7 +107,8 @@ class FileService {
 
 	public function searchScope(string $scope): array {
 		$path = '';
-		$id = $this->root->getUserFolder($this->uid())->getId();
+		$folder = $this->root->getUserFolder($this->uid());
+		$id = $folder->getId();
 		if ($scope !== 'all') {
 			$file = $this->resource($scope);
 			if (!$file['folder']) {
@@ -114,8 +116,10 @@ class FileService {
 			}
 			$path = $file['path'];
 			$id = $file['id'];
+			$folder = $this->node($id);
 		}
-		return ['href' => '/files/' . rawurlencode($this->uid()) . implode('/', array_map('rawurlencode', explode('/', $path))), 'id' => $id];
+		return ['href' => '/files/' . rawurlencode($this->uid()) . implode('/', array_map('rawurlencode', explode('/', $path))), 'id' => $id,
+			'can_page' => count($this->mounts->findIn(rtrim($folder->getPath(), '/') . '/')) === 0];
 	}
 
 	public function select(int $fileId): array {
@@ -310,18 +314,26 @@ class FileService {
 			throw new Problem('The destination changed.', 409);
 		}
 		if ($p['operation'] === 'create') {
-			$folder->lock(ILockingProvider::LOCK_EXCLUSIVE);
-			try {
-				if (!$folder->isCreatable()) {
-					throw new Problem('You cannot create files in this folder.', 403);
-				}
-				if ($folder->nodeExists($p['filename'])) {
-					throw new Problem('A file with this name already exists.', 409);
-				}
-				$result = $folder->newFile($p['filename'], $p['content']);
-			} finally {
-				$folder->unlock(ILockingProvider::LOCK_EXCLUSIVE);
+			if (!$folder->isCreatable()) {
+				throw new Problem('You cannot create files in this folder.', 403);
 			}
+			if ($folder->nodeExists($p['filename'])) {
+				throw new Problem('A file with this name already exists.', 409);
+			}
+			$parent = $this->metadata($folder);
+			$base = '/files/' . rawurlencode($this->uid()) . '/' . implode('/', array_map('rawurlencode', explode('/', trim($parent['path'], '/'))));
+			$base = rtrim($base, '/') . '/';
+			$s = $this->state();
+			$s['receipts'] = array_filter($s['receipts'] ?? [], fn ($r) => $r['expires'] > time());
+			if (count($s['receipts']) >= 10) {
+				throw new Problem('Too many unfinished creations. Wait for them to expire.', 429);
+			}
+			$s['receipts'][$p['id']] = ['folderId' => $folder->getId(), 'folderPath' => $parent['path'], 'filename' => $p['filename'],
+				'hash' => hash('sha256', $p['content']), 'expires' => time() + 600];
+			$this->session->set(self::KEY, $s);
+			// Native DAV owns atomic If-None-Match creation, storage hooks and locks.
+			return ['kind' => 'dav-create', 'receiptId' => $p['id'], 'dav_path' => $base . rawurlencode($p['filename']),
+				'parent_resource_id' => 'nextcloud:files:' . $parent['id'], 'parent_path' => $parent['path'], 'parent_etag' => $parent['etag'], 'content' => $p['content']];
 		} else {
 			if (!$n instanceof File || !$n->isUpdateable()) {
 				throw new Problem('You cannot update this file.', 403);
@@ -354,5 +366,24 @@ class FileService {
 			$result = $n;
 		}
 		return ['operation' => $p['operation'], 'file' => $this->metadata($this->node($result->getId()))];
+	}
+
+	public function finishCreate(string $receiptId): array {
+		$s = $this->state();
+		$r = $s['receipts'][$receiptId] ?? null;
+		if (!$r || $r['expires'] < time()) {
+			throw new Problem('Creation receipt expired or was already consumed.', 410);
+		}
+		unset($s['receipts'][$receiptId]);
+		$this->session->set(self::KEY, $s);
+		$folder = $this->node($r['folderId']);
+		if (!$folder instanceof Folder || $this->metadata($folder)['path'] !== $r['folderPath']) {
+			throw new Problem('The destination folder changed. No success is claimed.', 409);
+		}
+		$file = $folder->get($r['filename']);
+		if (!$file instanceof File || !$file->isReadable() || !hash_equals($r['hash'], hash('sha256', $this->bytes($file, self::MAX_WRITE_BYTES)))) {
+			throw new Problem('The created content changed or the write was incomplete. No success is claimed.', 409);
+		}
+		return ['operation' => 'create', 'file' => $this->metadata($file)];
 	}
 }

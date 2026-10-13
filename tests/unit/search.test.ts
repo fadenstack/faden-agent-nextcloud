@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { findPassages } from '../../src/integrations/nextcloud/passages.ts'
-import { davResourceIds, NextcloudSearchService, resourceId } from '../../src/integrations/nextcloud/search.ts'
+import { boundedResults, davResourceIds, NextcloudSearchService, resourceId } from '../../src/integrations/nextcloud/search.ts'
 import type { FileApi, FileContext } from '../../src/integrations/nextcloud/types.ts'
 
 const context: FileContext = { id: 'opaque', parentId: 1, expires: 9999999999,
@@ -31,6 +31,11 @@ describe('literal passages and trustworthy source locations', () => {
 	})
 })
 describe('authorized discovery and cache boundaries', () => {
+	it('bounds multilingual metadata by UTF-8 bytes without splitting a file result', () => {
+		const bounded = boundedResults([{ name: 'ü'.repeat(20000) }, { name: 'ü'.repeat(20000) }])
+		expect(bounded.rows).toHaveLength(1)
+		expect(bounded.truncated).toBe(true)
+	})
 	it('rejects foreign references and XML entities', () => {
 		expect(() => resourceId('https://cloud.test/f/2')).toThrow()
 		expect(() => resourceId('nextcloud:files:2/../../3')).toThrow()
