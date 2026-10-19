@@ -33,6 +33,17 @@ not available in these pilot deployments and remains a deployment acceptance che
 | Nextcloud 32–34 | Declared compatible range; complete runtime matrix pending; creation-date filtering conservatively unavailable |
 | Native Files full-text platform | Contract and negative capability tests; live configured-platform validation pending |
 
+Files the agent creates or replaces are marked as AI-generated, without settings in
+the app: the Fadenstack server's provenance module signs a record of each write, and
+Nextcloud keeps it as the file's metadata `fadenstack-provenance` (over WebDAV
+`nc:metadata-fadenstack-provenance`, for search and DLP tools; users cannot change
+it over WebDAV). It stays through rename, move, new versions, Nextcloud Text's saves
+and the trash; the app copies it to copies. Markdown files also carry
+`ai-generated: true` and `ai-record-id` in YAML front matter, which Text shows as a
+labelled box and which travels with a download. The marking policy is the server's
+(`record` by default: a write goes on unmarked when the server cannot sign, and the
+panel says so under the write). Do not remove these marks.
+
 Keep deployment validation separate from measured local performance. Large or
 remote storage and native index configuration can change query times. The client
 has cancellation and deadlines; backend interruption depends on Nextcloud/provider
@@ -50,3 +61,9 @@ verfügbaren, indizierten nativen Files-Anbieter voraus. Prüfe dessen Berechtig
 und Zugriffsregeln in deiner Installation. Ohne Anbieter wird die Einschränkung
 ausdrücklich angezeigt. Nextcloud 35 ist das primäre Testziel; die übrigen Grenzen
 stehen in der obigen Kompatibilitätstabelle und den Verifikationsunterlagen.
+
+Vom Agenten erstellte oder ersetzte Dateien werden als KI-generiert gekennzeichnet:
+Der Fadenstack-Server signiert einen Nachweis jedes Schreibvorgangs, Nextcloud
+speichert ihn als Metadaten `fadenstack-provenance` der Datei (auch beim Kopieren),
+Markdown-Dateien tragen zusätzlich `ai-generated` und `ai-record-id` im Front Matter.
+Diese Kennzeichnungen dürfen nicht entfernt werden.

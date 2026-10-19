@@ -36,6 +36,12 @@ complete target and content on the approval card, then choose **Allow once** or
 read and matching revision. Save editor changes before attaching: context comes
 from the saved file, not the unsaved editor buffer.
 
+Files the assistant writes are marked as AI-generated: Nextcloud keeps a signed
+record with the file, also on copies, and a Markdown file shows `ai-generated` and
+`ai-record-id` in a front matter box at its top in Text. A line under the write says
+how the file is marked, or why it is not (a translation or a small correction needs
+no mark). Keep these marks when you edit the file.
+
 ## Deutsch
 
 Öffne Dateien und klicke auf das Fadenstack-Maskottchen in der oberen Leiste oder
@@ -70,3 +76,10 @@ Ziel und vollständigen Inhalt in der Freigabekarte, bevor du einmalig erlaubst
 oder ablehnst. Vorhandene Dateien werden beim Erstellen nicht überschrieben.
 Änderungen setzen das Lesen der aktuellen Revision voraus. Speichere Änderungen
 im Editor vor dem Anhängen; der Assistent verwendet die gespeicherte Datei.
+
+Vom Assistenten geschriebene Dateien werden als KI-generiert gekennzeichnet:
+Nextcloud speichert einen signierten Nachweis mit der Datei, auch bei Kopien, und
+eine Markdown-Datei zeigt in Text oben einen Front-Matter-Kasten mit `ai-generated`
+und `ai-record-id`. Eine Zeile unter dem Schreibvorgang sagt, wie die Datei
+gekennzeichnet ist oder warum nicht (Übersetzungen und kleine Korrekturen brauchen
+keine Kennzeichnung). Behalte diese Kennzeichnungen beim Bearbeiten bei.

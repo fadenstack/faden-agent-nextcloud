@@ -59,6 +59,21 @@ an answer, and never also the drawer.
   under its exclusive lock before truncating/writing. Creations reauthorize the
   parent and use native DAV `If-None-Match: *` with an expiring one-use receipt
   verifying the exact content and destination. There is no overwrite fallback.
+- Each committed write is marked as made with AI (EU AI Act Art. 50(2)) through
+  `@fadenstack/provenance`: the write tools declare their `output`, and the host's
+  write runs inside the module's `place()`. The Fadenstack server signs a record of
+  the approved text (by its hash, never the text); `NextcloudFileMarker` hands the
+  signed record (the SDK's sidecar document) to the commit; `FileService` keeps it
+  as Nextcloud file metadata `fadenstack-provenance`, which only the server may
+  change, on the update commit or the finished creation. A Markdown file also
+  carries `ai-generated: true` and `ai-record-id` in its YAML front matter, written
+  by the SDK's front matter marker; PHP accepts the marked text only when it is the
+  approved text with exactly that mark, else it writes the approved text. The
+  commit's answer reads both back, and the markers report `verified`. `CopyListener`
+  (`NodeCopiedEvent`) copies the record to copies of such files, also inside a
+  copied folder. Translations and small corrections (the SDK's similarity
+  classifier) are exempt and only recorded; a write goes on unmarked when the server
+  cannot sign, under the server's default policy `record`.
 - Fadenstack calls go directly from the browser to the configured origin, with
   SDK credentials and an origin guard. There is no AI proxy backend, database table,
   conversion service, or independent execution loop. CSP permits only that origin;

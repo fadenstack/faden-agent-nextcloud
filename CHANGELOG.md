@@ -19,4 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Files the agent creates or replaces are marked as AI-generated (EU AI Act Art. 50(2))
+  through `@fadenstack/provenance` 0.2.0-rc.3: the server's signed record as Nextcloud file
+  metadata `fadenstack-provenance`, copied to copies; Markdown also carries it in YAML front
+  matter; a line under each write says how the file is marked.
 - First release

@@ -24,6 +24,18 @@
   content after writing starts; no success is reported. Versioning aids recovery.
 - Folder output is bounded, but Nextcloud materializes the underlying directory.
 - Primary German elements are translated; server/profile/error text can remain English.
+  The AI-mark line under a write is translated into German, French, Spanish and
+  Simplified Chinese; the app's other texts have German only.
+- AI marks (measured on 31.0.14 and 35.0.1): the file metadata stays through rename,
+  move, copy (the app's listener, also in a copied folder), new versions, Text's
+  saves, shares and the trash. A recipient of a single-file share does not see it
+  over WebDAV (Nextcloud lists no metadata on a share's own root; inside a shared
+  folder it does); the record is still the file's. A downloaded `.txt` carries no
+  mark in its bytes (the model's watermark only); a `.md` keeps its front matter.
+  Copies made outside Nextcloud (download and upload) lose the metadata. Text adds a
+  blank line after the front matter on its first save; the mark stays.
+- The Fadenstack server's detector (0.4.5) checks text for the model's watermark;
+  it does not yet find a note's record by its front matter or content hash.
 - Production npm audit passes. Inherited developer tooling has remaining transitive
   advisories; no forced major downgrade of Nextcloud tooling was applied.
 

@@ -53,6 +53,19 @@ Artifacts in ignored `build/live` contain no tokens or passwords. It allows ten
 minutes per turn by default; `FADENSTACK_TURN_TIMEOUT_MS` changes that limit.
 Browser checks additionally cover the browser PDF worker and actual Vue UI.
 
+## AI marks on written files
+
+Run `node --experimental-transform-types tests/integration/provenance.mjs` on each
+local instance. It drives the production host, tools, approvals and provenance
+module with the SDK's fake gateway as the model and record signer, creates a
+Markdown note and a text file and replaces the note, then checks the file metadata
+and front matter through rename, move, copy, a folder copy, a new version, shares
+and the trash. With `FADENSTACK_PROVENANCE_SERVER`, `FADENSTACK_PROVENANCE_AGENT`
+and `FADENSTACK_PROVENANCE_TOKEN` (an agent's or a maintainer's token, environment
+only) that server signs the records and its detector's verdict on the note is
+reported. Text's own save is checked in a browser; the shared front matter vectors
+in `tests/fixtures/provenance` keep the PHP check and the SDK's marker in step.
+
 ## Search release tests and representative data
 
 Run `node --experimental-transform-types tests/integration/search.mjs` and
