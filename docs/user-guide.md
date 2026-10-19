@@ -42,6 +42,8 @@ record with the file, also on copies, and a Markdown file shows `ai-generated` a
 how the file is marked, or why it is not (a translation or a small correction needs
 no mark). Keep these marks when you edit the file.
 
+![The note in Nextcloud Text with the FRONT MATTER box holding ai-generated: true and the ai-record-id](screenshots/live-markdown-front-matter-dark.jpg)
+
 ## Deutsch
 
 Öffne Dateien und klicke auf das Fadenstack-Maskottchen in der oberen Leiste oder
@@ -83,3 +85,5 @@ eine Markdown-Datei zeigt in Text oben einen Front-Matter-Kasten mit `ai-generat
 und `ai-record-id`. Eine Zeile unter dem Schreibvorgang sagt, wie die Datei
 gekennzeichnet ist oder warum nicht (Übersetzungen und kleine Korrekturen brauchen
 keine Kennzeichnung). Behalte diese Kennzeichnungen beim Bearbeiten bei.
+
+![Die Notiz in Nextcloud Text mit dem Kasten FRONT MATTER, der ai-generated: true und die ai-record-id enthält](screenshots/live-markdown-front-matter-dark.jpg)

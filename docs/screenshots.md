@@ -65,6 +65,17 @@ call and the final model response, closes the editor Send check.
 
 ![Created Markdown result](screenshots/live-markdown-created-dark.jpg)
 
+## Marked as AI-generated
+
+Captured against the release test server on 19 October 2026. The panel after the
+assistant created a note says how the file is marked:
+
+![The panel after a note was created: Ran nc_create_text_file, and the line Marked as AI-generated in the file's metadata and its front matter](screenshots/live-markdown-marked-dark.jpg)
+
+The note opened in Nextcloud Text shows the mark in its front matter box:
+
+![The note in Nextcloud Text with the FRONT MATTER box holding ai-generated: true and the ai-record-id](screenshots/live-markdown-front-matter-dark.jpg)
+
 ## Light theme
 
 ![Nextcloud light theme](screenshots/nextcloud35-modern-drawer-light.jpg)
