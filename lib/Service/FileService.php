@@ -194,6 +194,7 @@ class FileService {
 		$this->selected($contextId); // detect changes during the read
 		$s = $this->state();
 		$s['contexts'][$contextId]['readEtag'] = $n->getEtag();
+		$s['contexts'][$contextId]['readStorageEtag'] = $n->getStorage()->getETag($n->getInternalPath());
 		$this->session->set(self::KEY, $s);
 		$length = mb_strlen($text, 'UTF-8');
 		return ['file' => $this->metadata($n), 'text' => mb_substr($text, 0, 50000, 'UTF-8'),
@@ -274,6 +275,7 @@ class FileService {
 		}
 		$p = ['id' => bin2hex(random_bytes(24)), 'contextId' => $contextId, 'operation' => $operation,
 			'filename' => $filename, 'content' => $content, 'before' => $before, 'expectedEtag' => $expectedEtag,
+			'expectedStorageEtag' => $operation === 'update' ? ($c['readStorageEtag'] ?? null) : null,
 			'folderId' => $folder->getId(), 'target' => rtrim($this->metadata($folder)['path'], '/') . '/' . $filename,
 			'expires' => time() + 600, 'approved' => false];
 		$s = $this->state();
@@ -359,8 +361,14 @@ class FileService {
 				throw new Problem('This storage does not support guarded text updates.', 422);
 			}
 			try {
-				$etag = $n->getStorage()->getETag($n->getInternalPath());
-				if ($etag !== $p['expectedEtag']) {
+				// Under the write lock, the file is as it was read: as Nextcloud's cache knows it (any write through
+				// Nextcloud changes that) and as its storage does (a change from outside). The two ETags can differ
+				// for the same file -- a copy keeps its source's cached one, Text's lock reset changes the cached
+				// one only -- so each is compared with its own value at the read.
+				$cached = $this->node($n->getId())->getEtag();
+				$stored = $n->getStorage()->getETag($n->getInternalPath());
+				$expectedStored = $p['expectedStorageEtag'] ?? null;
+				if ($cached !== $p['expectedEtag'] || ($expectedStored !== null && $stored !== $expectedStored)) {
 					throw new Problem('Another user changed the file. Read it again; no changes were saved.', 409);
 				}
 				if (!stream_get_meta_data($stream)['seekable'] || !rewind($stream) || !ftruncate($stream, 0)) {

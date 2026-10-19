@@ -9,6 +9,7 @@ require_once __DIR__ . '/MetadataStore.php';
 use OCA\FadenstackAgent\Service\Configuration;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\FrontMatter;
+use OCA\FadenstackAgent\Service\Problem;
 use OCA\FadenstackAgent\Service\ProvenanceService;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -38,6 +39,8 @@ class FileServiceProvenanceTest extends TestCase {
 	private array $nodes = [];
 	/** @var list<string> */
 	private array $temporary = [];
+	/** @var array<int, string> The storage's own ETag of a file, where it is not the cached one. */
+	private array $storageEtags = [];
 	private Folder $folder;
 	private ?File $created = null;
 
@@ -88,7 +91,7 @@ class FileServiceProvenanceTest extends TestCase {
 		$file->method('getParent')->willReturnCallback(fn (): Folder => $this->folder);
 		$file->method('fopen')->willReturnCallback(fn (string $mode) => fopen($path, $mode === 'r+' ? 'r+' : 'rb'));
 		$storage = $this->createMock(IStorage::class);
-		$storage->method('getETag')->willReturn('etag-' . $id);
+		$storage->method('getETag')->willReturnCallback(fn (): string => $this->storageEtags[$id] ?? 'etag-' . $id);
 		$file->method('getStorage')->willReturn($storage);
 		$file->method('getInternalPath')->willReturn('files/' . $name);
 		$this->nodes[$id] = $file;
@@ -152,6 +155,29 @@ class FileServiceProvenanceTest extends TestCase {
 		self::assertSame("New reply.\n", $this->contents($file));
 		self::assertSame([], $this->stored);
 		self::assertSame(['key' => ProvenanceService::KEY, 'metadata' => null, 'frontMatter' => null], $result['provenance']);
+	}
+
+	public function testACopiedFileCanBeUpdated(): void {
+		// A copy keeps its source's cached ETag; its storage has its own.
+		$this->storageEtags[5] = 'storage-etag-of-the-copy';
+		$files = $this->service();
+		$file = $this->file(5, 'Copy.txt', "Old text.\n");
+		$files->commit($this->approvedUpdate($files, $file, "New text.\n"), 0, "New text.\n", '');
+		self::assertSame("New text.\n", $this->contents($file));
+	}
+
+	public function testAChangeOutsideNextcloudAfterTheReadStopsTheUpdate(): void {
+		$files = $this->service();
+		$file = $this->file(5, 'Notes.txt', "Old text.\n");
+		$approved = $this->approvedUpdate($files, $file, "New text.\n");
+		$this->storageEtags[5] = 'changed-on-the-storage';
+		try {
+			$files->commit($approved, 0, "New text.\n", '');
+			self::fail('The update went through.');
+		} catch (Problem $problem) {
+			self::assertSame(409, $problem->status);
+		}
+		self::assertSame("Old text.\n", $this->contents($file));
 	}
 
 	public function testACreationKeepsTheRecordOnceTheNewFileIsThere(): void {
