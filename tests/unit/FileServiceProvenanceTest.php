@@ -11,6 +11,7 @@ use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\FrontMatter;
 use OCA\FadenstackAgent\Service\Problem;
 use OCA\FadenstackAgent\Service\ProvenanceService;
+use OCP\Files\Cache\IUpdater;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
@@ -41,6 +42,10 @@ class FileServiceProvenanceTest extends TestCase {
 	private array $temporary = [];
 	/** @var array<int, string> The storage's own ETag of a file, where it is not the cached one. */
 	private array $storageEtags = [];
+	/** @var list<array{string, string}> The file cache updates: the internal path, and the file's bytes then. */
+	private array $updated = [];
+	private bool $updaterFails = false;
+	private ?LoggerInterface $logger = null;
 	private Folder $folder;
 	private ?File $created = null;
 
@@ -68,7 +73,8 @@ class FileServiceProvenanceTest extends TestCase {
 		$urls = $this->createMock(IURLGenerator::class);
 		$urls->method('linkToRouteAbsolute')->willReturn('https://cloud.test/f/1');
 		$provenance = new ProvenanceService($this->metadataManager(), $this->createMock(LoggerInterface::class));
-		return new FileService($root, $users, $session, $urls, $this->createMock(Configuration::class), $this->createMock(IMountManager::class), $provenance);
+		$this->logger = $this->createMock(LoggerInterface::class);
+		return new FileService($root, $users, $session, $urls, $this->createMock(Configuration::class), $this->createMock(IMountManager::class), $provenance, $this->logger);
 	}
 
 	/** A file in the user's root folder, kept in a temporary file. */
@@ -92,6 +98,16 @@ class FileServiceProvenanceTest extends TestCase {
 		$file->method('fopen')->willReturnCallback(fn (string $mode) => fopen($path, $mode === 'r+' ? 'r+' : 'rb'));
 		$storage = $this->createMock(IStorage::class);
 		$storage->method('getETag')->willReturnCallback(fn (): string => $this->storageEtags[$id] ?? 'etag-' . $id);
+		// The file cache's updater: what it scans, with the file's bytes at that moment.
+		$updater = $this->createMock(IUpdater::class);
+		$updater->method('update')->willReturnCallback(function (string $internalPath) use ($path): void {
+			if ($this->updaterFails) {
+				throw new \RuntimeException('cache unavailable');
+			}
+			clearstatcache(true, $path);
+			$this->updated[] = [$internalPath, (string)file_get_contents($path)];
+		});
+		$storage->method('getUpdater')->willReturn($updater);
 		$file->method('getStorage')->willReturn($storage);
 		$file->method('getInternalPath')->willReturn('files/' . $name);
 		$this->nodes[$id] = $file;
@@ -178,6 +194,27 @@ class FileServiceProvenanceTest extends TestCase {
 			self::assertSame(409, $problem->status);
 		}
 		self::assertSame("Old text.\n", $this->contents($file));
+		self::assertSame([], $this->updated); // nothing written, nothing to update
+	}
+
+	public function testAnUpdateBringsTheFileCacheUpToDateOnceTheBytesAreWritten(): void {
+		// A write through the file's stream passes the cache by: without a scan its ETag, size and time stay the old
+		// ones, so sync clients and the app's own reads keep the file as it was (seen live).
+		$files = $this->service();
+		$file = $this->file(5, 'Notes.md', "---\ntitle: Notes\n---\nOld text.\n");
+		$marked = FrontMatter::withMark("---\ntitle: Notes\n---\nThe new text.\n", self::ID);
+		$files->commit($this->approvedUpdate($files, $file, "---\ntitle: Notes\n---\nThe new text.\n"), 0, $marked, ProvenanceServiceTest::document());
+		self::assertSame([['files/Notes.md', $marked]], $this->updated);
+	}
+
+	public function testACacheThatCannotBeUpdatedDoesNotUndoTheWrite(): void {
+		$files = $this->service();
+		$file = $this->file(5, 'Reply.txt', "Old text.\n");
+		$this->updaterFails = true;
+		$this->logger->expects(self::once())->method('warning');
+		$result = $files->commit($this->approvedUpdate($files, $file, "New reply.\n"), 0, "New reply.\n", '');
+		self::assertSame('update', $result['operation']);
+		self::assertSame("New reply.\n", $this->contents($file));
 	}
 
 	public function testACreationKeepsTheRecordOnceTheNewFileIsThere(): void {

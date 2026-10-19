@@ -12,6 +12,7 @@ use OCP\Files\Node;
 use OCP\ISession;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
+use Psr\Log\LoggerInterface;
 
 class FileService {
 	public const MAX_TEXT_BYTES = 2097152;
@@ -29,6 +30,7 @@ class FileService {
 		private Configuration $config,
 		private IMountManager $mounts,
 		private ProvenanceService $provenance,
+		private LoggerInterface $logger,
 	) {
 	}
 
@@ -360,6 +362,7 @@ class FileService {
 			if (!is_resource($stream)) {
 				throw new Problem('This storage does not support guarded text updates.', 422);
 			}
+			$changed = false;
 			try {
 				// Under the write lock, the file is as it was read: as Nextcloud's cache knows it (any write through
 				// Nextcloud changes that) and as its storage does (a change from outside). The two ETags can differ
@@ -374,6 +377,7 @@ class FileService {
 				if (!stream_get_meta_data($stream)['seekable'] || !rewind($stream) || !ftruncate($stream, 0)) {
 					throw new Problem('This storage does not support guarded text updates.', 422);
 				}
+				$changed = true;
 				$offset = 0;
 				while ($offset < strlen($write)) {
 					$written = fwrite($stream, substr($write, $offset));
@@ -383,7 +387,10 @@ class FileService {
 					$offset += $written;
 				}
 			} finally {
-				fclose($stream); // Nextcloud updates metadata, fires hooks and releases its write lock.
+				fclose($stream); // Nextcloud releases its write lock.
+				if ($changed) {
+					$this->updateCache($n);
+				}
 			}
 			$result = $n;
 		}
@@ -392,6 +399,21 @@ class FileService {
 			$this->provenance->store($file->getId(), $record->json);
 		}
 		return ['operation' => $p['operation'], 'file' => $this->metadata($file), 'provenance' => $this->marks($file)];
+	}
+
+	/**
+	 * A write through the file's own stream passes Nextcloud's file cache by (`File::fopen` sends its write hooks when
+	 * the stream opens, and nothing updates the cache when it closes): as Nextcloud's WebDAV does after a streamed
+	 * upload, the storage's updater scans the file again, so its ETag, size and modification time are the written
+	 * file's and its folders' ETags change. Without it, sync clients and this app's own reads keep seeing the file as it
+	 * was before the write. The bytes are written either way: a cache that cannot be updated is logged, not a failure.
+	 */
+	private function updateCache(File $file): void {
+		try {
+			$file->getStorage()->getUpdater()->update($file->getInternalPath());
+		} catch (\Throwable $e) {
+			$this->logger->warning('The file cache could not be updated after an approved write.', ['exception' => $e, 'fileId' => $file->getId()]);
+		}
 	}
 
 	/**

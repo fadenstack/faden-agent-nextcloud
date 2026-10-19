@@ -56,7 +56,10 @@ an answer, and never also the drawer.
   approves that exact proposal; the host tool then commits it. Write tools use the
   SDK's stricter destructive class to require individual approval in every mode.
   Updates open the public `File::fopen('r+')` write stream and compare storage ETags
-  under its exclusive lock before truncating/writing. Creations reauthorize the
+  under its exclusive lock before truncating/writing. A stream write passes the file
+  cache by, so after it the storage's updater scans the file again, as Nextcloud's
+  WebDAV does after a streamed upload: the file's ETag, size and time are the written
+  file's for sync clients and the app's own reads. Creations reauthorize the
   parent and use native DAV `If-None-Match: *` with an expiring one-use receipt
   verifying the exact content and destination. There is no overwrite fallback.
 - Each committed write is marked as made with AI (EU AI Act Art. 50(2)) through

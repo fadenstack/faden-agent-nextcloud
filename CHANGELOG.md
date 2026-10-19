@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`NextcloudLocked`, `NextcloudConflict`, ...) that a write refused after its record was
   signed reports to the server as its failure. A file another app holds locked (Text
   while it is open) is answered 423 Locked instead of 409.
+- An approved update brings Nextcloud's file cache up to date: the file's ETag, size and
+  time change with the write, so sync clients fetch it and the agent's next read in the
+  same chat sees the new text (before, it kept the old ETag and the agent was told the
+  file was unchanged).
 
 ### Added
 
