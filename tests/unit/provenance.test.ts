@@ -6,6 +6,7 @@ import { createApp, markRaw, nextTick } from 'vue'
 import AgentChat from '../../src/components/AgentChat.vue'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
 import { FILE_METADATA, FILE_SINK, METADATA_KEY, NextcloudFileMarker, provenanceNote, type NextcloudFileSink } from '../../src/integrations/nextcloud/provenance.ts'
+import { nextcloudError } from '../../src/integrations/nextcloud/files.ts'
 import type { FileApi, FileContext, Identity, Proposal, WriteMark } from '../../src/integrations/nextcloud/types.ts'
 import vectors from '../fixtures/provenance/front-matter.json'
 
@@ -22,7 +23,7 @@ const front = (text: string) => /^﻿?---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)(?:\r?\
  * the front matter mark, keeps the handed record as the file's metadata (unless `keepMetadata` is off), and reads both
  * back.
  */
-function nextcloud(options: { keepMetadata?: boolean } = {}) {
+function nextcloud(options: { keepMetadata?: boolean; commitError?: unknown } = {}) {
 	let proposal: Proposal | undefined
 	const commits: { id: string; mark?: WriteMark; written: string }[] = []
 	const metadata = new Map<number, string>()
@@ -33,6 +34,7 @@ function nextcloud(options: { keepMetadata?: boolean } = {}) {
 		propose: vi.fn(async (contextId, args) => (proposal = { id: 'proposal', contextId, ...args, filename: args.filename ?? selected.file.name, target: `/${args.filename ?? selected.file.name}`, before: args.operation === 'update' ? CURRENT : null })),
 		approve: vi.fn(async () => {}),
 		commit: vi.fn(async (id: string, _signal?: AbortSignal, mark?: WriteMark) => {
+			if (options.commitError) throw options.commitError
 			const p = proposal!
 			const record = mark?.provenance ? (JSON.parse(mark.provenance) as { record: { id: string } }).record.id : undefined
 			const markdown = /\.md$/i.test(p.filename!)
@@ -45,7 +47,7 @@ function nextcloud(options: { keepMetadata?: boolean } = {}) {
 	return { files, commits, metadata }
 }
 
-function agent(model: ConstructorParameters<typeof FakeGateway>[0]['model'], options: { gateway?: ConstructorParameters<typeof FakeGateway>[0]; keepMetadata?: boolean } = {}) {
+function agent(model: ConstructorParameters<typeof FakeGateway>[0]['model'], options: { gateway?: ConstructorParameters<typeof FakeGateway>[0]; keepMetadata?: boolean; commitError?: unknown } = {}) {
 	const gateway = new FakeGateway({ agents: [{ slug: 'nc', version: 1, contract: [
 		{ name: 'nc_get_selected_file', risk: 'read' }, { name: 'nc_read_file', risk: 'read' },
 		{ name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' },
@@ -188,6 +190,27 @@ describe('Files the agent writes are marked as made with AI', () => {
 		expect(gateway.placements[0]!.report.layers).toContainEqual({ layer: 'metadata', method: 'nextcloud-metadata', applied: false, reason: 'stripped-by-host' })
 		expect(host.placement('write')?.missing).toEqual([{ layer: 'metadata', method: 'nextcloud-metadata', reason: 'stripped-by-host' }])
 		expect(provenanceNote(host.placement('write')!)).toBe('not-kept')
+		await host.dispose()
+	})
+	it('Nextcloud refuses the approved update after its record was signed (Text holds the file): not written, by what failed, and the model reads why', async () => {
+		let round = 0
+		const busy = nextcloudError(Object.assign(new Error('Request failed with status code 423'), { name: 'AxiosError', response: { status: 423, data: { message: 'The file is busy. Try again.' } } }))
+		const { host, gateway, commits } = agent(() => {
+			round++
+			if (round === 1) return { toolCalls: [{ name: 'nc_read_file', arguments: {}, id: 'read' }] }
+			if (round === 2) return { toolCalls: [{ name: 'nc_update_text_file', arguments: { content: 'Both parties may now end the agreement at any time. A new price list applies from January; deliveries move to Fridays.', expectedEtag: 'revision-1' }, id: 'write' }] }
+			return { text: 'The file is open elsewhere; close it and ask again.' }
+		}, { commitError: busy })
+		await run(host, 'Rewrite the included file')
+		expect(commits).toHaveLength(0)
+		const id = gateway.provenanceRecords[0]!.signed.record.id
+		// The server keeps the signed record as not written, with the name of what failed (not the HTTP library's).
+		expect(gateway.placements[0]!.report).toMatchObject({ record_id: id, tool: 'nc_update_text_file', written: false, failure: 'NextcloudLocked' })
+		expect(gateway.placements[0]!.report.layers.every((l: { applied: boolean }) => !l.applied)).toBe(true)
+		// The model reads Nextcloud's words, not "Request failed with status code 423".
+		const call = gateway.modelCalls.find(c => lastToolResults(c).has('write'))!
+		expect(lastToolResults(call).get('write')).toContain('The file is busy. Try again.')
+		expect(host.placement('write')).toBeUndefined()
 		await host.dispose()
 	})
 	it('small corrections are exempt and a rewrite is marked, as the SDK\'s similarity classifier decides', async () => {

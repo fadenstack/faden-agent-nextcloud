@@ -73,7 +73,13 @@ an answer, and never also the drawer.
   (`NodeCopiedEvent`) copies the record to copies of such files, also inside a
   copied folder. Translations and small corrections (the SDK's similarity
   classifier) are exempt and only recorded; a write goes on unmarked when the server
-  cannot sign, under the server's default policy `record`.
+  cannot sign, under the server's default policy `record`. A commit Nextcloud
+  refuses after the record was signed comes back in Nextcloud's words (for the model
+  and the card) as a `NextcloudRequestError` named by what failed: `NextcloudLocked`
+  (423) while another app holds the file, such as Text with files_lock while it is
+  open, `NextcloudConflict` (409) for a file changed since the read. The module
+  reports the placement as not written with that name as its `failure`, and the
+  server keeps the record as not written.
 - Fadenstack calls go directly from the browser to the configured origin, with
   SDK credentials and an origin guard. There is no AI proxy backend, database table,
   conversion service, or independent execution loop. CSP permits only that origin;

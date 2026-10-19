@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the language in its settings (Automatic is their Nextcloud language), kept per user in
   the browser.
 - Esc closes the panel's menus or stops an answer without also closing the drawer.
+- A file operation Nextcloud refuses comes back in its own words ("The file is busy. Try
+  again.") instead of "Request failed with status code 409", with a name for what failed
+  (`NextcloudLocked`, `NextcloudConflict`, ...) that a write refused after its record was
+  signed reports to the server as its failure. A file another app holds locked (Text
+  while it is open) is answered 423 Locked instead of 409.
 
 ### Added
 

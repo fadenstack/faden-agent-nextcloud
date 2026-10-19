@@ -8,6 +8,7 @@ use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
 use OCA\FadenstackAgent\Service\SearchAccessService;
 use OCP\AppFramework\Controller;
+use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\UseSession;
 use OCP\AppFramework\Http\DataDownloadResponse;
@@ -39,7 +40,8 @@ class FilesController extends Controller {
 		} catch (\OCP\Files\NotPermittedException $e) {
 			$response = new DataResponse(['message' => 'Permission denied.'], 403);
 		} catch (\OCP\Lock\LockedException $e) {
-			$response = new DataResponse(['message' => 'The file is busy. Try again.'], 409);
+			// Locked, not changed: another app holds the file (Nextcloud Text with files_lock while it is open).
+			$response = new DataResponse(['message' => 'The file is busy. Try again.'], Http::STATUS_LOCKED);
 		} catch (\Throwable $e) {
 			$response = new DataResponse(['message' => 'The file operation failed. No success is claimed.'], 500);
 		}
