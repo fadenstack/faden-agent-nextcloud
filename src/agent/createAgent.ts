@@ -1,7 +1,9 @@
 import { FadenstackClient, AgentTokenProvider, MemoryTokenStore, loginWithPassword, type FetchLike } from '@fadenstack/client'
 import { FadenstackAgent, MemorySessionStore, MemoryApprovalStore, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
 import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore } from '@fadenstack/ui'
+import { provenanceModule, provenanceOf, similarityClassifier } from '@fadenstack/provenance'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
+import { FileWrite, NextcloudFileMarker, provenanceSummary, type ProvenanceSummary } from '../integrations/nextcloud/provenance.ts'
 import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments } from '../integrations/nextcloud/tools.ts'
@@ -19,6 +21,7 @@ export class NextcloudAgent {
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
 	readonly #toolResults = new Map<string, SearchViewResults>()
+	readonly #placements = new Map<string, ProvenanceSummary>()
 	#active: FileContext | undefined
 	#closed = false
 	#include: boolean | undefined
@@ -67,6 +70,10 @@ export class NextcloudAgent {
 					return result
 				},
 			})
+			// Files the agent writes are marked as made with AI (EU AI Act Art. 50(2)): the server signs a record of each
+			// write, FileService keeps it as the file's metadata, Markdown also carries it in front matter. The policy is
+			// the server's (`record` by default): a write goes on when the server cannot sign, and says so.
+			.use(provenanceModule({ markers: [new NextcloudFileMarker()], classifier: similarityClassifier(), development: config.development }))
 			// What the app brings, for the agent's Apps tab: its tools, the context it offers, and the greeting and
 			// suggestions an administrator can take in, so the empty chat starts with ready questions.
 			.describeApp({ name: 'Nextcloud Files', version: '0.1.0', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
@@ -147,14 +154,38 @@ export class NextcloudAgent {
 		return selected ?? this.files.select(resourceId(key), signal)
 	}
 
+	/**
+	 * Commits the approved proposal through the provenance module's `place()`: the server signs a record of the
+	 * approved text, the markers mark it (front matter for Markdown) and hand the record to the write, FileService
+	 * keeps it as the file's metadata, and the markers check what it read back. The model is told the marks, never
+	 * the record's content.
+	 */
 	async write(_args: WriteArguments, call: ToolCallContext): Promise<unknown> {
 		const proposal = this.#proposals.get(call.callId)
 		if (!proposal) throw new Error('No individually approved proposal exists for this tool call.')
 		this.#proposals.delete(call.callId)
 		await this.files.assertIdentity()
 		call.signal.throwIfAborted()
-		return this.files.commit(proposal.id, call.signal)
+		const write = new FileWrite(proposal.filename ?? proposal.target)
+		const placement = await provenanceOf(call).place({
+			content: proposal.content,
+			mediaType: write.mediaType,
+			sink: write.sink,
+			...(typeof proposal.before === 'string' ? { original: proposal.before } : {}),
+		}, async (marked) => {
+			const content = typeof marked.content === 'string' ? marked.content : new TextDecoder().decode(marked.content)
+			return write.written(await this.files.commit(proposal.id, call.signal, { content, ...(write.record ? { provenance: write.record } : {}) }))
+		})
+		const summary = provenanceSummary(placement)
+		this.#placements.set(call.callId, summary)
+		while (this.#placements.size > 100) this.#placements.delete(this.#placements.keys().next().value!)
+		// The model gets the write and the summary, not the read-back (the record's JSON, the front matter).
+		const { operation, file } = placement.result
+		return { operation, file, provenance: summary }
 	}
+
+	/** What a write's AI mark came to, for the panel's line under it. */
+	placement(callId: string): ProvenanceSummary | undefined { return this.#placements.get(callId) }
 
 	async approve(part: ApprovalPart): Promise<void> {
 		const id = part.request.arguments.proposalId
@@ -244,6 +275,7 @@ export class NextcloudAgent {
 		this.selection.clear()
 		this.discovery.clear()
 		this.#toolResults.clear()
+		this.#placements.clear()
 		this.#active = undefined
 		this.#proposals.clear()
 		await this.tokens.signOut()

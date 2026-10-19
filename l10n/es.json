@@ -1,0 +1,11 @@
+{
+  "translations": {
+    "Marked as AI-generated in the file's metadata and its front matter.": "Marcado como generado por IA en los metadatos del archivo y en su front matter.",
+    "Marked as AI-generated in the file's metadata.": "Marcado como generado por IA en los metadatos del archivo.",
+    "Marked as AI-generated in its front matter only: Nextcloud did not keep the file's metadata.": "Marcado como generado por IA solo en su front matter: Nextcloud no conservó los metadatos del archivo.",
+    "Saved without an AI mark: the provenance service could not sign a record.": "Guardado sin marca de IA: el servicio de procedencia no pudo firmar un registro.",
+    "Saved without an AI mark: Nextcloud did not keep it.": "Guardado sin marca de IA: Nextcloud no la conservó.",
+    "Saved without an AI mark: translations, corrections and short labels need none.": "Guardado sin marca de IA: las traducciones, las correcciones y las etiquetas cortas no la necesitan."
+  },
+  "pluralForm": "nplurals=2; plural=(n != 1);"
+}

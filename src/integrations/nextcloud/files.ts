@@ -1,6 +1,6 @@
 import axios from '@nextcloud/axios'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteMark, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan } from './types.ts'
 
 export class NextcloudFiles implements FileApi {
 
@@ -52,8 +52,12 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async approve(id: string, signal?: AbortSignal): Promise<void> { await this.post(`/proposals/${encodeURIComponent(id)}/approve`, {}, signal) }
-	async commit(id: string, signal?: AbortSignal): Promise<WriteResult> {
-		const result = await this.post<WriteResult | DavCreatePlan>(`/proposals/${encodeURIComponent(id)}/commit`, { createProtocol: 1 }, signal)
+	async commit(id: string, signal?: AbortSignal, mark?: WriteMark): Promise<WriteResult> {
+		// The marked text and the signed record go with the commit: FileService writes the marked text only when it is
+		// the approved one with its mark, and keeps the record as the file's metadata. A creation's plan carries the
+		// text it accepted, which the PUT below writes.
+		const marks = mark ? { content: mark.content, ...(mark.provenance ? { provenance: mark.provenance } : {}) } : {}
+		const result = await this.post<WriteResult | DavCreatePlan>(`/proposals/${encodeURIComponent(id)}/commit`, { createProtocol: 1, ...marks }, signal)
 		if (!('kind' in result)) return result
 		const prefix = `/files/${encodeURIComponent(this.initial.userId)}/`
 		if (result.kind !== 'dav-create' || !result.dav_path.startsWith(prefix) || /[?#\r\n]/.test(result.dav_path)) throw new Error('Invalid approved Nextcloud creation plan.')

@@ -45,7 +45,18 @@ export interface Proposal extends WriteArguments {
 	before: string | null
 	contextId: string
 }
-export interface WriteResult { operation: string; file: FileMetadata }
+/** What a written file holds of its AI mark, as FileService read it back after the write. */
+export interface FileMarks {
+	/** The file metadata key: `fadenstack-provenance`. */
+	key: string
+	/** The signed record the metadata holds (the SDK's sidecar document), or null. */
+	metadata: string | null
+	/** A Markdown file's front matter as stored, or null. */
+	frontMatter: string | null
+}
+export interface WriteResult { operation: string; file: FileMetadata; provenance?: FileMarks }
+/** What a write hands to FileService besides the approved proposal: the text as the markers prepared it, and the signed record. */
+export interface WriteMark { content: string; provenance?: string }
 export interface DavCreatePlan { kind: 'dav-create'; receiptId: string; dav_path: string; parent_resource_id: string; parent_path: string; parent_etag: string; content: string }
 export interface SearchFilters {
 	query?: string
@@ -124,5 +135,6 @@ export interface FileApi {
 	list(contextId: string, signal?: AbortSignal): Promise<Listing>
 	propose(contextId: string, args: WriteArguments, signal?: AbortSignal): Promise<Proposal>
 	approve(id: string, signal?: AbortSignal): Promise<void>
-	commit(id: string, signal?: AbortSignal): Promise<WriteResult>
+	/** Writes the approved proposal; with `mark`, marked as made with AI (FileService checks the text against the approved one). */
+	commit(id: string, signal?: AbortSignal, mark?: WriteMark): Promise<WriteResult>
 }

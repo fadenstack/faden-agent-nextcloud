@@ -68,3 +68,5 @@
 .fdn-chat .fdn-search-excerpt, .fdn-chat .fdn-search-passage p { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .fdn-chat .fdn-search-passage { margin: 0; padding-inline-start: 10px; border-inline-start: 3px solid var(--fdn-accent); }
+
+.fdn-chat .fdn-provenance-note { margin: 2px 0 6px; font-size: 12px; overflow-wrap: anywhere; }

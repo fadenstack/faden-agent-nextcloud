@@ -9,6 +9,7 @@ import { useObservable } from '../agent/useObservable.ts'
 import { WRITE_TOOLS } from '../integrations/nextcloud/tools.ts'
 import type { FileContext } from '../integrations/nextcloud/types.ts'
 import NextcloudApproval from './NextcloudApproval.vue'
+import ProvenanceNote from './ProvenanceNote.vue'
 import SearchResultsCard from './SearchResultsCard.vue'
 import '../styles/nextcloud.css'
 
@@ -21,7 +22,8 @@ const composerContext = computed(() => { void version.value; return props.host.s
 const theme = 'nextcloud' as ChatTheme
 
 // Nextcloud's parts of an answer: a file write shows the exact proposal and is registered before it is
-// allowed; a search shows its results as cards above the tool line. Everything else is the SDK's own view.
+// allowed, and once written says how the file is marked as AI-generated; a search shows its results as cards
+// above the tool line. Everything else is the SDK's own view.
 const renderers: PartRenderer[] = [
 	(part, strings) => {
 		if (part instanceof ApprovalPart && WRITE_TOOLS.has(part.toolName) && part.request.arguments.proposalId) {
@@ -30,6 +32,8 @@ const renderers: PartRenderer[] = [
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
 			const result = props.host.toolResult(part.callId)
 			if (result) return [h(SearchResultsCard, { result, host: props.host }), h(ToolCallView, { part, strings })]
+			const placement = WRITE_TOOLS.has(part.name) ? props.host.placement(part.callId) : undefined
+			if (placement) return [h(ToolCallView, { part, strings }), h(ProvenanceNote, { summary: placement })]
 		}
 		return undefined
 	},

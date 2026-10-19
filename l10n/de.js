@@ -61,5 +61,11 @@ OC.L10N.register("fadenstack_agent", {
   "Allow HTTP on localhost for development": "HTTP auf localhost für die Entwicklung erlauben",
   "Configure the Nextcloud origin in Fadenstack CORS. Only the configured server origin is allowed by this app.": "Tragen Sie die Nextcloud-Adresse in Fadenstack CORS ein. Diese App erlaubt nur die konfigurierte Serveradresse.",
   "Save": "Speichern",
-  "Saved. Reload Files to use the new configuration.": "Gespeichert. Laden Sie Dateien neu, um die neue Konfiguration zu verwenden."
+  "Saved. Reload Files to use the new configuration.": "Gespeichert. Laden Sie Dateien neu, um die neue Konfiguration zu verwenden.",
+  "Marked as AI-generated in the file's metadata and its front matter.": "Als KI-generiert gekennzeichnet, in den Metadaten der Datei und in ihrem Front Matter.",
+  "Marked as AI-generated in the file's metadata.": "Als KI-generiert gekennzeichnet, in den Metadaten der Datei.",
+  "Marked as AI-generated in its front matter only: Nextcloud did not keep the file's metadata.": "Nur im Front Matter als KI-generiert gekennzeichnet: Nextcloud hat die Metadaten der Datei nicht behalten.",
+  "Saved without an AI mark: the provenance service could not sign a record.": "Ohne KI-Kennzeichnung gespeichert: Der Herkunftsdienst konnte keinen Nachweis signieren.",
+  "Saved without an AI mark: Nextcloud did not keep it.": "Ohne KI-Kennzeichnung gespeichert: Nextcloud hat sie nicht behalten.",
+  "Saved without an AI mark: translations, corrections and short labels need none.": "Ohne KI-Kennzeichnung gespeichert: Übersetzungen, Korrekturen und kurze Bezeichnungen brauchen keine."
 }, "nplurals=2; plural=(n != 1);");

@@ -68,7 +68,7 @@ export class User {
       list: (contextId,signal) => this.api('/context/list',{contextId},200,signal),
       propose: (contextId,args,signal) => this.api('/proposals',{contextId,...args},200,signal),
       approve: (id,signal) => this.api(`/proposals/${id}/approve`,{},200,signal),
-      commit: async (id,signal) => { this.committed = await this.api(`/proposals/${id}/commit`,{},200,signal); return this.committed },
+      commit: async (id,signal,mark) => { this.committed = await this.api(`/proposals/${id}/commit`,{...(mark ?? {})},200,signal); return this.committed },
       pdf: async (contextId,signal) => {
         const response = await this.request('/index.php/apps/fadenstack_agent/context/content',{method:'POST',signal,headers:{'Content-Type':'application/json','X-Fadenstack-Session':this.binding},body:JSON.stringify({contextId})})
         assert.equal(response.status,200)

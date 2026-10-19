@@ -1,0 +1,8 @@
+OC.L10N.register("fadenstack_agent", {
+  "Marked as AI-generated in the file's metadata and its front matter.": "Marqué comme généré par IA dans les métadonnées du fichier et dans son front matter.",
+  "Marked as AI-generated in the file's metadata.": "Marqué comme généré par IA dans les métadonnées du fichier.",
+  "Marked as AI-generated in its front matter only: Nextcloud did not keep the file's metadata.": "Marqué comme généré par IA uniquement dans son front matter : Nextcloud n’a pas conservé les métadonnées du fichier.",
+  "Saved without an AI mark: the provenance service could not sign a record.": "Enregistré sans marquage IA : le service de provenance n’a pas pu signer d’enregistrement.",
+  "Saved without an AI mark: Nextcloud did not keep it.": "Enregistré sans marquage IA : Nextcloud ne l’a pas conservé.",
+  "Saved without an AI mark: translations, corrections and short labels need none.": "Enregistré sans marquage IA : les traductions, les corrections et les libellés courts n’en ont pas besoin."
+}, "nplurals=2; plural=(n > 1);");
