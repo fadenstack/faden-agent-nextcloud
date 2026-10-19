@@ -62,8 +62,10 @@ Markdown note and a text file and replaces the note, then checks the file metada
 and front matter through rename, move, copy, a folder copy, a new version, shares
 and the trash. With `FADENSTACK_PROVENANCE_SERVER`, `FADENSTACK_PROVENANCE_AGENT`
 and `FADENSTACK_PROVENANCE_TOKEN` (an agent's or a maintainer's token, environment
-only) that server signs the records and its detector's verdict on the note is
-reported. Text's own save is checked in a browser; the shared front matter vectors
+only) that server signs the records (the fake model then sends no receipts, which
+the server would not know), the test checks the server knows each record, and its
+detector's findings on the note, the approved text, the words people read and the
+Markdown file are reported. Text's own save is checked in a browser; the shared front matter vectors
 in `tests/fixtures/provenance` keep the PHP check and the SDK's marker in step.
 
 ## Search release tests and representative data

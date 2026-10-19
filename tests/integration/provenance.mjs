@@ -8,7 +8,7 @@
 // NODE_EXTRA_CA_CERTS names its CA when it has its own. File ids and record ids go to stdout; no token is printed.
 import assert from 'node:assert/strict'
 import { FakeGateway, lastToolResults } from '@fadenstack/testing'
-import { frontMatterMark, withFrontMatter } from '@fadenstack/provenance'
+import { frontMatterMark, markdownText, withFrontMatter } from '@fadenstack/provenance'
 import { ApprovalPart } from '@fadenstack/ui'
 import { User, base, metrics } from './client.mjs'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
@@ -42,28 +42,35 @@ async function text(user, path) {
 const rows = []
 function row(operation, what) { rows.push([operation, what]); console.log(`  ${operation}: ${what}`); metrics.checks++ }
 
-// The model: each send runs the next calls; the fake gateway signs records unless a real server does.
-const script = []
-const gateway = new FakeGateway({
-  agents: [{ slug: 'nc', version: 1, contract: [{ name: 'nc_get_selected_file', risk: 'read' }, { name: 'nc_read_file', risk: 'read' }, { name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' }] }],
-  users: [{ email: 'alice@example.org', password: 'test', agents: ['nc'] }],
-  provenance: { receipts: true },
-  model: request => { const next = script.shift(); return typeof next === 'function' ? next(request) : next ?? { text: 'Done.' } },
-})
 const real = process.env.FADENSTACK_PROVENANCE_SERVER?.replace(/\/$/, '')
 const token = process.env.FADENSTACK_PROVENANCE_TOKEN
 delete process.env.FADENSTACK_PROVENANCE_TOKEN
 const realAgent = process.env.FADENSTACK_PROVENANCE_AGENT
 if (real) assert.ok(token && realAgent, 'A real server needs FADENSTACK_PROVENANCE_AGENT and FADENSTACK_PROVENANCE_TOKEN.')
+// The model: each send runs the next calls; the fake gateway signs records unless a real server does. Its answers
+// carry receipts only without a real server, which would not keep a record naming a receipt it never issued.
+const script = []
+const gateway = new FakeGateway({
+  agents: [{ slug: 'nc', version: 1, contract: [{ name: 'nc_get_selected_file', risk: 'read' }, { name: 'nc_read_file', risk: 'read' }, { name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' }] }],
+  users: [{ email: 'alice@example.org', password: 'test', agents: ['nc'] }],
+  provenance: { receipts: !real },
+  model: request => { const next = script.shift(); return typeof next === 'function' ? next(request) : next ?? { text: 'Done.' } },
+})
 /** With a real server: its policy and its signed records; everything else (the model, placement reports) stays fake. */
+/** The calls that went to the real server: route, status, and the record id it signed. */
+const forwarded = []
 const fetchImpl = !real ? gateway.fetch : async (input, init) => {
   const url = new URL(String(input instanceof Request ? input.url : input))
-  const route = /^\/v1\/agents\/nc\/provenance\/(policy|records)$/.exec(url.pathname)
+  const route = /^\/v1\/agents\/[^/]+\/provenance\/(policy|records)$/.exec(url.pathname)
   if (!route) return gateway.fetch(input, init)
-  return fetch(`${real}/v1/agents/${encodeURIComponent(realAgent)}/provenance/${route[1]}`, {
-    method: init?.method ?? 'GET', body: init?.body, signal: init?.signal,
+  const body = input instanceof Request && init?.body === undefined ? await input.text() : init?.body
+  const response = await fetch(`${real}/v1/agents/${encodeURIComponent(realAgent)}/provenance/${route[1]}`, {
+    method: init?.method ?? (input instanceof Request ? input.method : 'GET'), body, signal: init?.signal,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
   })
+  const answer = await response.clone().json().catch(() => undefined)
+  forwarded.push({ route: route[1], status: response.status, record: answer?.record?.id, detail: response.ok ? undefined : JSON.stringify(answer).slice(0, 200) })
+  return response
 }
 const files = alice.files()
 const written = []
@@ -95,6 +102,13 @@ assert.deepEqual(reply.marks, ['nextcloud-metadata'])
 let id = summary.record_id
 row('Created Summary.md through the agent', `record ${id}; marks read back: ${summary.marks.join(', ')}`)
 row('Created Reply.txt through the agent', `record ${reply.record_id}; marks read back: ${reply.marks.join(', ')}`)
+if (real) {
+  // The records are the real server's: it answered the sign requests with these ids.
+  const signedThere = forwarded.filter(call => call.route === 'records' && call.status === 200).map(call => call.record)
+  assert.ok(signedThere.includes(id) && signedThere.includes(reply.record_id), `forwarded: ${JSON.stringify(forwarded)}`)
+  assert.equal(gateway.provenanceRecords.length, 0, 'the fake gateway signed nothing')
+  row(`Signed by ${real}`, forwarded.map(call => `${call.route} ${call.status}${call.record ? ` ${call.record}` : ''}`).join('; '))
+}
 
 let path = `${folder}/Summary.md`
 const created = await metadata(alice, path)
@@ -214,12 +228,27 @@ assert.equal((await metadata(alice, `${folder}/Reply.txt`)).record?.record.id, r
 row('Reply.txt deleted and restored from the trash', 'metadata kept')
 
 if (real) {
-  const check = await fetch(`${real}/v1/provenance/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ text: await text(alice, `${folder}/Summary copy.md`) }) })
-  const result = await check.json()
-  assert.equal(check.status, 200, JSON.stringify(result).slice(0, 300))
-  // What the server's detector makes of the note is the server's: reported, not asserted.
-  const finding = result.findings?.find(f => f.record_id === id)
-  row(`Checked on ${real}`, `verdict ${result.verdict}; the note's record ${finding?.found ? 'found' : 'not found'}; ${(result.findings ?? []).map(f => `${f.layer}/${f.method}: ${f.found ? 'found' : 'not found'}${f.record_id ? ` (record ${f.record_id === id ? 'the note\'s' : f.record_id})` : ''}`).join('; ')}`)
+  // The copy made after the replacement and before the WebDAV edit: its record is the replacement's (`id`).
+  const note = await text(alice, `${folder}/Summary copy.md`)
+  assert.equal(note, withFrontMatter(rewritten, id))
+  const verify = async body => {
+    const response = await fetch(`${real}/v1/provenance/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+    const result = await response.json()
+    assert.equal(response.status, 200, JSON.stringify(result).slice(0, 300))
+    return result
+  }
+  const describe = result => `${result.verdict}; ${(result.findings ?? []).map(f => `${f.layer}/${f.method}: ${f.found ? 'found' : 'not found'}${f.record_id ? ` (record ${f.record_id === id ? 'the note\'s' : f.record_id})` : ''}`).join('; ')}`
+  // Proof the record exists on that server: a text naming its id is found as a reference to it.
+  const reference = await verify({ text: `See record ${id}.` })
+  assert.ok(reference.findings?.some(f => f.found && f.record_id === id), `the server does not know record ${id}: ${describe(reference)}`)
+  row(`Record ${id} on ${real}`, describe(reference))
+  // What its detector makes of the note is the server's: reported, not asserted.
+  for (const [what, body] of [
+    ['the note as Nextcloud stores it', { text: note }],
+    ['the approved text exactly as signed', { text: rewritten }],
+    ['the words people read and copy', { text: markdownText(note) }],
+    ['the note as a Markdown file', { file: Buffer.from(note).toString('base64'), media_type: 'text/markdown' }],
+  ]) row(`Detector on ${what}`, describe(await verify(body)))
 }
 
 console.log(JSON.stringify({ nextcloud: version, folder, summary: { fileId: created.fileId, record: id, path }, reply: { fileId: replyId, record: reply.record_id }, copy: copied.fileId, checks: metrics.checks }))

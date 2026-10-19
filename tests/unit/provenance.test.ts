@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { FakeGateway, lastToolResults } from '@fadenstack/testing'
 import { ApprovalPart } from '@fadenstack/ui'
-import { checkMarker, frontMatterMark, memorySink, withFrontMatter } from '@fadenstack/provenance'
+import { checkMarker, frontMatterMark, memorySink, readerTextSha256, withFrontMatter } from '@fadenstack/provenance'
 import { createApp, markRaw, nextTick } from 'vue'
 import AgentChat from '../../src/components/AgentChat.vue'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
@@ -117,6 +117,10 @@ describe('Files the agent writes are marked as made with AI', () => {
 		expect(gateway.provenanceRecords).toHaveLength(1)
 		const signed = gateway.provenanceRecords[0]!.signed
 		expect(gateway.provenanceRecords[0]!.request).toMatchObject({ media_type: 'text/markdown', edit_kind: 'summarised' })
+		// A Markdown record also carries the hash of the text people read (front matter and markup left out), so the
+		// detector finds the note by the words copied out of it.
+		expect(gateway.provenanceRecords[0]!.request.text_sha256).toBe(await readerTextSha256(SUMMARY, 'text/markdown'))
+		expect(gateway.provenanceRecords[0]!.request.text_sha256).not.toBe(gateway.provenanceRecords[0]!.request.content_sha256)
 		const id = signed.record.id
 		expect(commits).toHaveLength(1)
 		expect(commits[0]!.mark!.content).toBe(withFrontMatter(SUMMARY, id))
@@ -144,6 +148,7 @@ describe('Files the agent writes are marked as made with AI', () => {
 			: { text: 'Created Reply.txt.' })
 		await run(host, 'Write the reply as a text file')
 		expect(gateway.provenanceRecords[0]!.request).toMatchObject({ media_type: 'text/plain', edit_kind: 'generated' })
+		expect(gateway.provenanceRecords[0]!.request.text_sha256).toBeUndefined() // plain text is what people read
 		expect(commits[0]!.written).toBe(reply)
 		expect(commits[0]!.mark!.content).toBe(reply)
 		expect(host.placement('write')).toMatchObject({ marks: ['nextcloud-metadata'], missing: [] })

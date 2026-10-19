@@ -34,8 +34,11 @@
   mark in its bytes (the model's watermark only); a `.md` keeps its front matter.
   Copies made outside Nextcloud (download and upload) lose the metadata. Text adds a
   blank line after the front matter on its first save; the mark stays.
-- The Fadenstack server's detector (0.4.5) checks text for the model's watermark;
-  it does not yet find a note's record by its front matter or content hash.
+- With records signed by a Fadenstack server (0.4.5, measured on the release
+  server), its detector finds a written note by the record id in its front matter
+  (as text and as a Markdown file), and the approved text and the words people copy
+  out of it by their hashes. That server signs, but does not keep, a record naming
+  a receipt it never issued; real turns carry its own receipts.
 - Production npm audit passes. Inherited developer tooling has remaining transitive
   advisories; no forced major downgrade of Nextcloud tooling was applied.
 
