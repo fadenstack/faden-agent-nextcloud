@@ -17,6 +17,8 @@ class FileService {
 	public const MAX_TEXT_BYTES = 2097152;
 	public const MAX_PDF_BYTES = 10485760;
 	public const MAX_WRITE_BYTES = 262144;
+	/** A written file: the approved text and the room its AI mark in front matter takes. */
+	public const MAX_WRITTEN_BYTES = self::MAX_WRITE_BYTES + 4096;
 	private const KEY = 'fadenstack_agent.state';
 
 	public function __construct(
@@ -26,6 +28,7 @@ class FileService {
 		private IURLGenerator $urls,
 		private Configuration $config,
 		private IMountManager $mounts,
+		private ProvenanceService $provenance,
 	) {
 	}
 
@@ -264,7 +267,7 @@ class FileService {
 			if (!$expectedEtag || ($c['readEtag'] ?? '') !== $expectedEtag || $n->getEtag() !== $expectedEtag) {
 				throw new Problem('Read the current file before proposing an update.', 409);
 			}
-			$before = $this->text($n, self::MAX_WRITE_BYTES);
+			$before = $this->text($n, self::MAX_WRITTEN_BYTES);
 			$this->selected($contextId);
 		} else {
 			throw new Problem('Unsupported operation.');
@@ -300,7 +303,13 @@ class FileService {
 		return ['approved' => true];
 	}
 
-	public function commit(string $id, int $createProtocol = 0): array {
+	/**
+	 * Writes an approved proposal. With the placement's signed record (`$provenance`, the SDK's sidecar document)
+	 * the file is marked as made with AI: the record goes into its metadata, and a Markdown file holds the client's
+	 * `$content` when that is the approved text with the mark in its front matter (else the approved text as it is).
+	 * Without a record the approved text is written unmarked: marking never stops a write.
+	 */
+	public function commit(string $id, int $createProtocol = 0, string $content = '', string $provenance = ''): array {
 		$p = $this->proposal($id);
 		if (!$p['approved']) {
 			throw new Problem('This operation requires explicit approval.', 403);
@@ -311,6 +320,8 @@ class FileService {
 		$s = $this->state();
 		unset($s['proposals'][$id]); // one attempt, including failed attempts
 		$this->session->set(self::KEY, $s);
+		$record = $this->provenance->record($provenance, $p['filename']);
+		$write = $this->provenance->content($p['content'], $content, $record, $p['filename']);
 		$n = $this->selected($p['contextId']);
 		$folder = $this->node($p['folderId']);
 		if (!$folder instanceof Folder || ($n instanceof File && $n->getParent()->getId() !== $folder->getId())) {
@@ -332,11 +343,11 @@ class FileService {
 				throw new Problem('Too many unfinished creations. Wait for them to expire.', 429);
 			}
 			$s['receipts'][$p['id']] = ['folderId' => $folder->getId(), 'folderPath' => $parent['path'], 'filename' => $p['filename'],
-				'hash' => hash('sha256', $p['content']), 'expires' => time() + 600];
+				'hash' => hash('sha256', $write), 'record' => $record?->json, 'expires' => time() + 600];
 			$this->session->set(self::KEY, $s);
 			// Native DAV owns atomic If-None-Match creation, storage hooks and locks.
 			return ['kind' => 'dav-create', 'receiptId' => $p['id'], 'dav_path' => $base . rawurlencode($p['filename']),
-				'parent_resource_id' => 'nextcloud:files:' . $parent['id'], 'parent_path' => $parent['path'], 'parent_etag' => $parent['etag'], 'content' => $p['content']];
+				'parent_resource_id' => 'nextcloud:files:' . $parent['id'], 'parent_path' => $parent['path'], 'parent_etag' => $parent['etag'], 'content' => $write];
 		} else {
 			if (!$n instanceof File || !$n->isUpdateable()) {
 				throw new Problem('You cannot update this file.', 403);
@@ -356,8 +367,8 @@ class FileService {
 					throw new Problem('This storage does not support guarded text updates.', 422);
 				}
 				$offset = 0;
-				while ($offset < strlen($p['content'])) {
-					$written = fwrite($stream, substr($p['content'], $offset));
+				while ($offset < strlen($write)) {
+					$written = fwrite($stream, substr($write, $offset));
 					if ($written === false || $written === 0) {
 						throw new Problem('The storage could not complete the write. Inspect the file before retrying.', 500);
 					}
@@ -368,7 +379,29 @@ class FileService {
 			}
 			$result = $n;
 		}
-		return ['operation' => $p['operation'], 'file' => $this->metadata($this->node($result->getId()))];
+		$file = $this->node($result->getId());
+		if ($record !== null) {
+			$this->provenance->store($file->getId(), $record->json);
+		}
+		return ['operation' => $p['operation'], 'file' => $this->metadata($file), 'provenance' => $this->marks($file)];
+	}
+
+	/**
+	 * What a written file holds of its AI mark, read back after the write: the record in its metadata, and a
+	 * Markdown file's front matter as stored (null where there is none).
+	 *
+	 * @return array{key: string, metadata: ?string, frontMatter: ?string}
+	 */
+	private function marks(Node $file): array {
+		$frontMatter = null;
+		if ($file instanceof File && ProvenanceService::mediaType($file->getName()) === 'text/markdown') {
+			try {
+				$frontMatter = FrontMatter::head($this->bytes($file, self::MAX_WRITTEN_BYTES));
+			} catch (Problem) {
+				$frontMatter = null;
+			}
+		}
+		return ['key' => ProvenanceService::KEY, 'metadata' => $this->provenance->stored($file->getId()), 'frontMatter' => $frontMatter];
 	}
 
 	public function finishCreate(string $receiptId): array {
@@ -384,9 +417,12 @@ class FileService {
 			throw new Problem('The destination folder changed. No success is claimed.', 409);
 		}
 		$file = $folder->get($r['filename']);
-		if (!$file instanceof File || !$file->isReadable() || !hash_equals($r['hash'], hash('sha256', $this->bytes($file, self::MAX_WRITE_BYTES)))) {
+		if (!$file instanceof File || !$file->isReadable() || !hash_equals($r['hash'], hash('sha256', $this->bytes($file, self::MAX_WRITTEN_BYTES)))) {
 			throw new Problem('The created content changed or the write was incomplete. No success is claimed.', 409);
 		}
-		return ['operation' => 'create', 'file' => $this->metadata($file)];
+		if (is_string($r['record'] ?? null)) {
+			$this->provenance->store($file->getId(), $r['record']);
+		}
+		return ['operation' => 'create', 'file' => $this->metadata($file), 'provenance' => $this->marks($file)];
 	}
 }

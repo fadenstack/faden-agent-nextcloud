@@ -1,0 +1,104 @@
+{
+	"about": "The AI mark in Markdown front matter as @fadenstack/provenance 0.2.0-rc.3 writes it (withFrontMatter): the app's PHP FrontMatter is checked against the same bytes.",
+	"recordId": "5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1",
+	"vectors": [
+		{
+			"name": "no front matter",
+			"input": "# Title\n\nBody.\n",
+			"marked": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n\n# Title\n\nBody.\n",
+			"head": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": null
+		},
+		{
+			"name": "no front matter, CRLF",
+			"input": "# Title\r\n\r\nBody.\r\n",
+			"marked": "---\r\nai-generated: true\r\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\r\n---\r\n\r\n# Title\r\n\r\nBody.\r\n",
+			"head": "---\r\nai-generated: true\r\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\r\n---\r\n",
+			"inputHead": null
+		},
+		{
+			"name": "front matter of its own",
+			"input": "---\ntitle: Notes\ntags: [a, b]\n---\n# Notes\n",
+			"marked": "---\ntitle: Notes\ntags: [a, b]\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n# Notes\n",
+			"head": "---\ntitle: Notes\ntags: [a, b]\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": "---\ntitle: Notes\ntags: [a, b]\n---\n"
+		},
+		{
+			"name": "an earlier mark",
+			"input": "---\ntitle: T\nai-generated: true\nai-record-id: \"0b6f9a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b\"\n---\nBody",
+			"marked": "---\ntitle: T\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\nBody",
+			"head": "---\ntitle: T\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": "---\ntitle: T\nai-generated: true\nai-record-id: \"0b6f9a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b\"\n---\n"
+		},
+		{
+			"name": "a BOM before the front matter",
+			"input": "﻿---\ntitle: T\n---\nBody\n",
+			"marked": "﻿---\ntitle: T\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\nBody\n",
+			"head": "﻿---\ntitle: T\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": "﻿---\ntitle: T\n---\n"
+		},
+		{
+			"name": "a BOM, no front matter",
+			"input": "﻿# Title\n",
+			"marked": "﻿---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n\n# Title\n",
+			"head": "﻿---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": null
+		},
+		{
+			"name": "closed with ...",
+			"input": "---\ntitle: T\n...\nBody\n",
+			"marked": "---\ntitle: T\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n...\nBody\n",
+			"head": "---\ntitle: T\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n...\n",
+			"inputHead": "---\ntitle: T\n...\n"
+		},
+		{
+			"name": "never closed",
+			"input": "---\ntitle: T\nBody without a close\n",
+			"marked": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n\n---\ntitle: T\nBody without a close\n",
+			"head": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": null
+		},
+		{
+			"name": "empty",
+			"input": "",
+			"marked": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n\n",
+			"head": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": null
+		},
+		{
+			"name": "front matter, CRLF",
+			"input": "---\r\ntitle: T\r\n---\r\nBody\r\n",
+			"marked": "---\r\ntitle: T\r\nai-generated: true\r\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\r\n---\r\nBody\r\n",
+			"head": "---\r\ntitle: T\r\nai-generated: true\r\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\r\n---\r\n",
+			"inputHead": "---\r\ntitle: T\r\n---\r\n"
+		},
+		{
+			"name": "one CRLF among LF",
+			"input": "# Title\nLine one\r\nLine two\n",
+			"marked": "---\r\nai-generated: true\r\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\r\n---\r\n\r\n# Title\nLine one\r\nLine two\n",
+			"head": "---\r\nai-generated: true\r\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\r\n---\r\n",
+			"inputHead": null
+		},
+		{
+			"name": "not front matter: a space after the dashes",
+			"input": "--- \nx\n---\n",
+			"marked": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n\n--- \nx\n---\n",
+			"head": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": null
+		},
+		{
+			"name": "empty front matter",
+			"input": "---\n---\nBody\n",
+			"marked": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\nBody\n",
+			"head": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": "---\n---\n"
+		},
+		{
+			"name": "Unicode",
+			"input": "# Überblick 人工智能\n\nÄnderungen: „Preis“ – 30 Tage.\n",
+			"marked": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n\n# Überblick 人工智能\n\nÄnderungen: „Preis“ – 30 Tage.\n",
+			"head": "---\nai-generated: true\nai-record-id: \"5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1\"\n---\n",
+			"inputHead": null
+		}
+	]
+}
