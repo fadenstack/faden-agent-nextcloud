@@ -1,0 +1,143 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { NativeViewGuard, type NativeView } from '../../src/workspace/nativeView.ts'
+import { WorkspaceCoordinator } from '../../src/workspace/coordinator.ts'
+
+const file = { id: 12, name: 'summary.md', path: '/Project/summary.md', mime: 'text/markdown', size: 8, etag: 'after', folder: false, permissions: 31, url: '/f/12' }
+const initial: NativeView = { app: 'files', key: '/apps/files/files/1', epoch: 1, editState: 'clean', reason: 'Finish editing first.' }
+const guards: NativeViewGuard[] = []
+afterEach(() => { guards.splice(0).forEach(guard => guard.dispose()); document.body.replaceChildren(); history.replaceState(null, '', '/') })
+
+function nativeGuard() {
+	history.replaceState(null, '', '/apps/files/files/1')
+	document.body.innerHTML = '<main id="app-content-vue"><div class="files-list"><div class="files-list__row"><input type="checkbox"><input class="rename"></div></div></main><div id="fadenstack-agent-drawer"><textarea></textarea></div>'
+	const guard = new NativeViewGuard()
+	guards.push(guard)
+	return guard
+}
+
+describe('Native editor protection', () => {
+	it('does not interpret native selection or chat typing as a native draft', () => {
+		const guard = nativeGuard()
+		expect(guard.snapshot().editState).toBe('clean')
+		document.querySelector('input[type="checkbox"]')!.dispatchEvent(new Event('change', { bubbles: true }))
+		document.querySelector('textarea')!.dispatchEvent(new Event('input', { bubbles: true }))
+		expect(guard.snapshot().editState).toBe('clean')
+	})
+	it.each(['beforeinput', 'input', 'compositionstart', 'drop', 'submit'])('latches %s before a native edit can be lost', name => {
+		const guard = nativeGuard()
+		const input = document.querySelector('.rename')!
+		input.dispatchEvent(new Event(name, { bubbles: true }))
+		input.dispatchEvent(new Event('blur', { bubbles: true }))
+		input.remove()
+		expect(guard.snapshot().editState).toBe('dirty')
+		// Native SPA navigation is not proof that a different app's draft has saved.
+		history.replaceState(null, '', '/apps/files/files/2')
+		expect(guard.snapshot().editState).toBe('dirty')
+	})
+	it('requires an explicit acknowledgement before releasing a dirty latch', () => {
+		const guard = nativeGuard()
+		document.querySelector('.rename')!.dispatchEvent(new Event('beforeinput', { bubbles: true }))
+		const prior = guard.snapshot()
+		guard.acknowledgeNavigation()
+		expect(guard.snapshot()).toMatchObject({ editState: 'clean', epoch: prior.epoch + 1 })
+	})
+	it('treats a native editor and an unfamiliar app as unknown', () => {
+		const guard = nativeGuard()
+		const viewer = document.createElement('div')
+		viewer.id = 'viewer'; viewer.className = 'modal-mask viewer'; viewer.setAttribute('role', 'dialog')
+		document.body.append(viewer)
+		expect(guard.snapshot().editState).toBe('unknown')
+		viewer.remove()
+		history.replaceState(null, '', '/apps/calendar')
+		expect(guard.snapshot()).toMatchObject({ app: 'calendar', editState: 'unknown' })
+	})
+	it('does not mistake its own native Details dialog for an external draft', () => {
+		const guard = nativeGuard()
+		document.body.insertAdjacentHTML('beforeend', '<div role="dialog"><div class="fadenstack-assistant-details"></div></div>')
+		expect(guard.snapshot().editState).toBe('clean')
+	})
+})
+
+function coordinator() {
+	let view = { ...initial }
+	const refresh = vi.fn(async () => 'refreshed' as const)
+	const guard = { snapshot: () => ({ ...view }), dispose: vi.fn() }
+	return { workspace: new WorkspaceCoordinator({ guard, refresh }), refresh, guard, view: (next: Partial<NativeView>) => { view = { ...view, ...next } } }
+}
+
+describe('Change and refresh coordination', () => {
+	it('blocks a dirty view both before proposal and after an approval wait', () => {
+		const { workspace, view } = coordinator()
+		const binding = workspace.prepare('files')
+		view({ editState: 'dirty' })
+		expect(() => workspace.prepare('files')).toThrow('Finish editing')
+		expect(() => workspace.begin('call', binding)).toThrow('Finish editing')
+		expect(workspace.state.locked).toBe(false)
+	})
+	it('refuses a changed native route without dispatching a stale proposal', () => {
+		const { workspace, view } = coordinator()
+		const binding = workspace.prepare('files')
+		view({ epoch: 2, key: '/apps/files/files/2' })
+		expect(() => workspace.begin('call', binding)).toThrow('native view changed')
+	})
+	it('refreshes only a confirmed native save and releases the lock', async () => {
+		const { workspace, refresh } = coordinator()
+		const binding = workspace.prepare('files')
+		const generation = workspace.begin('call', binding)
+		expect(workspace.state.locked).toBe(true)
+		expect(() => workspace.begin('other', binding)).toThrow('reconciled')
+		const receipt = await workspace.committed('call', generation, binding, { operation: 'create', file }, new AbortController().signal)
+		expect(receipt).toMatchObject({ outcome: 'committed', view: 'refreshed', resourceId: 12 })
+		expect(refresh).toHaveBeenCalledOnce()
+		expect(workspace.state).toMatchObject({ locked: false, phase: 'idle' })
+	})
+	it('retains the committed effect when refresh fails', async () => {
+		const { workspace, refresh } = coordinator()
+		refresh.mockRejectedValueOnce(new Error('native view failed'))
+		const binding = workspace.prepare('files')
+		const generation = workspace.begin('call', binding)
+		expect(await workspace.committed('call', generation, binding, { operation: 'update', file }, new AbortController().signal)).toMatchObject({ outcome: 'committed', view: 'refresh_failed' })
+		expect(workspace.state.locked).toBe(false)
+	})
+	it('does not refresh a dirty, stopped or subsequently navigated view', async () => {
+		for (const kind of ['dirty', 'stopped', 'navigated'] as const) {
+			const { workspace, refresh, view } = coordinator()
+			const binding = workspace.prepare('files')
+			const generation = workspace.begin('call', binding)
+			const stop = new AbortController()
+			if (kind === 'dirty') view({ editState: 'dirty' })
+			if (kind === 'stopped') stop.abort()
+			if (kind === 'navigated') view({ epoch: 2 })
+			expect(await workspace.committed('call', generation, binding, { operation: 'update', file }, stop.signal)).toMatchObject({ outcome: 'committed', view: kind === 'navigated' ? 'not_visible' : 'refresh_required' })
+			expect(refresh).not.toHaveBeenCalled()
+		}
+	})
+	it('does not label a network failure after dispatch as cancelled or retryable', () => {
+		const { workspace } = coordinator()
+		const binding = workspace.prepare('files')
+		const generation = workspace.begin('call', binding)
+		workspace.failed('call', generation, file.name, new TypeError('network timeout'))
+		expect(workspace.state.latest?.outcome).toBe('unknown_completion')
+		expect(workspace.state.locked).toBe(false)
+	})
+	it('Stop releases the UI even when a read-only refresh dependency ignores cancellation', async () => {
+		const { workspace, refresh } = coordinator()
+		refresh.mockImplementationOnce(() => new Promise(() => {}))
+		const binding = workspace.prepare('files')
+		const generation = workspace.begin('call', binding)
+		const stop = new AbortController()
+		const completed = workspace.committed('call', generation, binding, { operation: 'create', file }, stop.signal)
+		stop.abort(new Error('Stopped'))
+		expect(await completed).toMatchObject({ outcome: 'committed', view: 'refresh_required' })
+		expect(workspace.state.locked).toBe(false)
+	})
+	it('a late failure cannot release a newer action lock', () => {
+		const { workspace } = coordinator()
+		const binding = workspace.prepare('files')
+		const previous = workspace.begin('old', binding)
+		workspace.failed('old', previous, file.name, new Error())
+		workspace.begin('new', binding)
+		workspace.failed('old', previous, file.name, new Error())
+		expect(workspace.state.locked).toBe(true)
+	})
+})

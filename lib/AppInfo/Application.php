@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\FadenstackAgent\AppInfo;
 
+use OCA\FadenstackAgent\History\AccessResolverRegistry;
+use OCA\FadenstackAgent\History\FilesAccessResolver;
 use OCA\FadenstackAgent\Listener\ShellListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -21,6 +23,11 @@ class Application extends App implements IBootstrap {
 
 	public function register(IRegistrationContext $context): void {
 		$context->registerEventListener(BeforeTemplateRenderedEvent::class, ShellListener::class);
+		$context->registerService(AccessResolverRegistry::class, static function (\Psr\Container\ContainerInterface $container): AccessResolverRegistry {
+			$registry = new AccessResolverRegistry();
+			$registry->register('files', $container->get(FilesAccessResolver::class));
+			return $registry;
+		});
 	}
 
 	public function boot(IBootContext $context): void {

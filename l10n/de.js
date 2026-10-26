@@ -82,5 +82,15 @@ OC.L10N.register("fadenstack_agent", {
   "Access still depends on your current Nextcloud permissions. This dialog does not grant access.": "Der Zugriff hängt weiterhin von Ihren aktuellen Nextcloud-Berechtigungen ab. Dieser Dialog erteilt keinen Zugriff.",
   "Close assistant details": "Assistentendetails schließen",
   "Close": "Schließen",
-  "Context details: {name}": "Kontextdetails: {name}"
+  "Context details: {name}": "Kontextdetails: {name}",
+  "Saving changes…": "Änderungen werden gespeichert…",
+  "Updating the view…": "Ansicht wird aktualisiert…",
+  "Assistant is working…": "Assistent arbeitet…",
+  "Assistant activity": "Assistentenaktivität",
+  "Hide chat": "Chat ausblenden",
+  "Show chat": "Chat anzeigen",
+  "Saved: {name}": "Gespeichert: {name}",
+  "Saved in Nextcloud. Open the changed resource to see it.": "In Nextcloud gespeichert. Öffnen Sie die geänderte Ressource, um sie anzuzeigen.",
+  "Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.": "In Nextcloud gespeichert. Aktualisieren Sie die Ansicht, nachdem Sie Ihre Änderungen gespeichert oder verworfen haben.",
+  "Dismiss activity": "Aktivität schließen"
 }, "nplurals=2; plural=(n != 1);");

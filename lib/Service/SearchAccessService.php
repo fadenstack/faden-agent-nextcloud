@@ -80,6 +80,7 @@ class SearchAccessService {
 
 	public function plan(array $filters): array {
 		$f = self::filters($filters);
+		$f['scope'] = $this->files->scopeReference($f['scope']);
 		if (isset($f['created_after']) && \OCP\Server::get(\OCP\ServerVersion::class)->getMajorVersion() < 35) {
 			throw new Problem('Creation-date filtering requires the verified Nextcloud 35 WebDAV search backend. Use modification-date filters on this version.', 422);
 		}
@@ -195,7 +196,7 @@ class SearchAccessService {
 	}
 
 	public function capabilities(): array {
-		$available = $this->apps->isEnabledForUser('fulltextsearch')
+		$available = $this->files->indexedContentAllowed() && $this->apps->isEnabledForUser('fulltextsearch')
 			&& $this->apps->isEnabledForUser('files_fulltextsearch')
 			&& $this->fulltext->isAvailable() && $this->fulltext->isProviderIndexed('files');
 		return ['filename_search' => true, 'document_search' => true, 'indexed_content_search' => $available,

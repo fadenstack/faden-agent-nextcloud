@@ -5,7 +5,7 @@
 	<name>Fadenstack Agent</name>
 	<summary>Discover files and document passages in a governed chat drawer</summary>
 	<description>Find authorized Nextcloud files, search selected documents and continue individually approved text workflows with a published Fadenstack agent. Uses native search APIs; no additional RAG service is required.</description>
-	<version>0.1.1</version>
+	<version>0.1.2</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author homepage="https://fadenstack.com">Fadenstack</author>
 	<namespace>FadenstackAgent</namespace>
@@ -15,6 +15,9 @@
 		<php min-version="8.2"/>
 		<nextcloud min-version="31" max-version="35"/>
 	</dependencies>
+	<background-jobs>
+		<job>OCA\FadenstackAgent\BackgroundJob\ExpireJournal</job>
+	</background-jobs>
 	<navigations>
 		<navigation>
 			<id>fadenstack_agent</id>

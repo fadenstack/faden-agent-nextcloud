@@ -6,7 +6,7 @@ export interface ToolHost {
 	context(): FileContext
 	read(signal: AbortSignal, resourceId?: string): Promise<unknown>
 	list(signal: AbortSignal): Promise<unknown>
-	write(args: WriteArguments, call: ToolCallContext): Promise<unknown>
+	write(args: WriteArguments, call: ToolCallContext, resourceId?: unknown): Promise<unknown>
 	search(filters: SearchFilters, signal: AbortSignal): Promise<unknown>
 	metadata(resourceId: unknown, signal: AbortSignal): Promise<unknown>
 	inFile(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
@@ -123,14 +123,14 @@ export function nextcloudTools(host: ToolHost) {
 			description: 'Propose a new .txt or .md in the included file\'s folder, or known resource_id folder/file parent. Confirm destination with the user through the exact approval card. Always asks once; no overwrites.',
 			toolClass: 'destructive',
 			parameters: { type: 'object', properties: { filename: { type: 'string' }, content, resource_id: resource }, required: ['filename', 'content'], additionalProperties: false },
-			run: (args, c) => host.write(writeArguments('nc_create_text_file', args), c),
+			run: (args, c) => host.write(writeArguments('nc_create_text_file', args), c, args.resource_id),
 		}),
 		defineTool({
 			name: 'nc_update_text_file',
 			description: 'Propose replacing the included or known resource_id .txt/.md after reading it. Always asks once; fails if expectedEtag changed.',
 			toolClass: 'destructive',
 			parameters: { type: 'object', properties: { content, expectedEtag: { type: 'string' }, resource_id: resource }, required: ['content', 'expectedEtag'], additionalProperties: false },
-			run: (args, c) => host.write(writeArguments('nc_update_text_file', args), c),
+			run: (args, c) => host.write(writeArguments('nc_update_text_file', args), c, args.resource_id),
 		}),
 	]
 }

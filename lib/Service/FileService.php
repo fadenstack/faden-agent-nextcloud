@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace OCA\FadenstackAgent\Service;
 
+use OCA\FadenstackAgent\History\JournalIdentity;
+use OCA\FadenstackAgent\History\JournalResource;
+use OCA\FadenstackAgent\History\JournalService;
+use OCA\FadenstackAgent\History\VerifiedReadback;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
@@ -26,7 +30,26 @@ class FileService {
 		private IURLGenerator $urls,
 		private Configuration $config,
 		private IMountManager $mounts,
+		private JournalService $journal,
+		private ScopePolicy $scope,
 	) {
+	}
+
+	private function journalIdentity(): JournalIdentity {
+		$state = $this->state();
+		// Native account/configuration binding only. This is not proof of a cloud subject.
+		return new JournalIdentity($this->uid(), hash('sha256', json_encode([$this->config->get(), $this->scope->configStamp(), 'files-history-v1'], JSON_THROW_ON_ERROR)), $state['binding']);
+	}
+
+	private function prepareJournal(array $proposal, Folder $folder, Node $node): array {
+		$reference = 'parent:' . $folder->getId() . '/name:' . $proposal['filename'];
+		$resource = new JournalResource('files', $reference, ($proposal['operation'] === 'create' ? 'folder:' . $folder->getId() : 'file:' . $node->getId()));
+		return $this->journal->prepare($this->journalIdentity(), $resource, $proposal['operation'] === 'create' ? 'nc_create_text_file' : 'nc_update_text_file',
+			['operation' => $proposal['operation'], 'filename' => $proposal['filename'], 'content' => $proposal['content']],
+			['operation' => $proposal['operation'] === 'create' ? 'delete_created_file' : 'update', 'content' => $proposal['before']],
+			['parentId' => $folder->getId(), 'parentPath' => $this->root->getUserFolder($this->uid())->getRelativePath($folder->getPath()), 'fileId' => $proposal['operation'] === 'create' ? null : $node->getId(),
+				'expectedEtag' => $proposal['expectedEtag'], 'beforeHash' => $proposal['before'] === null ? null : hash('sha256', $proposal['before']),
+				'afterHash' => hash('sha256', $proposal['content'])]);
 	}
 
 	private function uid(): string {
@@ -49,7 +72,9 @@ class FileService {
 
 	public function identity(): array {
 		$s = $this->state();
-		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$this->config->get()];
+		$config = $this->config->get();
+		$policy = $config['enabled'] && $config['agent'] && $config['serverUrl'] ? $this->scope->getPolicy($s['user'], $config['serverUrl']) : null;
+		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy];
 	}
 
 	public function check(string $binding): void {
@@ -73,13 +98,25 @@ class FileService {
 		throw new Problem('The file is unavailable or you do not have permission.', 404);
 	}
 
-	private function metadata(Node $n): array {
+	private function metadata(Node $n, string $purpose = 'metadata'): array {
+		$grant = $this->scope->describeNode($n, $purpose);
 		$home = $this->root->getUserFolder($this->uid());
 		return ['id' => $n->getId(), 'name' => $n->getName(), 'path' => $home->getRelativePath($n->getPath()),
 			'mime' => $n->getMimetype(), 'size' => $n->getSize(), 'etag' => $n->getEtag(),
 			'folder' => $n instanceof Folder, 'permissions' => $n->getPermissions(),
 			'modified' => $n->getMtime(), 'created' => $n->getCreationTime(),
-			'url' => $this->urls->linkToRouteAbsolute('files.viewcontroller.showFile', ['fileid' => $n->getId()])];
+			'url' => $this->urls->linkToRouteAbsolute('files.viewcontroller.showFile', ['fileid' => $n->getId()]), 'agentScope' => $grant];
+	}
+
+	public function scopeResource(string $reference, string $purpose = 'metadata'): array {
+		return $this->scope->resolve($reference, $purpose);
+	}
+
+	public function scopeReference(string $requested = 'all'): string {
+		return $this->scope->searchScope($requested);
+	}
+	public function indexedContentAllowed(): bool {
+		return $this->scope->indexedContentAllowed();
 	}
 
 	/** Resolve every resource through the current user's tree, including shares. */
@@ -93,6 +130,7 @@ class FileService {
 	public function assertContentAccess(string $resourceId): void {
 		$file = $this->resource($resourceId);
 		$n = $this->node($file['id']);
+		$this->scope->describeNode($n, 'read');
 		if (!$n instanceof File) {
 			throw new Problem('Document contents require a file, not a folder.', 415);
 		}
@@ -106,6 +144,7 @@ class FileService {
 	}
 
 	public function searchScope(string $scope): array {
+		$scope = $this->scope->searchScope($scope);
 		$path = '';
 		$folder = $this->root->getUserFolder($this->uid());
 		$id = $folder->getId();
@@ -184,6 +223,7 @@ class FileService {
 
 	public function read(string $contextId): array {
 		$n = $this->selected($contextId);
+		$this->scope->describeNode($n, 'read');
 		if (!$n instanceof File) {
 			throw new Problem('Use folder listing for a folder.', 415);
 		}
@@ -199,6 +239,7 @@ class FileService {
 
 	public function pdf(string $contextId): string {
 		$n = $this->selected($contextId);
+		$this->scope->describeNode($n, 'read');
 		if (!$n instanceof File || $n->getMimetype() !== 'application/pdf') {
 			throw new Problem('This is not a PDF document.', 415);
 		}
@@ -248,6 +289,7 @@ class FileService {
 		}
 		$before = null;
 		if ($operation === 'create') {
+			$this->scope->assertMovement($n, $folder);
 			self::filename($filename);
 			if (!$folder->isCreatable()) {
 				throw new Problem('You cannot create files in this folder.', 403);
@@ -256,6 +298,7 @@ class FileService {
 				throw new Problem('A file with this name already exists.', 409);
 			}
 		} elseif ($operation === 'update') {
+			$this->scope->assertMovement($n, $n);
 			if (!$n instanceof File || !$n->isUpdateable()) {
 				throw new Problem('You cannot update this file.', 403);
 			}
@@ -271,7 +314,7 @@ class FileService {
 		}
 		$p = ['id' => bin2hex(random_bytes(24)), 'contextId' => $contextId, 'operation' => $operation,
 			'filename' => $filename, 'content' => $content, 'before' => $before, 'expectedEtag' => $expectedEtag,
-			'folderId' => $folder->getId(), 'target' => rtrim($this->metadata($folder)['path'], '/') . '/' . $filename,
+			'folderId' => $folder->getId(), 'target' => rtrim($this->root->getUserFolder($this->uid())->getRelativePath($folder->getPath()), '/') . '/' . $filename,
 			'expires' => time() + 600, 'approved' => false];
 		$s = $this->state();
 		$s['proposals'] = array_filter($s['proposals'], fn ($p) => $p['expires'] > time());
@@ -317,13 +360,15 @@ class FileService {
 			throw new Problem('The destination changed.', 409);
 		}
 		if ($p['operation'] === 'create') {
+			$this->scope->assertMovement($n, $folder);
 			if (!$folder->isCreatable()) {
 				throw new Problem('You cannot create files in this folder.', 403);
 			}
 			if ($folder->nodeExists($p['filename'])) {
 				throw new Problem('A file with this name already exists.', 409);
 			}
-			$parent = $this->metadata($folder);
+			$journal = $this->prepareJournal($p, $folder, $n);
+			$parent = $this->metadata($folder, 'write');
 			$base = '/files/' . rawurlencode($this->uid()) . '/' . implode('/', array_map('rawurlencode', explode('/', trim($parent['path'], '/'))));
 			$base = rtrim($base, '/') . '/';
 			$s = $this->state();
@@ -332,43 +377,68 @@ class FileService {
 				throw new Problem('Too many unfinished creations. Wait for them to expire.', 429);
 			}
 			$s['receipts'][$p['id']] = ['folderId' => $folder->getId(), 'folderPath' => $parent['path'], 'filename' => $p['filename'],
-				'hash' => hash('sha256', $p['content']), 'expires' => time() + 600];
+				'hash' => hash('sha256', $p['content']), 'expires' => time() + 600, 'journal' => $journal];
 			$this->session->set(self::KEY, $s);
+			// From this point a client may dispatch the native conditional PUT. Never
+			// infer that an interrupted/missing finish call means the file was not saved.
+			$this->journal->markDispatched($this->journalIdentity(), $journal['id'], $journal['ticket']);
 			// Native DAV owns atomic If-None-Match creation, storage hooks and locks.
 			return ['kind' => 'dav-create', 'receiptId' => $p['id'], 'dav_path' => $base . rawurlencode($p['filename']),
 				'parent_resource_id' => 'nextcloud:files:' . $parent['id'], 'parent_path' => $parent['path'], 'parent_etag' => $parent['etag'], 'content' => $p['content']];
 		} else {
+			$this->scope->assertMovement($n, $n);
 			if (!$n instanceof File || !$n->isUpdateable()) {
 				throw new Problem('You cannot update this file.', 403);
 			}
+			$journal = $this->prepareJournal($p, $folder, $n);
+			$dispatched = false;
 			// r+ acquires Nextcloud's exclusive write lock without truncating the file.
 			// A separate Node::lock followed by putContent would conflict with its internal lock upgrade.
-			$stream = $n->fopen('r+');
-			if (!is_resource($stream)) {
-				throw new Problem('This storage does not support guarded text updates.', 422);
-			}
 			try {
-				$etag = $n->getStorage()->getETag($n->getInternalPath());
-				if ($etag !== $p['expectedEtag']) {
-					throw new Problem('Another user changed the file. Read it again; no changes were saved.', 409);
-				}
-				if (!stream_get_meta_data($stream)['seekable'] || !rewind($stream) || !ftruncate($stream, 0)) {
+				$stream = $n->fopen('r+');
+				if (!is_resource($stream)) {
 					throw new Problem('This storage does not support guarded text updates.', 422);
 				}
-				$offset = 0;
-				while ($offset < strlen($p['content'])) {
-					$written = fwrite($stream, substr($p['content'], $offset));
-					if ($written === false || $written === 0) {
+				try {
+					$etag = $n->getStorage()->getETag($n->getInternalPath());
+					if ($etag !== $p['expectedEtag']) {
+						throw new Problem('Another user changed the file. Read it again; no changes were saved.', 409);
+					}
+					if (!stream_get_meta_data($stream)['seekable'] || !rewind($stream)) {
+						throw new Problem('This storage does not support guarded text updates.', 422);
+					}
+					$this->journal->markDispatched($this->journalIdentity(), $journal['id'], $journal['ticket']);
+					$dispatched = true;
+					if (!ftruncate($stream, 0)) {
 						throw new Problem('The storage could not complete the write. Inspect the file before retrying.', 500);
 					}
-					$offset += $written;
+					$offset = 0;
+					while ($offset < strlen($p['content'])) {
+						$written = fwrite($stream, substr($p['content'], $offset));
+						if ($written === false || $written === 0) {
+							throw new Problem('The storage could not complete the write. Inspect the file before retrying.', 500);
+						}
+						$offset += $written;
+					}
+				} finally {
+					fclose($stream); // Nextcloud updates metadata, fires hooks and releases its write lock.
 				}
-			} finally {
-				fclose($stream); // Nextcloud updates metadata, fires hooks and releases its write lock.
+			} catch (\Throwable $error) {
+				if ($dispatched) {
+					$this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'unknown');
+				} else {
+					$this->journal->abort($this->journalIdentity(), $journal['id'], $journal['ticket']);
+				}
+				throw $error;
 			}
-			$result = $n;
+			$result = $this->node($n->getId());
+			if (!$result instanceof File || !hash_equals(hash('sha256', $p['content']), hash('sha256', $this->bytes($result, self::MAX_WRITE_BYTES)))) {
+				$this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'unknown');
+				throw new Problem('The saved result could not be confirmed. Inspect the file before retrying.', 409);
+			}
+			$this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'verified', new VerifiedReadback($result->getEtag()));
 		}
-		return ['operation' => $p['operation'], 'file' => $this->metadata($this->node($result->getId()))];
+		return ['operation' => $p['operation'], 'file' => $this->metadata($this->node($result->getId()), 'write'), 'actionId' => $journal['id']];
 	}
 
 	public function finishCreate(string $receiptId): array {
@@ -380,13 +450,16 @@ class FileService {
 		unset($s['receipts'][$receiptId]);
 		$this->session->set(self::KEY, $s);
 		$folder = $this->node($r['folderId']);
-		if (!$folder instanceof Folder || $this->metadata($folder)['path'] !== $r['folderPath']) {
+		if (!$folder instanceof Folder || $this->root->getUserFolder($this->uid())->getRelativePath($folder->getPath()) !== $r['folderPath']) {
 			throw new Problem('The destination folder changed. No success is claimed.', 409);
 		}
 		$file = $folder->get($r['filename']);
 		if (!$file instanceof File || !$file->isReadable() || !hash_equals($r['hash'], hash('sha256', $this->bytes($file, self::MAX_WRITE_BYTES)))) {
+			$this->journal->finish($this->journalIdentity(), $r['journal']['id'], $r['journal']['ticket'], 'unknown');
 			throw new Problem('The created content changed or the write was incomplete. No success is claimed.', 409);
 		}
-		return ['operation' => 'create', 'file' => $this->metadata($file)];
+		$resource = new JournalResource('files', 'parent:' . $folder->getId() . '/name:' . $r['filename'], 'file:' . $file->getId());
+		$this->journal->finish($this->journalIdentity(), $r['journal']['id'], $r['journal']['ticket'], 'verified', new VerifiedReadback($file->getEtag(), $resource));
+		return ['operation' => 'create', 'file' => $this->metadata($file, 'write'), 'actionId' => $r['journal']['id']];
 	}
 }

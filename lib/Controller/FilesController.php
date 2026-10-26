@@ -54,6 +54,11 @@ class FilesController extends Controller {
 	}
 	#[NoAdminRequired]
 	#[UseSession]
+	public function scope(string $resourceId, string $purpose = 'metadata'): Response {
+		return $this->run(fn () => $this->files->scopeResource($resourceId, $purpose));
+	}
+	#[NoAdminRequired]
+	#[UseSession]
 	public function searchPlan(array $filters): Response {
 		return $this->run(fn () => $this->search->plan($filters));
 	}

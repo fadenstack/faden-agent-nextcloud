@@ -20,6 +20,7 @@ export function viewedDocument(viewer: HTMLElement): ViewedDocument | undefined 
 
 export function installViewerIntegration(options: {
 	drawer: HTMLElement
+	activity?: HTMLElement
 	state: { open: boolean }
 	toggle(document?: ViewedDocument): void
 	changed(document?: ViewedDocument): void
@@ -51,12 +52,16 @@ export function installViewerIntegration(options: {
 		}
 		const parent = viewer ?? document.body
 		if (options.drawer.parentElement !== parent) parent.append(options.drawer)
+		if (options.activity && options.activity.parentElement !== parent) parent.append(options.activity)
 		if (viewer) {
 			// The modal may have made its former siblings inert before relocation.
 			options.drawer.removeAttribute('inert')
 			options.drawer.removeAttribute('aria-hidden')
+			options.activity?.removeAttribute('inert')
+			options.activity?.removeAttribute('aria-hidden')
 			if (options.state.open && !trapRegistered) {
 				emit('viewer:trapElements:changed', options.drawer)
+				if (options.activity) emit('viewer:trapElements:changed', options.activity)
 				trapRegistered = true
 			}
 		}
@@ -78,6 +83,7 @@ export function installViewerIntegration(options: {
 		app?.unmount()
 		button?.remove()
 		document.body.append(options.drawer)
+		if (options.activity) document.body.append(options.activity)
 		document.body.classList.remove('fadenstack-agent-in-viewer')
 	}
 }

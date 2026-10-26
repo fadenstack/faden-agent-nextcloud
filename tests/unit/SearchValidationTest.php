@@ -56,6 +56,7 @@ class SearchValidationTest extends TestCase {
 		$manager->method('isAvailable')->willReturn(true);
 		$manager->method('isProviderIndexed')->with('files')->willReturn(true);
 		$files = $this->createMock(FileService::class);
+		$files->method('indexedContentAllowed')->willReturn(true);
 		$files->method('resource')->willReturnCallback(function ($id) {
 			if ($id === 'nextcloud:files:3') {
 				throw new Problem('Revoked', 404);
@@ -75,5 +76,18 @@ class SearchValidationTest extends TestCase {
 		$result = (new SearchAccessService($files, $apps, $manager))->content('warranty');
 		self::assertCount(1, $result['results']);
 		self::assertSame('Warranty: 24 months.', $result['results'][0]['excerpt']);
+	}
+	public function testRestrictedPolicyNeverQueriesTheBroadContentIndex(): void {
+		$apps = $this->createMock(IAppManager::class);
+		$apps->method('isEnabledForUser')->willReturn(true);
+		$manager = $this->createMock(IFullTextSearchManager::class);
+		$manager->method('isAvailable')->willReturn(true);
+		$manager->method('isProviderIndexed')->willReturn(true);
+		$manager->expects(self::never())->method('search');
+		$files = $this->createMock(FileService::class);
+		$files->method('indexedContentAllowed')->willReturn(false);
+		$result = (new SearchAccessService($files, $apps, $manager))->content('secret');
+		self::assertFalse($result['available']);
+		self::assertSame([], $result['results']);
 	}
 }

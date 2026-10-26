@@ -40,6 +40,12 @@ including a user-tested real-server conversation from the full-screen Text edito
   Nextcloud and Add to context. No separate RAG or indexing service is required.
 - Individual write cards with full target/replacement/original; one-use server
   proposals, safe creation and ETag conflict checks on updates.
+- A working indicator with the same SDK Stop control stays visible when chat is
+  hidden. Verified saves update supported clean Files lists through native events;
+  active editors retain their view and require an explicit handoff.
+- Native source/destination policy and per-turn budgets restrict the published
+  Files tools. Encrypted write-ahead receipts record existing creates/updates.
+  User-facing Undo/Redo and additional app tools are still under implementation.
 - Per-user session capabilities, server permissions, CSRF, CSP, sanitized Markdown,
   the chat in English, German, French, Spanish and Simplified Chinese (the user
   picks it in the settings; Automatic is their Nextcloud language), the app's own
@@ -60,10 +66,12 @@ npm run build
 npm run package
 ```
 
-Extract `build/fadenstack_agent-0.1.1.tar.gz` into Nextcloud's `custom_apps` directory.
+Extract `build/fadenstack_agent-0.1.2.tar.gz` into Nextcloud's `custom_apps` directory.
 Keep the resulting folder name `fadenstack_agent`, then run
-`php occ app:enable fadenstack_agent` as the Nextcloud web user. No runtime PHP
-package dependencies or database migrations are required.
+`php occ app:enable fadenstack_agent` as the Nextcloud web user. For upgrades, use
+Nextcloud's normal `occ upgrade` lifecycle. Version 0.1.2 creates four app-owned
+journal tables and registers an hourly retention job; normal Nextcloud background
+jobs must run. No runtime PHP package dependencies are required.
 
 In **Administration settings → Additional settings → Fadenstack Agent**, configure
 the HTTPS server origin, published agent identifier and integration toggle. Reload

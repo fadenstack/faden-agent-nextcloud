@@ -6,10 +6,11 @@ export class SelectedContext {
 	current: FileContext | undefined
 	#revision = 0
 	constructor(readonly api: FileApi) {}
-	async select(fileId: number): Promise<FileContext | undefined> {
+	async select(fileId: number, signal?: AbortSignal): Promise<FileContext | undefined> {
 		const revision = ++this.#revision
 		this.current = undefined
-		const context = await this.api.select(fileId)
+		let context: FileContext
+		try { context = await this.api.select(fileId, signal) } catch (error) { if (revision !== this.#revision) return undefined; throw error }
 		if (revision !== this.#revision) return undefined
 		this.current = Object.freeze({ ...context, file: Object.freeze({ ...context.file }) })
 		return this.current

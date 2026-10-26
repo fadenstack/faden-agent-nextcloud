@@ -1,4 +1,4 @@
-import { createApp, markRaw, shallowReactive } from 'vue'
+import { createApp, h, markRaw, shallowReactive, watch } from 'vue'
 import axios from '@nextcloud/axios'
 import { generateUrl } from '@nextcloud/router'
 import { t } from '@nextcloud/l10n'
@@ -8,6 +8,7 @@ import type { Identity } from './integrations/nextcloud/types.ts'
 import { errorMessage } from './integrations/nextcloud/files.ts'
 import AgentDrawer from './components/AgentDrawer.vue'
 import HeaderButton from './components/HeaderButton.vue'
+import AssistantActivity from './components/AssistantActivity.vue'
 import mascot from '../img/app.svg?raw'
 import { installViewerIntegration, type ViewedDocument } from './integrations/nextcloud/viewer.ts'
 
@@ -32,6 +33,8 @@ async function openDrawer(fileId?: number, documentName?: string) {
 	} catch (error) { state.error = errorMessage(error) } finally { state.loading = false }
 }
 function closeDrawer() { state.open = false; document.body.classList.remove('fadenstack-agent-open'); state.runtime?.state.host?.stop() }
+function minimiseDrawer() { state.open = false; document.body.classList.remove('fadenstack-agent-open') }
+function showDrawer() { state.open = true; document.body.classList.add('fadenstack-agent-open') }
 
 async function registerFilesIntegration() {
 	const major = Number((window as unknown as { OC: { config: { version: string } } }).OC.config.version.split('.')[0])
@@ -98,6 +101,19 @@ function mount() {
 	root.id = 'fadenstack-agent-drawer'
 	document.body.appendChild(root)
 	createApp(AgentDrawer, { state, onClose: closeDrawer }).mount(root)
+	const activity = document.createElement('div')
+	activity.id = 'fadenstack-agent-activity'
+	document.body.append(activity)
+	createApp({ setup: () => () => h(AssistantActivity, { runtime: state.runtime, open: state.open, onShow: showDrawer, onMinimise: minimiseDrawer }) }).mount(activity)
+	let locked: HTMLElement | undefined
+	let wasInert = false
+	watch(() => state.runtime?.workspace.state.locked, value => {
+		if (locked) { locked.inert = wasInert; locked = undefined }
+		if (value) {
+			const target = document.querySelector<HTMLElement>('#app-content-vue, #app-content')
+			if (target && !target.contains(root) && !target.contains(activity)) { locked = target; wasInert = target.inert; target.inert = true }
+		}
+	})
 	const header = document.querySelector('#header .header-end, #header .header-right')
 	if (header) {
 		const button = document.createElement('div')
@@ -108,6 +124,7 @@ function mount() {
 	observeSelection()
 	const disconnectViewer = installViewerIntegration({
 		drawer: root,
+		activity,
 		state,
 		toggle: document => { if (state.open) closeDrawer(); else void openDrawer(document?.fileId, document?.name) },
 		changed: (document?: ViewedDocument) => {

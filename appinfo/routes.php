@@ -6,6 +6,7 @@ return ['routes' => [
 	['name' => 'config#get', 'url' => '/config', 'verb' => 'GET'],
 	['name' => 'config#save', 'url' => '/config', 'verb' => 'PUT'],
 	['name' => 'files#select', 'url' => '/context', 'verb' => 'POST'],
+	['name' => 'files#scope', 'url' => '/scope/resource', 'verb' => 'POST'],
 	['name' => 'files#searchPlan', 'url' => '/search/plan', 'verb' => 'POST'],
 	['name' => 'files#searchResolve', 'url' => '/search/resolve', 'verb' => 'POST'],
 	['name' => 'files#searchCapabilities', 'url' => '/search/capabilities', 'verb' => 'POST'],

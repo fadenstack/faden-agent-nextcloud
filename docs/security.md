@@ -18,6 +18,18 @@ under its exclusive lock before changing bytes. Storage failures after writing
 begins may leave partial content; the error asks the user to inspect the file.
 Nextcloud versioning remains the recovery mechanism where enabled.
 
+Version 0.1.2 persists an encrypted, MAC-bound write-ahead journal in four app-owned
+tables before existing Files writes dispatch. Native ACL and configured source
+policy are checked before saved payload access. Snapshots expire after seven days
+(hourly bounded maintenance and opportunistic cleanup), with 1 MiB per snapshot
+JSON, 25 MiB encrypted payload per native user and 1,000 metadata entries. Unknown dispatched
+effects retain an unresolved claim rather than retrying. This records existing
+effects; it does not yet expose governed Undo/Redo or a generic snapshot endpoint.
+It binds native user/configuration/session, not a verified cloud principal pair.
+Key rotation, production-database concurrency and deletion/recreation inverses
+remain release gates. Keep the Nextcloud instance secret with journal backups;
+changing it without a migration makes authentication/decryption fail closed.
+
 Modifying endpoints retain CSRF and use explicit session handling. Admin settings
 retain administrator middleware. The app's toggle is `integration_enabled`;
 `enabled` is reserved for Nextcloud activation. Context responses use no-store.
@@ -26,6 +38,17 @@ Tokens, transcripts and approvals use fresh SDK memory stores, never localStorag
 or IndexedDB. Pagehide/sign-out abort work and discard the runtime. Every outgoing
 SDK request checks Nextcloud's session binding and configuration first. Periodic
 and visibility checks clear stale views. Logout invalidates backend capabilities.
+
+Native `scope_policy` configuration restricts the published Files contract. Empty
+configuration migrates existing access to the user's Files sources/destinations,
+standard content and private destinations. It makes no claim about a downstream
+model provider. Protected content requires explicit configured processing policy;
+unknown classification fails closed. Search is narrowed before discovery/counts.
+Each turn is limited to 30 tool attempts, 10 mutation attempts, 180 seconds, 200
+records and 256 KiB projected result text unless stricter policy applies. Earlier
+conversation content retains its source classifications and is reauthorized
+before model replay. A changed or revoked source blocks reuse of that context.
+The pinned SDK exposes a session/device binding, which is not a verified subject.
 
 UTF-8 text reads reject NUL and input >2 MiB. PDFs are extracted by Mozilla PDF.js
 with ≤10 MiB input, ≤50 pages, ≤50,000 output characters and a 30-second timeout.

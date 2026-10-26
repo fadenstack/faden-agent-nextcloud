@@ -1,0 +1,60 @@
+/** Host restrictions for the existing Files surface. This catalog never grants a central tool. */
+export type ToolRisk = 'read' | 'write' | 'destructive'
+export type FileEffect = 'metadata' | 'read-content' | 'create-file' | 'replace-file'
+export type FileToolName =
+	| 'nc_get_file_metadata' | 'nc_search_in_file' | 'nc_search_content'
+	| 'nc_search_files' | 'nc_get_selected_file' | 'nc_read_file'
+	| 'nc_list_folder' | 'nc_create_text_file' | 'nc_update_text_file'
+
+export interface FileToolCapability {
+	readonly name: FileToolName
+	readonly subsystem: 'files'
+	readonly risk: ToolRisk
+	readonly effect: FileEffect
+	readonly individualApproval: boolean
+	readonly source: 'included' | 'known-or-included' | 'discovery'
+	readonly reversal: 'not-applicable' | 'not-integrated'
+}
+
+function capability(name: FileToolName, effect: FileEffect, source: FileToolCapability['source']): FileToolCapability {
+	const mutation = effect === 'create-file' || effect === 'replace-file'
+	return Object.freeze({
+		name,
+		subsystem: 'files',
+		risk: mutation ? 'destructive' : 'read',
+		effect,
+		individualApproval: mutation,
+		source,
+		reversal: mutation ? 'not-integrated' : 'not-applicable',
+	})
+}
+
+// Preserve these published names and their existing stricter mutation classification.
+export const FILE_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
+	capability('nc_get_file_metadata', 'metadata', 'known-or-included'),
+	capability('nc_search_in_file', 'read-content', 'known-or-included'),
+	capability('nc_search_content', 'read-content', 'discovery'),
+	capability('nc_search_files', 'metadata', 'discovery'),
+	capability('nc_get_selected_file', 'metadata', 'included'),
+	capability('nc_read_file', 'read-content', 'known-or-included'),
+	capability('nc_list_folder', 'metadata', 'included'),
+	capability('nc_create_text_file', 'create-file', 'known-or-included'),
+	capability('nc_update_text_file', 'replace-file', 'known-or-included'),
+])
+
+export function fileCapability(name: string): FileToolCapability | undefined {
+	return FILE_CAPABILITIES.find(tool => tool.name === name)
+}
+
+export function stricterRisk(host: ToolRisk, published: ToolRisk): ToolRisk {
+	const ranks: Record<ToolRisk, number> = { read: 0, write: 1, destructive: 2 }
+	return ranks[host] >= ranks[published] ? host : published
+}
+
+/** Research disposition is planning traceability, never an executable tool list. */
+export const TOOL_ROLLOUT = Object.freeze({
+	manifestVersion: 1,
+	enabledSubsystems: Object.freeze(['files'] as const),
+	expandedCatalog: 'not-enabled' as const,
+	dispositionSource: 'fadenstack-dev/nextcloud-agent-implementation/tool-rollout.csv',
+})

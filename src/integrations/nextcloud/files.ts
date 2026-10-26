@@ -1,6 +1,7 @@
 import axios from '@nextcloud/axios'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
 import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan } from './types.ts'
+import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 
 export class NextcloudFiles implements FileApi {
 
@@ -33,6 +34,7 @@ export class NextcloudFiles implements FileApi {
 	async assertIdentity(): Promise<void> {
 		const now = await this.identity()
 		if (now.userId !== this.initial.userId || now.binding !== this.initial.binding
+			|| now.scopePolicy?.version !== this.initial.scopePolicy?.version
 			|| now.serverUrl !== this.initial.serverUrl || now.agent !== this.initial.agent || !now.enabled) {
 			throw new Error('The Nextcloud session or agent configuration changed. Reload and sign in again.')
 		}
@@ -45,6 +47,7 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	select(fileId: number, signal?: AbortSignal): Promise<FileContext> { return this.post('/context', { fileId }, signal) }
+	scopeResource(resourceId: string, purpose: ResourcePurpose, signal: AbortSignal): Promise<NativeResource> { return this.post('/scope/resource', { resourceId, purpose }, signal) }
 	read(contextId: string, signal?: AbortSignal): Promise<ReadResult> { return this.post('/context/read', { contextId }, signal) }
 	list(contextId: string, signal?: AbortSignal): Promise<Listing> { return this.post('/context/list', { contextId }, signal) }
 	propose(contextId: string, args: WriteArguments, signal?: AbortSignal): Promise<Proposal> {

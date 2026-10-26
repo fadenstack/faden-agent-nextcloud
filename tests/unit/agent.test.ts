@@ -10,24 +10,25 @@ import { SelectedContext } from '../../src/integrations/nextcloud/context.ts'
 import { writeArguments } from '../../src/integrations/nextcloud/tools.ts'
 import { installViewerIntegration } from '../../src/integrations/nextcloud/viewer.ts'
 import type { FileApi, FileContext, Identity, Proposal } from '../../src/integrations/nextcloud/types.ts'
+import type { ScopePolicy } from '../../src/platform/scope.ts'
 
 vi.mock('../../src/components/HeaderButton.vue', () => ({ default: { template: '<button>Fadenstack Agent</button>' } }))
 
 const identity: Identity = { userId: 'alice', binding: 'binding', enabled: true, serverUrl: 'https://faden.test', agent: 'nc', development: false }
 const selected: FileContext = { id: 'opaque-context', parentId: 1, expires: 9999999999, file: { id: 2, name: 'source.md', path: '/source.md', etag: 'revision-1', mime: 'text/markdown', size: 11, folder: false, permissions: 31, url: 'https://cloud.test/f/2' } }
-function fixture(options: ConstructorParameters<typeof FakeGateway>[0] = {}) {
+function fixture(options: ConstructorParameters<typeof FakeGateway>[0] = {}, hostIdentity: Identity = identity) {
 	const gateway = new FakeGateway({ agents: [{ slug: 'nc', version: 1, contract: [
 		{ name: 'nc_get_selected_file', risk: 'read' }, { name: 'nc_read_file', risk: 'read' }, { name: 'nc_list_folder', risk: 'read' },
 		{ name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' },
 	] }], users: [{ email: 'alice', password: 'test', agents: ['nc'] }], ...options })
 	const files: FileApi = {
-		identity: vi.fn(async () => identity), assertIdentity: vi.fn(async () => {}), select: vi.fn(async () => selected),
+		identity: vi.fn(async () => hostIdentity), assertIdentity: vi.fn(async () => {}), select: vi.fn(async () => selected),
 		read: vi.fn(async () => ({ file: selected.file, text: 'Source text', partial: false, totalCharacters: 11, processedCharacters: 11 })),
 		pdf: vi.fn(async () => new Uint8Array()), list: vi.fn(async () => ({ folder: { ...selected.file, folder: true }, files: [], partial: false })),
 		propose: vi.fn(async (contextId, args) => ({ id: 'proposal', contextId, ...args, target: '/summary.md', before: null }) satisfies Proposal),
 		approve: vi.fn(async () => {}), commit: vi.fn(async () => ({ operation: 'create', file: { ...selected.file, id: 3, name: 'summary.md' } })),
 	}
-	return { gateway, files, host: new NextcloudAgent(identity, files, gateway.fetch) }
+	return { gateway, files, host: new NextcloudAgent(hostIdentity, files, gateway.fetch) }
 }
 async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 	let part: ApprovalPart | undefined
@@ -39,6 +40,48 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('SDK integration and file boundary', () => {
+	it('narrows the real SDK tool manifest and reauthorizes prior conversation sources before replay', async () => {
+		const policy: ScopePolicy = { version: 'native-1', sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }], destinations: [],
+			tools: ['nc_read_file'], sourceClasses: ['standard'], gatewayOrigin: identity.serverUrl, downstreamPolicy: 'unverified',
+			destinationAudiences: ['private'], movements: [], developmentLoopback: true }
+		const { host, files, gateway } = fixture({ model: () => ({ text: 'Read source' }) }, { ...identity, scopePolicy: policy })
+		files.scopeResource = vi.fn(async reference => ({ resourceId: reference, revision: 'revision-1', sourceClass: 'standard', audience: 'private', scope: policy.sources[0] }))
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		await host.send('Read this file')
+		expect(gateway.modelCalls).toHaveLength(1)
+		expect(gateway.modelCalls[0]!.tools?.map(tool => tool.name)).toEqual(['nc_read_file'])
+		vi.mocked(files.scopeResource).mockRejectedValue(new Error('Native access revoked'))
+		await expect(host.send('Continue with the same source', false)).rejects.toThrow('Native access revoked')
+		expect(gateway.modelCalls).toHaveLength(1)
+		// Revocation must not prevent token revocation / sign-out.
+		await expect(host.dispose()).resolves.toBeUndefined()
+	})
+	it('blocks a forged model reference at the actual host boundary', async () => {
+		let round = 0
+		const policy: ScopePolicy = { version: 'native-1', sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }], destinations: [],
+			tools: ['nc_read_file'], sourceClasses: ['standard'], gatewayOrigin: identity.serverUrl, downstreamPolicy: 'unverified',
+			destinationAudiences: ['private'], movements: [], developmentLoopback: true }
+		const { host, files } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ id: 'forged', name: 'nc_read_file', arguments: { resource_id: 'nextcloud:files:3' } }] } : { text: 'Unavailable' } }, { ...identity, scopePolicy: policy })
+		files.scopeResource = vi.fn(async reference => ({ resourceId: reference, revision: 'revision-1', sourceClass: 'standard', audience: 'private', scope: policy.sources[0] }))
+		await host.signIn('alice', 'test')
+		await host.send('Read a different file', false)
+		expect(files.read).not.toHaveBeenCalled()
+		expect(files.scopeResource).not.toHaveBeenCalled()
+		await host.dispose()
+	})
+	it('refuses a final proposal body different from the arguments reviewed by the SDK', async () => {
+		let round = 0
+		const { host, files } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ id: 'changed', name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: 'Reviewed body' } }] } : { text: 'Finished' } })
+		vi.mocked(files.propose).mockImplementation(async (contextId, args) => ({ id: 'proposal', contextId, ...args, target: '/summary.md', before: null, content: 'Changed by module' }))
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		const sending = host.send('Create a note')
+		await host.approve(await pending(host))
+		await sending
+		expect(files.commit).not.toHaveBeenCalled()
+		await host.dispose()
+	})
 	it('uses the Nextcloud language for SDK labels independently of browser language', async () => {
 		const { host, files, gateway } = fixture()
 		const german = new NextcloudAgent({ ...identity, locale: 'de-DE' }, files, gateway.fetch)

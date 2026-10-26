@@ -1,11 +1,12 @@
 import type { Passage } from './passages.ts'
+import type { ScopePolicy, NativeResource, ResourcePurpose } from '../../platform/scope.ts'
 export interface AppConfig {
 	enabled: boolean
 	serverUrl: string
 	agent: string
 	development: boolean
 }
-export interface Identity extends AppConfig { userId: string; binding: string; locale?: string }
+export interface Identity extends AppConfig { userId: string; binding: string; locale?: string; scopePolicy?: ScopePolicy | null }
 export interface FileMetadata {
 	id: number
 	name: string
@@ -18,6 +19,7 @@ export interface FileMetadata {
 	url: string
 	modified?: number
 	created?: number
+	agentScope?: NativeResource
 }
 export interface FileContext {
 	id: string
@@ -125,4 +127,5 @@ export interface FileApi {
 	propose(contextId: string, args: WriteArguments, signal?: AbortSignal): Promise<Proposal>
 	approve(id: string, signal?: AbortSignal): Promise<void>
 	commit(id: string, signal?: AbortSignal): Promise<WriteResult>
+	scopeResource?(resourceId: string, purpose: ResourcePurpose, signal: AbortSignal): Promise<NativeResource>
 }
