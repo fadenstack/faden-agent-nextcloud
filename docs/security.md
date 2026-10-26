@@ -34,8 +34,9 @@ materializes its listing, so exceptionally large folders may use more memory.
 
 CSP grants only the configured HTTPS connect origin. Loopback HTTP requires an
 explicit development option. SDK transport rejects unknown origins and redirects.
-Markdown passes through the SDK serializer and DOMPurify; images, forms and styles
-are removed. The app logs no contents or credentials. Context is labelled untrusted;
+Markdown is rendered through the SDK's structured Markdown AST and Vue components;
+raw HTML is not inserted. Images, forms and styles are not enabled. The app logs no
+contents or credentials. Context is labelled untrusted;
 pilot server instructions treat documents as data, not authorized instructions.
 
 External/encrypted storage, permission revocation during I/O and full browser/CA

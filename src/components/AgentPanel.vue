@@ -3,11 +3,11 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { t } from '@nextcloud/l10n'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
+import { AgentAvatar } from '@fadenstack/ui-vue'
 import type { Runtime } from '../agent/runtime.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import type { FileContext } from '../integrations/nextcloud/types.ts'
 import AgentChat from './AgentChat.vue'
-import mascot from '../../img/mascot.svg?url'
 
 const props = defineProps<{ runtime: Runtime; fileId?: number; documentName?: string; selectionEpoch?: number }>()
 const email = ref('')
@@ -39,6 +39,7 @@ watch(() => [props.fileId, props.selectionEpoch] as const, ([id]) => select(id),
 watch(() => props.runtime.state.host, (host) => { if (host) void select(props.fileId); else selected.value = undefined })
 
 async function signIn() {
+	if (busy.value) return
 	busy.value = true
 	problem.value = ''
 	const secret = password.value
@@ -58,21 +59,18 @@ onUnmounted(() => { ++selectionRevision })
 
 <template>
 	<section class="fadenstack-panel" :aria-label="t('fadenstack_agent', 'Fadenstack Agent')">
-		<header v-if="!runtime.state.signedIn">
-			<img :src="mascot"
-				width="32"
-				height="32"
-				alt=""
-				aria-hidden="true">
-			<span>{{ runtime.config.agent }}</span>
-			<p>{{ runtime.state.signedIn ? t('fadenstack_agent', 'Connected') : t('fadenstack_agent', 'Sign in to Fadenstack') }}</p>
-		</header>
 		<div class="fadenstack-panel-body">
-			<p v-if="problem || runtime.state.error" role="alert">
+			<p v-if="!runtime.state.signedIn && (problem || runtime.state.error)" class="fadenstack-panel-message" role="alert">
 				{{ problem || runtime.state.error }}
 			</p>
 			<form v-if="!runtime.state.signedIn" class="fadenstack-signin" @submit.prevent="signIn">
-				<p>{{ runtime.config.serverUrl }}</p>
+				<AgentAvatar :size="40" />
+				<h2>{{ t('fadenstack_agent', 'Sign in to Fadenstack') }}</h2>
+				<p>{{ t('fadenstack_agent', 'Your Nextcloud session is active. Connect with your Fadenstack account to use the assistant.') }}</p>
+				<div class="fadenstack-signin-destination">
+					<span>{{ t('fadenstack_agent', 'Fadenstack server') }}</span>
+					<strong>{{ runtime.config.serverUrl }}</strong>
+				</div>
 				<label for="fadenstack-email">{{ t('fadenstack_agent', 'Email') }}</label>
 				<input id="fadenstack-email"
 					v-model="email"
@@ -98,6 +96,7 @@ onUnmounted(() => { ++selectionRevision })
 					:context="selected"
 					:loading-context="loadingContext"
 					:document-context="!!documentName"
+					:context-error="problem || runtime.state.error"
 					@signed-out="clear" />
 			</template>
 		</div>
@@ -105,11 +104,11 @@ onUnmounted(() => { ++selectionRevision })
 </template>
 
 <style>
-.fadenstack-panel { padding: 0; display: flex; flex-direction: column; gap: 8px; color: var(--color-main-text); background: var(--color-main-background); min-width: 0; min-height: 0; height: 100%; box-sizing: border-box; }
-
-.fadenstack-panel > header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 16px; }
+.fadenstack-panel { --fdn-agent-plate: var(--color-main-text); --fdn-agent-plate-side: var(--color-text-maxcontrast); --fdn-agent-eye: var(--color-main-background); --fdn-agent-pupil: var(--color-main-text); padding: 0; display: flex; flex-direction: column; gap: 8px; color: var(--color-main-text); background: var(--color-main-background); min-width: 0; min-height: 0; height: 100%; box-sizing: border-box; }
 
 .fadenstack-panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
+
+.fadenstack-panel-message { padding: 12px 16px; color: var(--color-error-text, var(--color-main-text)); background: var(--color-background-hover); }
 
 .fadenstack-panel p { margin: 4px 0; }
 
@@ -120,6 +119,14 @@ onUnmounted(() => { ++selectionRevision })
 .fadenstack-panel a { color: var(--color-primary-element); text-decoration: underline; overflow-wrap: anywhere; }
 
 .fadenstack-signin { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+
+.fadenstack-signin h2 { margin: 8px 0 0; font-size: var(--default-font-size, 15px); font-weight: 600; }
+
+.fadenstack-signin-destination { display: flex; flex-direction: column; gap: 4px; padding-block: 8px; overflow-wrap: anywhere; }
+
+.fadenstack-signin-destination span { color: var(--color-text-maxcontrast); font-size: var(--font-size-small, 13px); }
+
+.fadenstack-signin-destination strong { font-weight: 400; }
 
 .fadenstack-panel input:not([type=checkbox]), .fadenstack-panel textarea { width: 100%; box-sizing: border-box; }
 

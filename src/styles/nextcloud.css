@@ -21,7 +21,7 @@
 	--fdn-success: var(--color-success-text, var(--color-success));
 	--fdn-code-bg: var(--color-background-dark);
 	--fdn-focus: var(--color-primary-element);
-	--fdn-font: var(--font-face);
+	--fdn-font: var(--font-face, system-ui, sans-serif);
 	/* The agent's plates follow the theme's text (navy on light, light on dark); the thread stays rose. */
 	--fdn-agent-plate: var(--color-main-text);
 	--fdn-agent-plate-side: var(--color-text-maxcontrast);
@@ -29,42 +29,253 @@
 	--fdn-agent-pupil: var(--color-main-text);
 	color-scheme: inherit;
 	height: 100%;
+	min-height: 0;
+	font-size: var(--default-font-size, 15px);
+	line-height: 1.5;
 }
 
-/* Nextcloud styles every button and text field; the panel draws its own. */
-.fdn-chat button { min-height: 0; margin: 0; }
+/*
+ * The pinned SDK skin publishes these classes, but 0.2.0-rc.2 has fixed text sizes.
+ * Keep the host bridge in one place: equivalent roles use Nextcloud's body or secondary size.
+ * Update the bridge with the SDK skin contract, rather than overriding each subsystem separately.
+ */
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header-title,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-mode-button,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-greeting,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-button,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] table,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md .fdn-md-h1,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md .fdn-md-h2,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md .fdn-md-h3,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md .fdn-md-h4,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md .fdn-md-h5,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md .fdn-md-h6 {
+	font-size: var(--default-font-size, 15px);
+}
 
-.fdn-chat textarea { margin: 0; box-shadow: none; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header-title {
+	font-weight: 600;
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md .fdn-md-h1,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md .fdn-md-h2 {
+	font-size: 1.333em;
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-menu-description,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-menu-note,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-menu-heading,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-history-when,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-user-note,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-turn-actions,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md-code-bar,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-tool-title,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-tool-duration,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-label,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-badge,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval-state,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-notice-detail,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-chip,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-tool-details pre,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-diff pre,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md-code pre,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-md :not(pre) > code {
+	font-size: var(--font-size-small, 13px);
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-badge {
+	line-height: 1.5;
+}
+
+/* The empty native sidebar keeps its own absolute close button and accessible heading. */
+/* Physical gutters follow the native page direction independently of the SDK language. */
+/* stylelint-disable csstools/use-logical */
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header {
+	position: relative;
+	/* Native close: clickable area + two 8px offsets, with the native 4px grid fallback. */
+	padding-left: 14px;
+	padding-right: calc(var(--default-clickable-area, 34px) + var(--app-sidebar-padding, calc(var(--default-grid-baseline, 4px) * 2)) * 2);
+}
+
+/* The native close follows the page direction, even when the SDK language differs. */
+.fadenstack-drawer:dir(rtl) .fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header {
+	padding-left: calc(var(--default-clickable-area, 34px) + var(--app-sidebar-padding, calc(var(--default-grid-baseline, 4px) * 2)) * 2);
+	padding-right: 14px;
+}
+/* stylelint-enable csstools/use-logical */
+
+/* Keep the SDK's menu state/dismissal, but anchor popovers to the whole narrow header. */
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header > .fdn-menu-anchor {
+	position: static;
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header > .fdn-menu-anchor > .fdn-menu {
+	inset-inline-end: calc(var(--default-grid-baseline, 4px) * 2);
+	min-width: min(260px, calc(100% - 16px));
+	max-width: calc(100% - 16px);
+	overflow-wrap: anywhere;
+}
+
+/* Nextcloud styles every button and text field; only this embedded instance resets them. */
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] button {
+	min-height: var(--default-clickable-area, 34px);
+	margin: 0;
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-icon-button {
+	width: var(--default-clickable-area, 34px);
+	height: var(--default-clickable-area, 34px);
+	min-width: var(--default-clickable-area, 34px);
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-chip-remove {
+	min-width: var(--clickable-area-small, 24px);
+	min-height: var(--clickable-area-small, 24px);
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] textarea {
+	margin: 0;
+	box-shadow: none;
+}
 
 /* The file the next message can include, above the composer. */
-.fdn-context-bar { display: flex; padding: 6px 14px; font-size: 11px; min-width: 0; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-context-bar {
+	display: flex;
+	gap: calc(var(--default-grid-baseline, 4px) * 2);
+	min-width: 0;
+	padding: calc(var(--default-grid-baseline, 4px) * 2) calc(var(--default-grid-baseline, 4px) * 4);
+	font-size: var(--font-size-small, 13px);
+}
 
-.fdn-context-bar a { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-context-bar a {
+	display: flex;
+	align-items: center;
+	gap: calc(var(--default-grid-baseline, 4px) * 2);
+	min-width: 0;
+	min-height: var(--default-clickable-area, 34px);
+	overflow: hidden;
+	font-size: var(--default-font-size, 15px);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
 
 /* A write's proposal: its target, and the current and proposed content. */
-.fdn-chat .fdn-approval-target { margin-block: 6px; overflow-wrap: anywhere; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval-target {
+	margin-block: calc(var(--default-grid-baseline, 4px) * 2);
+	overflow-wrap: anywhere;
+}
 
-.fdn-chat .fdn-approval details { margin-block: 6px; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval details {
+	margin-block: calc(var(--default-grid-baseline, 4px) * 2);
+}
 
-.fdn-chat .fdn-approval pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 350px; overflow-y: auto; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval pre {
+	max-height: 350px;
+	overflow-y: auto;
+	font-size: var(--default-font-size, 15px);
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval .fdn-label,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval .fdn-badge,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval .fdn-approval-state,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval summary {
+	font-size: var(--default-font-size, 15px);
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval summary {
+	min-height: var(--default-clickable-area, 34px);
+}
+
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval-head,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-approval-actions {
+	flex-wrap: wrap;
+}
 
 /* Search results: files with their folder, date and excerpt, and passages in a document. */
-.fdn-chat .fdn-search-results { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-block: 8px; background: var(--fdn-surface); border: 1px solid var(--fdn-border); border-radius: 8px; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-results {
+	display: flex;
+	flex-direction: column;
+	gap: calc(var(--default-grid-baseline, 4px) * 2);
+	margin-block: calc(var(--default-grid-baseline, 4px) * 2);
+	padding: calc(var(--default-grid-baseline, 4px) * 3);
+	border: 1px solid var(--fdn-border);
+	border-radius: var(--border-radius-element, 8px);
+	background: var(--fdn-surface);
+}
 
-.fdn-chat .fdn-search-title, .fdn-chat .fdn-search-name, .fdn-chat .fdn-search-actions { display: flex; align-items: center; gap: 8px; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-title,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-name,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-actions {
+	display: flex;
+	align-items: center;
+	gap: calc(var(--default-grid-baseline, 4px) * 2);
+}
 
-.fdn-chat .fdn-search-title { justify-content: space-between; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-title {
+	justify-content: space-between;
+}
 
-.fdn-chat .fdn-search-file { padding-block: 8px; border-block-end: 1px solid var(--fdn-border); min-width: 0; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-file {
+	min-width: 0;
+	padding-block: calc(var(--default-grid-baseline, 4px) * 2);
+	border-block-end: 1px solid var(--fdn-border);
+}
 
-.fdn-chat .fdn-search-name { font-weight: 600; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-name {
+	font-weight: 600;
+}
 
-.fdn-chat .fdn-search-name a, .fdn-chat .fdn-search-file p { overflow-wrap: anywhere; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-name a,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-file p {
+	overflow-wrap: anywhere;
+}
 
-.fdn-chat .fdn-search-actions { justify-content: space-between; flex-wrap: wrap; margin-block-start: 6px; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-actions {
+	flex-wrap: wrap;
+	justify-content: space-between;
+	margin-block-start: calc(var(--default-grid-baseline, 4px) * 2);
+}
 
-.fdn-chat .fdn-search-actions button { padding: 4px 8px; background: var(--fdn-bg); border: 1px solid var(--fdn-border); border-radius: 6px; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-actions button {
+	padding: var(--default-grid-baseline, 4px) calc(var(--default-grid-baseline, 4px) * 2);
+	border: 1px solid var(--fdn-border);
+	border-radius: var(--border-radius-element, 8px);
+	background: var(--fdn-bg);
+}
 
-.fdn-chat .fdn-search-excerpt, .fdn-chat .fdn-search-passage p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-excerpt,
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-passage p {
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
 
-.fdn-chat .fdn-search-passage { margin: 0; padding-inline-start: 10px; border-inline-start: 3px solid var(--fdn-accent); }
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-passage {
+	margin: 0;
+	padding-inline-start: calc(var(--default-grid-baseline, 4px) * 3);
+	border-inline-start: 3px solid var(--fdn-accent);
+}
+
+@media (width <= 512px) {
+	.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header {
+		flex-wrap: wrap;
+	}
+
+	.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header-title {
+		flex-basis: 100%;
+	}
+
+	.fadenstack-panel .fdn-chat[data-theme=nextcloud] button {
+		min-height: 44px;
+	}
+
+	.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-icon-button {
+		height: 44px;
+	}
+
+	.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-chip-remove {
+		min-height: var(--clickable-area-small, 24px);
+	}
+}

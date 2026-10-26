@@ -6,6 +6,18 @@ Open Files and click the Fadenstack mascot in the top bar or app menu. Sign in
 with your Fadenstack account. The assistant stays in the right sidebar. In the
 full-screen Text viewer, the titlebar mascot opens the same assistant.
 
+The drawer has one chat toolbar. **Assistant details** shows the configured
+Fadenstack connection, published identifier and current saved-file metadata.
+Opening it sends no request to the model and reads no file content.
+
+The context row shows **Next message** before sending, **This response** while
+working, or **Not included** if the attachment is excluded. Changing selection
+during a response prepares the next message; the current response keeps its
+original source. The row sits above the composer. **Stop** cancels the current
+response; closing the drawer also stops it. Chat history contains conversations,
+not an undo journal. Agent-wide undo/redo and additional app tools are planned
+separately; this version has no new action-history controls.
+
 Ask naturally: “Find the latest supplier contract”, “Find all PDFs inside
 Engineering”, or “Show my ten most recently modified documents”. Discovery
 searches the filenames and metadata you can access, including shared files.
@@ -42,6 +54,13 @@ from the saved file, not the unsaved editor buffer.
 im App-Menü. Melde dich mit deinem Fadenstack-Konto an. Der Assistent bleibt in
 der rechten Seitenleiste. Im Text-Editor im Vollbild öffnet das Maskottchen in
 der Titelleiste denselben Assistenten.
+
+**Assistentendetails** zeigt die Fadenstack-Verbindung, die veröffentlichte
+Kennung und Metadaten der gespeicherten Datei. Das Öffnen liest keine Dateiinhalte.
+Die Kontextzeile unterscheidet die nächste Nachricht, die laufende Antwort und
+ausgeschlossene Anhänge. Eine neue Auswahl ändert die Quelle der laufenden Antwort
+nicht. **Stopp** und das Schließen der Seitenleiste beenden die laufende Antwort.
+Der Chatverlauf ist kein Rückgängig-Journal.
 
 Frage zum Beispiel: „Finde den neuesten Lieferantenvertrag“, „Finde alle PDFs
 im Ordner Engineering“ oder „Zeige meine zehn zuletzt geänderten Dokumente“.

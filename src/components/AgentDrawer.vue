@@ -1,17 +1,23 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { t } from '@nextcloud/l10n'
 import NcAppSidebar from '@nextcloud/vue/components/NcAppSidebar'
 import NcAppSidebarTab from '@nextcloud/vue/components/NcAppSidebarTab'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 import AgentPanel from './AgentPanel.vue'
 import type { Runtime } from '../agent/runtime.ts'
-defineProps<{ state: { open: boolean; loading: boolean; error: string; runtime?: Runtime; fileId?: number; documentName?: string; selectionEpoch: number } }>()
+const props = defineProps<{ state: { open: boolean; loading: boolean; error: string; runtime?: Runtime; fileId?: number; documentName?: string; selectionEpoch: number } }>()
 const emit = defineEmits<{ close: [] }>()
+// Keep the native accessible heading/close control; the SDK owns the visible chat toolbar.
+const chatHeader = computed(() => !props.state.loading && !props.state.error
+	&& props.state.runtime?.config.enabled && props.state.runtime.config.serverUrl && props.state.runtime.config.agent
+	&& props.state.runtime.state.signedIn && !!props.state.runtime.state.host)
 </script>
 <template>
 	<NcAppSidebar class="fadenstack-drawer"
 		:open="state.open"
-		name="Fadenstack Agent"
+		:name="t('fadenstack_agent', 'Fadenstack Agent')"
+		:empty="!!chatHeader"
 		:no-toggle="true"
 		@keydown.esc.stop="emit('close')"
 		@close="emit('close')">
@@ -32,7 +38,7 @@ const emit = defineEmits<{ close: [] }>()
 	</NcAppSidebar>
 </template>
 <style>
-.fadenstack-drawer { position: fixed !important; inset-block-start: var(--header-height, 50px) !important; inset-block-end: 8px !important; inset-inline-end: 8px !important; height: calc(100dvh - var(--header-height, 50px) - 8px) !important; width: min(420px, calc(100vw - 16px)) !important; z-index: 1800 !important; border-radius: var(--border-radius-large); box-shadow: 0 4px 24px #0003; }
+.fadenstack-drawer { position: fixed !important; inset-block-start: var(--header-height, 50px) !important; inset-block-end: 8px !important; inset-inline-end: 8px !important; height: calc(100dvh - var(--header-height, 50px) - 8px) !important; width: min(420px, calc(100vw - 16px)) !important; z-index: 1800 !important; border-radius: var(--border-radius-large); box-shadow: 0 4px 24px #0003; font-family: var(--font-face, system-ui); font-size: var(--default-font-size, 15px); }
 
 .fadenstack-drawer-message { padding: 16px; }
 

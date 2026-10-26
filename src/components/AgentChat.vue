@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, h } from 'vue'
+import { computed, h, nextTick, ref, watch } from 'vue'
 import { t } from '@nextcloud/l10n'
 import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
-import { ChatPanel, Icon, ToolCallView, type ChatTheme, type PartRenderer } from '@fadenstack/ui-vue'
+import { AgentAvatar, ChatPanel, Icon, ToolCallView, type ChatTheme, type PartRenderer } from '@fadenstack/ui-vue'
 import '@fadenstack/ui-web/styles.css'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { useObservable } from '../agent/useObservable.ts'
@@ -10,13 +10,41 @@ import { WRITE_TOOLS } from '../integrations/nextcloud/tools.ts'
 import type { FileContext } from '../integrations/nextcloud/types.ts'
 import NextcloudApproval from './NextcloudApproval.vue'
 import SearchResultsCard from './SearchResultsCard.vue'
+import AssistantDetails from './AssistantDetails.vue'
 import '../styles/nextcloud.css'
 
-const props = defineProps<{ host: NextcloudAgent; context?: FileContext; loadingContext?: boolean; documentContext?: boolean }>()
+const props = defineProps<{ host: NextcloudAgent; context?: FileContext; loadingContext?: boolean; documentContext?: boolean; contextError?: string }>()
 const emit = defineEmits<{ 'signed-out': [] }>()
 const chat = props.host.chat
 const version = useObservable(chat)
+const attachmentVersion = ref(0)
+// A chip toggle notifies its own public view model, not the chat. Subscribe without proxying SDK objects.
+watch(() => { void version.value; return props.host.contextAttachment }, (attachment, _previous, cleanup) => {
+	attachmentVersion.value = attachment?.version ?? 0
+	if (attachment) cleanup(attachment.subscribe(() => { attachmentVersion.value = attachment.version }))
+}, { immediate: true })
 const composerContext = computed(() => { void version.value; return props.host.selection.snapshot() })
+const displayContext = computed(() => { void version.value; return chat.isBusy ? props.host.turnContext : composerContext.value })
+const contextLabel = computed(() => {
+	void version.value
+	void attachmentVersion.value
+	if (chat.isBusy) return t('fadenstack_agent', 'This response')
+	if (composerContext.value && !props.host.selectionIncluded) return t('fadenstack_agent', 'Not included')
+	return t('fadenstack_agent', 'Next message')
+})
+const detailsOpen = ref(false)
+const detailsButton = ref<HTMLButtonElement>()
+let detailsTrigger: HTMLElement | undefined
+function openDetails(event: Event) {
+	detailsTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined
+	detailsOpen.value = true
+}
+async function closeDetails() {
+	detailsOpen.value = false
+	await nextTick()
+	if (detailsTrigger?.isConnected) detailsTrigger.focus()
+	else detailsButton.value?.focus()
+}
 // The SDK's panel in Nextcloud's own colours (styles/nextcloud.css maps its tokens onto the user's theme).
 const theme = 'nextcloud' as ChatTheme
 
@@ -36,6 +64,7 @@ const renderers: PartRenderer[] = [
 ]
 
 function summarize() {
+	if (chat.isBusy) return
 	props.host.offerSelection(props.host.selection.snapshot())
 	chat.setInput(t('fadenstack_agent', 'Summarize this document'))
 	chat.requestComposerFocus()
@@ -45,7 +74,8 @@ function summarize() {
 function escape(event: KeyboardEvent) {
 	if (event.key !== 'Escape') return
 	event.stopPropagation()
-	if (chat.isSettingsOpen || chat.isModeMenuOpen || chat.isHistoryOpen) {
+	if (detailsOpen.value) void closeDetails()
+	else if (chat.isSettingsOpen || chat.isModeMenuOpen || chat.isHistoryOpen) {
 		chat.setSettingsOpen(false)
 		chat.setModeMenuOpen(false)
 		chat.setHistoryOpen(false)
@@ -58,55 +88,98 @@ function signOut() {
 </script>
 
 <template>
-	<ChatPanel class="fadenstack-chat"
-		:chat="chat"
-		:theme="theme"
-		:part-renderers="renderers"
-		@keydown="escape">
-		<template #settings-extra>
-			<div class="fdn-menu-note">
-				{{ host.config.serverUrl }}<br>{{ host.config.agent }} · {{ t('fadenstack_agent', 'Connected') }}
-			</div>
-			<button type="button"
-				role="menuitem"
-				class="fdn-menu-item"
-				@click="signOut">
-				<span class="fdn-menu-check" />
-				<span class="fdn-menu-label">{{ t('fadenstack_agent', 'Sign out') }}</span>
-			</button>
-		</template>
-		<template #sign-in>
-			<div class="fdn-banner" role="alert">
-				{{ t('fadenstack_agent', 'Your sign-in expired. Sign in again.') }}
-				<button type="button" class="fdn-link" @click="emit('signed-out')">
-					{{ t('fadenstack_agent', 'Sign in') }}
+	<div class="fadenstack-chat-container">
+		<ChatPanel class="fadenstack-chat"
+			:chat="chat"
+			:theme="theme"
+			:part-renderers="renderers"
+			@keydown="escape">
+			<template #header-extra>
+				<button ref="detailsButton"
+					type="button"
+					class="fdn-icon-button"
+					:aria-label="t('fadenstack_agent', 'Assistant details')"
+					:aria-expanded="detailsOpen"
+					aria-haspopup="dialog"
+					:title="t('fadenstack_agent', 'Assistant details')"
+					@click="openDetails">
+					<AgentAvatar :size="24" />
 				</button>
-			</div>
-		</template>
-		<template #context-bar>
-			<div class="fdn-context-bar" :data-version="version">
-				<span v-if="loadingContext" class="fdn-status"><span class="fdn-spinner" />{{ t('fadenstack_agent', 'Reading file context…') }}</span>
-				<a v-else-if="composerContext"
-					:href="composerContext.file.url"
-					target="_blank"
-					rel="noopener noreferrer"
-					:title="composerContext.file.path"><Icon name="page" :size="14" />{{ composerContext.file.name }}</a>
-				<span v-else class="fdn-muted">{{ t('fadenstack_agent', 'Select a file or folder to add context.') }}</span>
-			</div>
-			<div v-if="documentContext && composerContext" class="fdn-context-bar fdn-muted">
-				{{ t('fadenstack_agent', 'Saved document context. Save edits before sending.') }}
-			</div>
-		</template>
-		<template #composer-accessory>
-			<button v-if="composerContext"
-				type="button"
-				class="fdn-icon-button fdn-small"
-				:title="t('fadenstack_agent', 'Summarize this document')"
-				:aria-label="t('fadenstack_agent', 'Summarize this document')"
-				:disabled="chat.isBusy"
-				@click="summarize">
-				<Icon name="page" :size="16" />
-			</button>
-		</template>
-	</ChatPanel>
+			</template>
+			<template #settings-extra>
+				<div class="fdn-menu-note">
+					{{ host.config.serverUrl }}<br>{{ host.config.agent }} · {{ t('fadenstack_agent', 'Connected') }}
+				</div>
+				<button type="button"
+					role="menuitem"
+					class="fdn-menu-item"
+					@click="signOut">
+					<span class="fdn-menu-check" />
+					<span class="fdn-menu-label">{{ t('fadenstack_agent', 'Sign out') }}</span>
+				</button>
+			</template>
+			<template #sign-in>
+				<div class="fdn-banner" role="alert">
+					{{ t('fadenstack_agent', 'Your sign-in expired. Sign in again.') }}
+					<button type="button" class="fdn-link" @click="emit('signed-out')">
+						{{ t('fadenstack_agent', 'Sign in') }}
+					</button>
+				</div>
+			</template>
+			<template #context-bar>
+				<p v-if="contextError" class="fdn-banner fadenstack-context-error" role="alert">
+					{{ contextError }}
+				</p>
+				<div class="fdn-context-bar fadenstack-context" :data-version="version">
+					<span class="fadenstack-context-label">{{ contextLabel }}</span>
+					<span v-if="loadingContext && !chat.isBusy" class="fdn-status"><span class="fdn-spinner" />{{ t('fadenstack_agent', 'Checking file context…') }}</span>
+					<button v-else-if="displayContext"
+						type="button"
+						class="fadenstack-context-target"
+						:title="displayContext.file.path"
+						:aria-label="t('fadenstack_agent', 'Context details: {name}', { name: displayContext.file.name })"
+						@click="openDetails">
+						<Icon :name="displayContext.file.folder ? 'book' : 'page'" :size="16" />
+						<span>{{ displayContext.file.name }}</span>
+					</button>
+					<span v-else class="fdn-muted">{{ chat.isBusy ? t('fadenstack_agent', 'No file included in this response.') : t('fadenstack_agent', 'Search files or choose a file in Files.') }}</span>
+				</div>
+				<div v-if="documentContext && displayContext" class="fdn-context-bar fdn-muted fadenstack-context-note">
+					{{ t('fadenstack_agent', 'Saved document context. Save edits before sending.') }}
+				</div>
+			</template>
+			<template #composer-accessory>
+				<button v-if="composerContext"
+					type="button"
+					class="fdn-icon-button fdn-small"
+					:title="t('fadenstack_agent', 'Summarize this document')"
+					:aria-label="t('fadenstack_agent', 'Summarize this document')"
+					:disabled="chat.isBusy"
+					@click="summarize">
+					<Icon name="page" :size="16" />
+				</button>
+			</template>
+		</ChatPanel>
+		<AssistantDetails v-if="detailsOpen"
+			:title="chat.title"
+			:server-url="host.config.serverUrl"
+			:agent="host.config.agent"
+			:context="displayContext"
+			:document-context="documentContext"
+			@close="closeDetails" />
+	</div>
 </template>
+
+<style>
+.fadenstack-chat-container { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+
+.fadenstack-panel .fadenstack-context { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 8px 14px; }
+
+.fadenstack-context-label { color: var(--color-text-maxcontrast); font-size: var(--font-size-small, 13px); flex-shrink: 0; }
+
+.fadenstack-panel .fadenstack-context-target { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; border: 0; padding: 4px; background: transparent; color: var(--color-primary-element); text-align: start; }
+
+.fadenstack-context-target span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.fadenstack-panel .fadenstack-context-note { padding-block-start: 0; font-size: var(--font-size-small, 13px); }
+</style>

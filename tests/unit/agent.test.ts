@@ -299,6 +299,117 @@ describe('SDK integration and file boundary', () => {
 	})
 })
 describe('The SDK panel in Nextcloud', () => {
+	it('labels the frozen source for a busy response and then follows the next selection', async () => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		let finish!: (reply: { text: string }) => void
+		const response = new Promise<{ text: string }>(resolve => { finish = resolve })
+		const { host, files, gateway } = fixture({ model: () => response })
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(AgentChat, { host: markRaw(host), context: selected })
+		app.mount(root)
+		let sending: Promise<void> | undefined
+		try {
+			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('Next message')
+			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('source.md')
+			expect(host.turnContext).toBeUndefined()
+			sending = host.send('Summarize the included source')
+			await vi.waitFor(() => expect(gateway.modelCalls).toHaveLength(1))
+			expect(host.chat.isBusy).toBe(true)
+			expect(host.turnContext?.file.id).toBe(2)
+			const later = { ...selected, id: 'later-context', file: { ...selected.file, id: 9, name: 'later.md', path: '/later.md' } }
+			vi.mocked(files.select).mockResolvedValueOnce(later)
+			host.offerSelection(await host.selection.select(9))
+			await nextTick()
+			const busyContext = root.querySelector('.fadenstack-context')?.textContent
+			expect(busyContext).toContain('This response')
+			expect(busyContext).toContain('source.md')
+			expect(busyContext).not.toContain('later.md')
+			expect(host.turnContext?.file.id).toBe(2)
+			expect(files.read).toHaveBeenCalledTimes(1)
+			expect(JSON.stringify(gateway.modelCalls[0]?.messages)).not.toContain('later.md')
+			finish({ text: 'Summary complete' })
+			await sending
+			await nextTick()
+			expect(host.turnContext).toBeUndefined()
+			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('Next message')
+			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('later.md')
+		} finally {
+			finish({ text: 'Summary complete' })
+			await sending?.catch(() => {})
+			app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals()
+		}
+	})
+
+	it('reflects an excluded implicit attachment without reading it or claiming it grounds a response', async () => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		let finish!: (reply: { text: string }) => void
+		const response = new Promise<{ text: string }>(resolve => { finish = resolve })
+		const { host, files, gateway } = fixture({ model: () => response })
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(AgentChat, { host: markRaw(host), context: selected })
+		app.mount(root)
+		let sending: Promise<void> | undefined
+		try {
+			expect(host.selectionIncluded).toBe(true)
+			root.querySelector<HTMLButtonElement>('.fdn-chip-toggle')!.click()
+			await nextTick()
+			expect(host.selectionIncluded).toBe(false)
+			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('Not included')
+			expect(files.read).not.toHaveBeenCalled()
+			expect(gateway.modelCalls).toHaveLength(0)
+			sending = host.send('General question without the source')
+			await vi.waitFor(() => expect(gateway.modelCalls).toHaveLength(1))
+			expect(host.turnContext).toBeUndefined()
+			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('This response')
+			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('No file included in this response.')
+			expect(root.querySelector('.fadenstack-context')?.textContent).not.toContain('source.md')
+			expect(files.read).not.toHaveBeenCalled()
+			finish({ text: 'General answer' })
+			await sending
+			await nextTick()
+			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('Not included')
+		} finally {
+			finish({ text: 'General answer' })
+			await sending?.catch(() => {})
+			app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals()
+		}
+	})
+
+	it('opens and closes real native Details without reading files or asking the model', async () => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		const { host, files, gateway } = fixture()
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(AgentChat, { host: markRaw(host), context: selected })
+		app.mount(root)
+		try {
+			const trigger = root.querySelector<HTMLButtonElement>('[aria-label="Assistant details"]')!
+			trigger.focus()
+			trigger.click()
+			await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')?.textContent).toContain('source.md'))
+			// Wait for the real native enter transition/focus trap before closing;
+			// removing it earlier leaves its deferred activation without a node.
+			await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')?.contains(document.activeElement)).toBe(true))
+			expect(files.select).toHaveBeenCalledTimes(1)
+			expect(files.read).not.toHaveBeenCalled()
+			expect(files.pdf).not.toHaveBeenCalled()
+			expect(files.list).not.toHaveBeenCalled()
+			expect(gateway.modelCalls).toHaveLength(0)
+			document.querySelector<HTMLButtonElement>('[aria-label="Close assistant details"]')!.click()
+			await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'))
+			await vi.waitFor(() => expect(document.activeElement).toBe(trigger))
+			expect(gateway.modelCalls).toHaveLength(0)
+		} finally { app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals() }
+	})
+
 	it('keeps Esc in the panel and has the account in its settings', async () => {
 		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 		const { host } = fixture()

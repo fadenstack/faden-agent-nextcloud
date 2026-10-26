@@ -69,7 +69,7 @@ export class NextcloudAgent {
 			})
 			// What the app brings, for the agent's Apps tab: its tools, the context it offers, and the greeting and
 			// suggestions an administrator can take in, so the empty chat starts with ready questions.
-			.describeApp({ name: 'Nextcloud Files', version: '0.1.0', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
+			.describeApp({ name: 'Nextcloud Files', version: '0.1.1', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
 			.build()
 		const locale = config.locale ?? navigator.language
 		this.chat = new AgentChatViewModel(this.agent, this.approvals, {
@@ -97,6 +97,11 @@ export class NextcloudAgent {
 		if (!this.#active || this.#closed) throw new Error('Include the selected file or folder in this request first.')
 		return this.#active
 	}
+
+	/** Metadata for presentation only: tools still resolve and authorize their frozen turn context. */
+	get turnContext(): FileContext | undefined { return this.#active }
+	get selectionIncluded(): boolean { return this.#attachment?.sends ?? false }
+	get contextAttachment(): AttachmentViewModel | undefined { return this.#attachment }
 
 	async read(signal: AbortSignal, id?: string): Promise<unknown> {
 		const selected = id ? undefined : this.context()

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-26
+
+### Changed
+
+- Use one visible SDK toolbar, native body typography and canonical Fadenstack
+  avatars, with menus contained within the sidebar.
+- Show connection and file metadata in a native Assistant details dialog. Label
+  context inclusion and freeze the displayed source for the running response.
+- Prevent duplicate sign-in submissions and clear the submitted password.
+- Patch Vite to 7.3.7 and follow-redirects to 1.16.2.
+
+### Added
+
+- UI regression coverage for details, sign-in, attachment inclusion and frozen
+  context. Native permissions, write approvals and Stop keep their existing behavior.
+
+## [0.1.0]
+
 ### Changed
 
 - The chat is the Fadenstack SDK's Vue panel (`@fadenstack/ui-vue` 0.2.0-rc.2) instead of

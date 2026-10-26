@@ -24,6 +24,12 @@ including a user-tested real-server conversation from the full-screen Text edito
   Fadenstack client shares) in the user's Nextcloud theme: tool modes, history,
   streaming, stop, Enter-to-send, attachment chips, and a settings menu with the
   language and the account.
+- One SDK toolbar with Nextcloud typography and the shared Fadenstack avatar.
+  **Assistant details** opens a native dialog with the configured connection,
+  published identifier and current file metadata. Opening it reads no content.
+- The context row distinguishes **Next message**, **This response** and
+  **Not included**. A running response keeps its original source while selection
+  changes prepare the next message.
 - The current single file selection appears as a removable composer attachment;
   selecting it transmits no file contents. Content is read when you send.
 - UTF-8 TXT, Markdown, CSV and JSON; text PDFs through maintained Mozilla PDF.js.
@@ -54,7 +60,7 @@ npm run build
 npm run package
 ```
 
-Extract `build/fadenstack_agent-0.1.0.tar.gz` into Nextcloud's `custom_apps` directory.
+Extract `build/fadenstack_agent-0.1.1.tar.gz` into Nextcloud's `custom_apps` directory.
 Keep the resulting folder name `fadenstack_agent`, then run
 `php occ app:enable fadenstack_agent` as the Nextcloud web user. No runtime PHP
 package dependencies or database migrations are required.
