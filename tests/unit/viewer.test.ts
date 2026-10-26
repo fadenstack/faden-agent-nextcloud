@@ -19,6 +19,21 @@ function modal() {
 }
 afterEach(() => { document.body.replaceChildren(); document.body.className = ''; events.emit.mockClear() })
 describe('Nextcloud fullscreen Viewer bridge', () => {
+	it('joins the activity to a new native focus trap even while chat is minimized', async () => {
+		const drawer = document.createElement('div')
+		const activity = document.createElement('div')
+		activity.innerHTML = '<aside aria-label="Assistant activity"><button>Stop</button></aside>'
+		document.body.append(drawer, activity)
+		const state = shallowReactive({ open: false })
+		const dispose = installViewerIntegration({ drawer, activity, state, toggle: vi.fn(), changed: vi.fn() })
+		try {
+			const viewer = modal()
+			document.body.append(viewer)
+			await vi.waitFor(() => expect(events.emit).toHaveBeenCalledWith('viewer:trapElements:changed', activity))
+			expect(activity.parentElement).toBe(viewer)
+			expect(events.emit).not.toHaveBeenCalledWith('viewer:trapElements:changed', drawer)
+		} finally { dispose() }
+	})
 	it('resolves the displayed document, not the selected file behind the editor', () => {
 		const viewer = modal()
 		history.replaceState(null, '', '/index.php/apps/files/files/317?openfile=true')

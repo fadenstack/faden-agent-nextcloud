@@ -60,9 +60,13 @@ an answer, and never also the drawer.
   parent and use native DAV `If-None-Match: *` with an expiring one-use receipt
   verifying the exact content and destination. There is no overwrite fallback.
 - Fadenstack calls go directly from the browser to the configured origin, with
-  SDK credentials and an origin guard. There is no AI proxy backend, database table,
+  SDK credentials and an origin guard. There is no AI proxy backend,
   conversion service, or independent execution loop. CSP permits only that origin;
   administrators must configure matching CORS on Fadenstack.
+- Version 0.1.2 adds four app-owned encrypted action-journal tables and an hourly
+  retention job. Existing Files writes record intent before dispatch and verified
+  or uncertain outcomes afterwards. This is separate from SDK conversation history;
+  typed governed Undo/Redo is not enabled yet. See [security](security.md).
 
 One reusable `NextcloudSearchService` composes those existing boundaries for
 discovery, metadata, authorized extraction and passages. Its PHP counterpart

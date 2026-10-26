@@ -14,7 +14,14 @@
   Partial reads are explicit; follow-on selective reading is not implemented.
 - Write previews/replacements ≤256 KiB. Context/proposals expire after one hour/ten
   minutes. Revision/path changes require reselection.
-- History exists only in the current page runtime; no durable storage or SSO.
+- Conversation history exists only in the current page runtime; no SSO. Version
+  0.1.2 adds encrypted server-side action receipts/snapshots for existing writes,
+  with quotas and retention. This does not enable Undo/Redo controls or typed
+  inverses. Cloud-principal binding, key rotation, production-database races and
+  inspected resolution of expired unknown effects remain release gates.
+- The new 0.1.2 scope/journal/activity foundation is tested on NC35 with SQLite.
+  It does not inherit NC31 acceptance from earlier search-only checks. Different
+  source/destination roots and app-specific dirty/refresh adapters remain open.
 - HTTP checks cover 31 and 35. 32–34, Firefox/Safari, formal screen-reader audits
   and external/encrypted storage have not received complete pilot verification.
 - The 31 development image's Text app logs a color-picker translation error. It

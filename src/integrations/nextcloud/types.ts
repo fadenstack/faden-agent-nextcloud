@@ -118,8 +118,8 @@ export type SearchViewResults = SearchResults | DocumentSearchResults
 
 export interface FileApi {
 	searchTransport?: SearchTransport
-	identity(): Promise<Identity>
-	assertIdentity(): Promise<void>
+	identity(signal?: AbortSignal): Promise<Identity>
+	assertIdentity(signal?: AbortSignal): Promise<void>
 	select(fileId: number, signal?: AbortSignal): Promise<FileContext>
 	read(contextId: string, signal?: AbortSignal): Promise<ReadResult>
 	pdf(contextId: string, signal?: AbortSignal): Promise<Uint8Array>

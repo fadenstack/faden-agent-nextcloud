@@ -12,7 +12,7 @@ export class NextcloudFiles implements FileApi {
 		capabilities: signal => this.post<SearchCapabilities>('/search/capabilities', {}, signal),
 		content: (query, limit, page, signal) => this.post<NativeContentResults>('/search/content', { query, limit, page }, signal),
 		dav: async (xml, signal) => {
-			await this.assertIdentity()
+			await this.assertIdentity(signal)
 			const response = await axios.request<string>({
 				url: generateRemoteUrl('dav/'),
 				method: 'SEARCH',
@@ -27,12 +27,12 @@ export class NextcloudFiles implements FileApi {
 		},
 	}
 
-	async identity(): Promise<Identity> {
-		return (await axios.get<Identity>(generateUrl('/apps/fadenstack_agent/config'), { timeout: 10000 })).data
+	async identity(signal?: AbortSignal): Promise<Identity> {
+		return (await axios.get<Identity>(generateUrl('/apps/fadenstack_agent/config'), { timeout: 10000, signal })).data
 	}
 
-	async assertIdentity(): Promise<void> {
-		const now = await this.identity()
+	async assertIdentity(signal?: AbortSignal): Promise<void> {
+		const now = await this.identity(signal)
 		if (now.userId !== this.initial.userId || now.binding !== this.initial.binding
 			|| now.scopePolicy?.version !== this.initial.scopePolicy?.version
 			|| now.serverUrl !== this.initial.serverUrl || now.agent !== this.initial.agent || !now.enabled) {
@@ -60,14 +60,14 @@ export class NextcloudFiles implements FileApi {
 		if (!('kind' in result)) return result
 		const prefix = `/files/${encodeURIComponent(this.initial.userId)}/`
 		if (result.kind !== 'dav-create' || !result.dav_path.startsWith(prefix) || /[?#\r\n]/.test(result.dav_path)) throw new Error('Invalid approved Nextcloud creation plan.')
-		await this.assertIdentity()
+		await this.assertIdentity(signal)
 		const [parent] = await this.searchTransport.resolve([result.parent_resource_id], 'all', signal ?? AbortSignal.timeout(20000))
 		if (!parent?.folder || parent.path !== result.parent_path || parent.etag !== result.parent_etag || !(parent.permissions & 4)) throw new Error('The approved destination changed. No write was performed.')
 		const put = await axios.put(generateRemoteUrl('dav') + result.dav_path, result.content, {
 			headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-None-Match': '*', 'X-OC-CTime': String(Math.floor(Date.now() / 1000)) }, signal, timeout: 20000,
 		})
 		if (put.status !== 201) throw new Error('Nextcloud did not confirm a new file creation. No success is claimed.')
-		await this.assertIdentity()
+		await this.assertIdentity(signal)
 		return this.post('/creations/finish', { receiptId: result.receiptId }, signal)
 	}
 

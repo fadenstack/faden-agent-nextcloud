@@ -2,6 +2,13 @@
 
 ## English
 
+While a response runs, the activity indicator has **Hide chat** and the same
+**Stop** control as the chat. **Show chat** returns to the ongoing conversation.
+A confirmed save can update a supported clean Files list automatically. An open
+editor requires you to finish or cancel your edits; the assistant will not reload
+that editor. **Saved** and **refresh required** are separate outcomes. Action
+Undo/Redo controls are still under implementation.
+
 Open Files and click the Fadenstack mascot in the top bar or app menu. Sign in
 with your Fadenstack account. The assistant stays in the right sidebar. In the
 full-screen Text viewer, the titlebar mascot opens the same assistant.

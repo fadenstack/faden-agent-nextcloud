@@ -40,6 +40,31 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('SDK integration and file boundary', () => {
+	it('Stop aborts native egress scope checks before a model request is sent', async () => {
+		const policy: ScopePolicy = { version: 'native-1', sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }], destinations: [],
+			tools: ['nc_read_file'], sourceClasses: ['standard'], gatewayOrigin: identity.serverUrl, downstreamPolicy: 'unverified',
+			destinationAudiences: ['private'], movements: [], developmentLoopback: true }
+		const { host, files, gateway } = fixture({ model: () => ({ text: 'Never dispatched' }) }, { ...identity, scopePolicy: policy })
+		const grant = { resourceId: 'nextcloud:files:2', revision: 'revision-1', sourceClass: 'standard' as const, audience: 'private' as const, scope: policy.sources[0] }
+		let revalidating = false
+		let reads = 0
+		files.scopeResource = vi.fn(async (_reference, purpose, signal) => {
+			if (purpose === 'read' && ++reads === 2) {
+				revalidating = true
+				return new Promise((_resolve, reject) => { signal.addEventListener('abort', () => reject(signal.reason), { once: true }) })
+			}
+			return grant
+		})
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		const sending = host.send('Read the source')
+		await vi.waitFor(() => expect(revalidating).toBe(true))
+		host.stop()
+		await sending
+		expect(gateway.modelCalls).toHaveLength(0)
+		expect(host.chat.isBusy).toBe(false)
+		await host.dispose()
+	})
 	it('narrows the real SDK tool manifest and reauthorizes prior conversation sources before replay', async () => {
 		const policy: ScopePolicy = { version: 'native-1', sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }], destinations: [],
 			tools: ['nc_read_file'], sourceClasses: ['standard'], gatewayOrigin: identity.serverUrl, downstreamPolicy: 'unverified',

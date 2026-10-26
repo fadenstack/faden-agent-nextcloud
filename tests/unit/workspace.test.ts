@@ -16,6 +16,11 @@ function nativeGuard() {
 }
 
 describe('Native editor protection', () => {
+	it('treats an inline Files description editor as unknown before any input event', () => {
+		const guard = nativeGuard()
+		document.querySelector('#app-content-vue')!.insertAdjacentHTML('beforeend', '<div class="editor-container"><div contenteditable="true">Inline native description</div></div>')
+		expect(guard.snapshot().editState).toBe('unknown')
+	})
 	it('does not interpret native selection or chat typing as a native draft', () => {
 		const guard = nativeGuard()
 		expect(guard.snapshot().editState).toBe('clean')

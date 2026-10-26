@@ -30,6 +30,7 @@ export function installViewerIntegration(options: {
 	let owner: HTMLElement | undefined
 	let documentKey = ''
 	let trapRegistered = false
+	let activityTrapRegistered = false
 	function sync() {
 		// Only Nextcloud's actual modal, outside our rendered Markdown, is eligible.
 		const viewer = [...document.querySelectorAll<HTMLElement>('#viewer.modal-mask.viewer[role="dialog"]')]
@@ -42,6 +43,7 @@ export function installViewerIntegration(options: {
 			app = undefined
 			owner = viewer
 			trapRegistered = false
+			activityTrapRegistered = false
 		}
 		if (viewer && header && !button) {
 			button = document.createElement('div')
@@ -61,8 +63,11 @@ export function installViewerIntegration(options: {
 			options.activity?.removeAttribute('aria-hidden')
 			if (options.state.open && !trapRegistered) {
 				emit('viewer:trapElements:changed', options.drawer)
-				if (options.activity) emit('viewer:trapElements:changed', options.activity)
 				trapRegistered = true
+			}
+			if (options.activity && options.activity.childElementCount > 0 && !activityTrapRegistered) {
+				emit('viewer:trapElements:changed', options.activity)
+				activityTrapRegistered = true
 			}
 		}
 		const inViewer = !!viewer

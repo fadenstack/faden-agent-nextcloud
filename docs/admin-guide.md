@@ -16,6 +16,16 @@ Filename, folder and recent discovery use native WebDAV SEARCH. Single-document
 passages reuse the app's existing text/PDF extraction. Neither requires a RAG
 service, database migration, background crawler or new document index.
 
+The app's new 0.1.2 action journal does require its own four-table migration and
+hourly retention job. Use normal `occ upgrade` and keep Nextcloud background jobs
+running. The new journal/scope/activity foundation has isolated NC35 acceptance;
+the earlier NC31 search results below do not validate this new foundation on 31.
+The administrator-owned `scope_policy` app setting can restrict native sources,
+destinations, classifications, audiences and turn limits. Invalid policy fails
+closed; an empty setting preserves legacy user-Files sources and private outputs.
+There is no scope-policy editor in Additional settings yet. Source/destination
+roots that differ need additional adapter acceptance before deployment.
+
 Indexed content search is optional. Detection requires `fulltextsearch` and
 `files_fulltextsearch` enabled for the active user, an available platform, and an
 indexed Files provider reported by the public FullTextSearch manager. An installed

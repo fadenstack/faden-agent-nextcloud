@@ -44,24 +44,25 @@ export class NextcloudAgent {
 		this.selection = new SelectedContext(files)
 		this.discovery = new NextcloudSearchService(files)
 		this.#fetch = async (input, init) => {
-			this.#stop.signal.throwIfAborted()
+			const signal = init?.signal ? AbortSignal.any([init.signal, this.#stop.signal]) : this.#stop.signal
+			signal.throwIfAborted()
 			if (new URL(String(input)).origin !== new URL(config.serverUrl).origin) throw new Error('The request origin is not approved.')
-			await files.assertIdentity()
+			await files.assertIdentity(signal)
 			this.#scope?.assertCurrent()
 			// Only data-bearing model requests replay native content. Sign-out and minimal reports
 			// must remain possible after a source is revoked. Reauthorize before every replay.
 			if (new URL(String(input)).pathname.endsWith('/chat/completions') && config.scopePolicy) {
 				this.#sources.assertProcessing(config.scopePolicy)
 				if (!files.scopeResource) throw new Error('The native scope service is unavailable.')
-				for (const reference of this.#sources.references) this.#sources.record(await files.scopeResource(reference, 'read', this.#stop.signal))
+				for (const reference of this.#sources.references) this.#sources.record(await files.scopeResource(reference, 'read', signal))
 				this.#sources.assertProcessing(config.scopePolicy)
 			}
-			this.#stop.signal.throwIfAborted()
+			signal.throwIfAborted()
 			return fetchImpl(input, {
 				...init,
 				credentials: 'omit',
 				redirect: 'error',
-				signal: init?.signal ? AbortSignal.any([init.signal, this.#stop.signal]) : this.#stop.signal,
+				signal,
 			})
 		}
 		this.tokens = new AgentTokenProvider({ apiUrl: config.serverUrl, agent: config.agent, store: new MemoryTokenStore(), fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
@@ -77,7 +78,7 @@ export class NextcloudAgent {
 			.addToolStage(StageOrder.custom, {
 				invoke: async (invocation, next) => {
 					this.#scope?.beginTool(invocation.tool.name)
-					await files.assertIdentity()
+					await files.assertIdentity(invocation.context.signal)
 					const result = await next(invocation)
 					try { this.#scope?.budget.consumeResult(result, resultRecords(result)) } catch (error) { if (WRITE_TOOLS.has(invocation.tool.name)) this.#writeBlocked = true; throw error }
 					return result
@@ -246,7 +247,7 @@ export class NextcloudAgent {
 		this.#proposalViews.delete(call.callId)
 		this.#proposalResources.delete(call.callId)
 		this.#proposalParents.delete(call.callId)
-		await this.files.assertIdentity()
+		await this.files.assertIdentity(call.signal)
 		call.signal.throwIfAborted()
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
 		try {
@@ -275,7 +276,7 @@ export class NextcloudAgent {
 		if (WRITE_TOOLS.has(part.toolName) && part.request.source === 'host') {
 			const proposal = this.#proposals.get(part.request.callId)
 			if (!proposal || proposal.id !== id || !part.isPending) throw new Error('This proposal is no longer pending.')
-			await this.files.assertIdentity()
+			await this.files.assertIdentity(this.#stop.signal)
 			await this.files.approve(proposal.id, this.#stop.signal)
 		}
 		part.allow()
@@ -331,7 +332,7 @@ export class NextcloudAgent {
 			this.#writeBlocked = false
 			const stopped = AbortSignal.any([signal, this.#stop.signal])
 			this.#active = include ? this.selection.snapshot() : undefined
-			await this.files.assertIdentity()
+			await this.files.assertIdentity(stopped)
 			const session = this.chat.currentSessionId
 			this.#sources = new SourceLedger(session ? this.#sessionSources.get(session) : undefined)
 			this.#scope?.invalidate()
