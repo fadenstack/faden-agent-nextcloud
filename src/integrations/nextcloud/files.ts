@@ -39,8 +39,13 @@ export class NextcloudFiles implements FileApi {
 			body: JSON.stringify(body),
 			signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000),
 		})
-		const data = await response.json() as T & { message?: unknown }
-		if (!response.ok) throw Object.assign(new Error(typeof data.message === 'string' ? data.message : 'The Nextcloud operation could not be confirmed.'), { response: { status: response.status, data } })
+		const data = await response.json() as T & { message?: unknown, code?: unknown }
+		if (!response.ok) {
+			const message = response.status === 409 && data.code === 'inspection_inconclusive'
+				? 'The file content does not establish whether this attempt completed. Its outcome remains unresolved. Review the file and action history before making further changes.'
+				: typeof data.message === 'string' ? data.message : 'The Nextcloud operation could not be confirmed.'
+			throw Object.assign(new Error(message), { response: { status: response.status, data: { ...data, message } } })
+		}
 		return data
 	}
 

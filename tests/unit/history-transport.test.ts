@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import axios from '@nextcloud/axios'
-import { NextcloudFiles } from '../../src/integrations/nextcloud/files.ts'
+import { errorMessage, NextcloudFiles } from '../../src/integrations/nextcloud/files.ts'
 import type { HistoryPreview, Identity } from '../../src/integrations/nextcloud/types.ts'
 
 vi.mock('@nextcloud/axios', () => ({ default: { get: vi.fn() } }))
@@ -56,5 +56,14 @@ describe('native cloud-token transport', () => {
 		const { files, fetcher } = fixture()
 		fetcher.mockResolvedValue(new Response(JSON.stringify({ message: 'The file changed.' }), { status: 409 }))
 		await expect(files.history.execute(preview, new AbortController().signal)).rejects.toMatchObject({ message: 'The file changed.', response: { status: 409 } })
+	})
+	it('explains an inconclusive inspection without suggesting another automatic attempt', async () => {
+		const { files, fetcher } = fixture()
+		fetcher.mockResolvedValue(new Response(JSON.stringify({ code: 'inspection_inconclusive', message: 'Inspect its current state.' }), { status: 409 }))
+		const error = await files.history.prepare(preview.actionId, 'reconcile', new AbortController().signal).catch(error => error)
+		expect(error).toMatchObject({ response: { status: 409, data: { code: 'inspection_inconclusive' } } })
+		expect(errorMessage(error)).toBe('The file content does not establish whether this attempt completed. Its outcome remains unresolved. Review the file and action history before making further changes.')
+		expect(error.message).toBe(errorMessage(error))
+		expect(error.response.headers).toBeUndefined()
 	})
 })
