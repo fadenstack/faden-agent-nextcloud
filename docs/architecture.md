@@ -85,6 +85,13 @@ an answer, and never also the drawer.
   Complete native workflow/event side-effect acceptance remains a release gate:
   opening a write stream can itself emit events before a guarded byte write is
   dispatched. A rejected byte update does not establish absence of those effects.
+- Internal identity primitives use a short Fadenstack agent-device token to fetch
+  a bounded authenticated profile from the configured origin through Nextcloud's
+  HTTP client. `JournalIdentity::forPrincipal` separates cloud tenant/user/agent
+  namespaces while retaining native-user quotas; device/profile drift invalidates
+  claim sessions. They do not change the active Files broker's native-only identity
+  or add an endpoint. Native HTTP acceptance and full governed wiring must precede
+  exposing history. Existing SDK sign-in remains independent of enterprise SSO.
 
 One reusable `NextcloudSearchService` composes those existing boundaries for
 discovery, metadata, authorized extraction and passages. Its PHP counterpart

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\FadenstackAgent\History;
 
+use OCA\FadenstackAgent\Identity\VerifiedCloudPrincipal;
+
 /**
  * Construct only from the active server-side native identity/configuration.
  * scopeHash is not proof of a browser-claimed Fadenstack identity or grant.
@@ -11,6 +13,16 @@ namespace OCA\FadenstackAgent\History;
 final class JournalIdentity {
 	public readonly string $ownerHash;
 	public readonly string $sessionHash;
+
+	/** New pair-scoped namespace only. Does not migrate or expose legacy native-only entries. */
+	public static function forPrincipal(string $nativeUserId, string $nativeScopeHash, string $nativeSessionBinding, VerifiedCloudPrincipal $principal): self {
+		// Validate the native inputs before deriving opaque cloud-scoped bindings.
+		new self($nativeUserId, $nativeScopeHash, $nativeSessionBinding);
+		$scope = hash('sha256', 'fadenstack-history-principal-v2:' . JournalCipher::json([$nativeScopeHash, $principal->namespaceHash]));
+		$session = hash('sha256', 'fadenstack-history-session-v2:' . JournalCipher::json([$nativeSessionBinding, $principal->namespaceHash,
+			$principal->deviceId, $principal->profileStamp]));
+		return new self($nativeUserId, $scope, $session);
+	}
 
 	public function __construct(
 		public readonly string $userId,

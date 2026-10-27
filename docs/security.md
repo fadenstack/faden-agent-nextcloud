@@ -43,6 +43,25 @@ Its plan/digest is not an approval or cloud execution permit. Current central
 governance, exact individual approval and trusted native/cloud identity binding
 remain mandatory before it can be exposed.
 
+An internal `CloudIdentityVerifier` now projects an authenticated published
+Fadenstack agent profile using a short agent-device access token. It sends that
+token only to the fixed administrator-configured origin, preserves Nextcloud's
+verified CA bundle, refuses redirects, bounds the response and rechecks configuration.
+Private addresses are permitted for that fixed origin without enabling a system-wide
+fetch proxy. It never stores the token, accepts a browser-asserted subject or
+decodes JWT claims as proof. Missing/device-less identities and draft/foreign
+agents fail closed. This is independent of SSO and never sends Nextcloud passwords
+or cookies to Fadenstack.
+
+`JournalIdentity::forPrincipal` derives a separate native/cloud user namespace and
+device/profile-bound claim session. It preserves native-user aggregate quotas and
+does not adopt legacy native-only records. These primitives have no controller
+or active Files-journal caller yet. Identity verification is not a tool grant or
+approval. Fresh verification must join current native ACL/scope, central policy,
+exact approval and claim/readback guards at every future history boundary. Native
+HTTP/CA/private-network acceptance, server revocation latency, cross-principal
+resource ordering, SDK compatibility and governed UI integration remain open.
+
 Modifying endpoints retain CSRF and use explicit session handling. Admin settings
 retain administrator middleware. The app's toggle is `integration_enabled`;
 `enabled` is reserved for Nextcloud activation. Context responses use no-store.
