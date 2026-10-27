@@ -67,6 +67,12 @@ an answer, and never also the drawer.
   retention job. Existing Files writes record intent before dispatch and verified
   or uncertain outcomes afterwards. This is separate from SDK conversation history;
   typed governed Undo/Redo is not enabled yet. See [security](security.md).
+- `FilesHistoryPlanner` validates an internal whole-text update Undo/Redo preview
+  against the recorded action, current native scope, object/parent/path, storage
+  revision and exact bytes. `FilesHistoryPlan` is immutable preview data. Preparing
+  or revalidating it performs no native write, claims no approval and exposes no
+  new route/tool. A future typed executor must repeat the checks under the native
+  write stream and pass current governance/approval before dispatch.
 
 One reusable `NextcloudSearchService` composes those existing boundaries for
 discovery, metadata, authorized extraction and passages. Its PHP counterpart
