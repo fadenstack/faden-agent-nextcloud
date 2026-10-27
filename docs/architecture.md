@@ -67,7 +67,7 @@ an answer, and never also the drawer.
 - Version 0.1.2 adds four app-owned encrypted action-journal tables and an hourly
   retention job. Existing Files writes record intent before dispatch and verified
   or uncertain outcomes afterwards. This is separate from SDK conversation history;
-  typed governed Undo/Redo is not enabled yet. See [security](security.md).
+  typed governed Undo/Redo is opt-in in 0.1.4. See [security](security.md).
 - `FilesHistoryPlanner` validates an internal whole-text update Undo/Redo preview
   against the recorded action, current native scope, object/parent/path, storage
   revision and exact bytes. `FilesHistoryPlan` is immutable preview data. Preparing
@@ -75,9 +75,9 @@ an answer, and never also the drawer.
   new route/tool. The internal `FilesHistoryExecutor` claims one journal attempt,
   repeats target/policy/revision/byte checks under the native write stream, applies
   only the recorded whole-text inverse/forward value and verifies native readback.
-  It has no HTTP/controller/tool/UI caller. Trusted principal-pair binding,
-  compatible SDK commands and current central authorization/individual approval
-  must be integrated before enabling history execution.
+  `HistoryService` connects this executor to pair-scoped native metadata and
+  one-use preview/approve/execute/cancel routes. SDK explicit commands share chat
+  approvals, busy state and Stop without consuming the next message's draft/context.
 - Guarded stream writes flush and use public `IUpdater`/`IScanner` interfaces
   while the native write lock is held. This refreshes size, parent metadata and
   the file ETag, including repeated writes within one second. Native `fopen`
@@ -89,10 +89,10 @@ an answer, and never also the drawer.
   a bounded authenticated profile from the configured origin through Nextcloud's
   HTTP client. `JournalIdentity::forPrincipal` separates cloud tenant/user/agent
   namespaces while retaining native-user quotas; device/profile drift invalidates
-  claim sessions. They do not change the active Files broker's native-only identity
-  or add an endpoint. Native loopback HTTP and paired journal execution are tested
-  independently of real gateway authentication. Full governed wiring and deployment
-  TLS acceptance must precede exposing history. SDK sign-in remains independent of
+  claim sessions. History-enabled Files mutations use this verified pair; native-only
+  legacy entries remain separate. Native HTTP and command UI tests use a synthetic
+  issuer, with real gateway authentication tested separately. Deployment TLS
+  acceptance remains required. SDK sign-in remains independent of
   enterprise SSO.
 - Version 0.1.3 coordinates history claims, dependencies, Redo invalidation and
   retention limits across private scopes belonging to the same native user. Files

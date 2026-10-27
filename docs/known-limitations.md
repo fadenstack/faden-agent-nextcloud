@@ -16,14 +16,15 @@
   minutes. Revision/path changes require reselection.
 - Conversation history exists only in the current page runtime; no SSO. Version
   0.1.2 adds encrypted server-side action receipts/snapshots for existing writes,
-  with quotas and retention. An internal whole-text update inverse/redo executor
-  is native-tested but has no route, tool or UI control. Cloud-principal binding,
-  compatible SDK commands, key rotation, production-database races and
+  with quotas and retention. Version 0.1.4 adds opt-in paired Undo/Redo endpoints,
+  tools and controls for new standard-only/private text updates. The published
+  SDK dependency remains 0.2.0-rc.2; explicit buttons require the separately tested
+  unpublished 0.3.0-rc.1 command SDK and compatible gateway. Key rotation, production-database races and
   inspected resolution of expired unknown effects remain release gates.
 - Version 0.1.3 coordinates private cloud/configuration scopes within one native
   user. Upgrade and two-process alias races pass on NC35.0.2/PHP8.5.12/SQLite.
   Cross-native-user shared-file history and production database races remain open;
-  no public paired-history endpoint or control is enabled.
+  history defaults off. Legacy/protected/shared snapshots are not publicly reversible.
 - The new 0.1.2 scope/journal/activity foundation is tested on NC35 with SQLite.
   It does not inherit NC31 acceptance from earlier search-only checks. Different
   source/destination roots and app-specific dirty/refresh adapters remain open.

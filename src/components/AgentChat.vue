@@ -6,11 +6,12 @@ import { AgentAvatar, ChatPanel, Icon, ToolCallView, type ChatTheme, type PartRe
 import '@fadenstack/ui-web/styles.css'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { useObservable } from '../agent/useObservable.ts'
-import { WRITE_TOOLS } from '../integrations/nextcloud/tools.ts'
+import { WRITE_TOOLS, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
 import type { FileContext } from '../integrations/nextcloud/types.ts'
 import NextcloudApproval from './NextcloudApproval.vue'
 import SearchResultsCard from './SearchResultsCard.vue'
 import AssistantDetails from './AssistantDetails.vue'
+import ActionHistory from './ActionHistory.vue'
 import '../styles/nextcloud.css'
 
 const props = defineProps<{ host: NextcloudAgent; context?: FileContext; loadingContext?: boolean; documentContext?: boolean; contextError?: string }>()
@@ -28,11 +29,13 @@ const displayContext = computed(() => { void version.value; return chat.isBusy ?
 const contextLabel = computed(() => {
 	void version.value
 	void attachmentVersion.value
+	if (chat.isBusy && props.host.history.active) return t('fadenstack_agent', 'Action')
 	if (chat.isBusy) return t('fadenstack_agent', 'This response')
 	if (composerContext.value && !props.host.selectionIncluded) return t('fadenstack_agent', 'Not included')
 	return t('fadenstack_agent', 'Next message')
 })
 const detailsOpen = ref(false)
+const actionsOpen = ref(false)
 const detailsButton = ref<HTMLButtonElement>()
 let detailsTrigger: HTMLElement | undefined
 function openDetails(event: Event) {
@@ -52,7 +55,7 @@ const theme = 'nextcloud' as ChatTheme
 // allowed; a search shows its results as cards above the tool line. Everything else is the SDK's own view.
 const renderers: PartRenderer[] = [
 	(part, strings) => {
-		if (part instanceof ApprovalPart && WRITE_TOOLS.has(part.toolName) && part.request.arguments.proposalId) {
+		if (part instanceof ApprovalPart && ((WRITE_TOOLS.has(part.toolName) && part.request.arguments.proposalId) || (HISTORY_TOOLS.has(part.toolName) && part.request.arguments.historyPreviewId))) {
 			return h(NextcloudApproval, { part, strings, host: props.host })
 		}
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
@@ -75,6 +78,7 @@ function escape(event: KeyboardEvent) {
 	if (event.key !== 'Escape') return
 	event.stopPropagation()
 	if (detailsOpen.value) void closeDetails()
+	else if (actionsOpen.value) actionsOpen.value = false
 	else if (chat.isSettingsOpen || chat.isModeMenuOpen || chat.isHistoryOpen) {
 		chat.setSettingsOpen(false)
 		chat.setModeMenuOpen(false)
@@ -95,6 +99,17 @@ function signOut() {
 			:part-renderers="renderers"
 			@keydown="escape">
 			<template #header-extra>
+				<button v-if="host.historyAvailable"
+					type="button"
+					class="fdn-icon-button"
+					:aria-label="t('fadenstack_agent', 'Agent actions')"
+					:title="t('fadenstack_agent', 'Agent actions')"
+					:disabled="chat.isBusy"
+					:aria-expanded="actionsOpen"
+					aria-haspopup="dialog"
+					@click="actionsOpen = true">
+					<Icon name="page" :size="20" />
+				</button>
 				<button ref="detailsButton"
 					type="button"
 					class="fdn-icon-button"
@@ -133,6 +148,7 @@ function signOut() {
 				<div class="fdn-context-bar fadenstack-context" :data-version="version">
 					<span class="fadenstack-context-label">{{ contextLabel }}</span>
 					<span v-if="loadingContext && !chat.isBusy" class="fdn-status"><span class="fdn-spinner" />{{ t('fadenstack_agent', 'Checking file context…') }}</span>
+					<span v-else-if="host.history.active" class="fadenstack-context-target">{{ host.history.target || t('fadenstack_agent', 'Checking saved change…') }}</span>
 					<button v-else-if="displayContext"
 						type="button"
 						class="fadenstack-context-target"
@@ -160,6 +176,7 @@ function signOut() {
 				</button>
 			</template>
 		</ChatPanel>
+		<ActionHistory v-if="actionsOpen" :host="host" @close="actionsOpen = false" />
 		<AssistantDetails v-if="detailsOpen"
 			:title="chat.title"
 			:server-url="host.config.serverUrl"

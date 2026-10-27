@@ -1,0 +1,10 @@
+{
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" }
+    },
+    "required": ["action_id"],
+    "additionalProperties": false
+  }
+}

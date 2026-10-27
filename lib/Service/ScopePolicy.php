@@ -18,6 +18,7 @@ class ScopePolicy {
 	public const CONFIG_KEY = 'scope_policy';
 	public const FILE_TOOLS = ['nc_get_file_metadata', 'nc_search_in_file', 'nc_search_content', 'nc_search_files',
 		'nc_get_selected_file', 'nc_read_file', 'nc_list_folder', 'nc_create_text_file', 'nc_update_text_file'];
+	public const HISTORY_TOOLS = ['nc_actions_undo', 'nc_actions_redo'];
 	private const LIMITS = ['calls' => 30, 'mutations' => 10, 'elapsedMs' => 180000, 'resultBytes' => 262144, 'records' => 200, 'bulkItems' => 20];
 	private const CLASSES = ['standard', 'protected', 'unknown'];
 	private const AUDIENCES = ['private', 'shared', 'public', 'unknown'];
@@ -70,7 +71,7 @@ class ScopePolicy {
 		$raw = $this->config->getAppValue(Application::APP_ID, self::CONFIG_KEY, '');
 		if ($raw === '') {
 			return ['revision' => 'legacy-files-v1', 'sources' => [['kind' => 'user-files']], 'destinations' => [['kind' => 'user-files']],
-				'tools' => self::FILE_TOOLS, 'sourceClasses' => ['standard'], 'downstreamPolicy' => 'unverified',
+				'tools' => $this->config->getAppValue(Application::APP_ID, 'history_enabled', '0') === '1' ? [...self::FILE_TOOLS, ...self::HISTORY_TOOLS] : self::FILE_TOOLS, 'sourceClasses' => ['standard'], 'downstreamPolicy' => 'unverified',
 				'destinationAudiences' => ['private'], 'movements' => [['source' => 'standard', 'destination' => 'private']],
 				'classificationDefault' => 'standard', 'classificationRules' => [], 'limits' => self::LIMITS];
 		}
@@ -85,7 +86,7 @@ class ScopePolicy {
 			$this->keys($value, ['revision', 'sources', 'destinations', 'tools', 'sourceClasses', 'downstreamPolicy', 'destinationAudiences', 'movements', 'classificationDefault', 'classificationRules', 'limits']);
 			$sources = $this->scopes($value['sources'] ?? []);
 			$destinations = $this->scopes($value['destinations'] ?? []);
-			$tools = $this->enumList($value['tools'] ?? [], self::FILE_TOOLS);
+			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS]);
 			if (!$sources || !$tools || !is_string($value['revision'] ?? null) || strlen($value['revision']) < 1 || strlen($value['revision']) > 100) {
 				throw new \InvalidArgumentException();
 			}

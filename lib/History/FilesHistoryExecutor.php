@@ -31,7 +31,7 @@ final class FilesHistoryExecutor {
 		$dispatched = false;
 		try {
 			$file = $this->file($identity, $plan);
-			$this->scope->assertMovement($file, $file);
+			$this->movement($file, $plan);
 			// The same public native stream/lock used by the existing Files broker.
 			// Opening must not truncate; check the actual bytes and revision under it.
 			$stream = $file->fopen('r+');
@@ -43,7 +43,7 @@ final class FilesHistoryExecutor {
 					throw new JournalException('guarded_storage_unavailable', 422);
 				}
 				$this->file($identity, $plan);
-				$this->scope->assertMovement($file, $file, false);
+				$this->movement($file, $plan, false);
 				$before = stream_get_contents($stream, FileService::MAX_WRITE_BYTES + 1);
 				if ($this->revision($file) !== $plan->expectedEtag || !is_string($before)
 					|| !hash_equals(hash('sha256', $plan->before), hash('sha256', $before))) {
@@ -83,7 +83,7 @@ final class FilesHistoryExecutor {
 				}
 			}
 			$file = $this->file($identity, $plan);
-			$this->scope->assertMovement($file, $file);
+			$this->movement($file, $plan);
 			$revision = $this->readback($file, $plan->content);
 			$result = $this->journal->finish($identity, $plan->actionId, $claim['ticket'], 'verified', new VerifiedReadback($revision));
 			return ['actionId' => $plan->actionId, 'direction' => $plan->direction, 'state' => $result['state'],
@@ -103,6 +103,16 @@ final class FilesHistoryExecutor {
 				throw new JournalException('outcome_unknown');
 			}
 			throw $error;
+		}
+	}
+
+	private function movement(File $file, FilesHistoryPlan $plan, bool $probe = true): void {
+		$this->scope->assertMovement($file, $file, $probe);
+		if ($plan->privateRecovery) {
+			$grant = $this->scope->describeNode($file, 'history', $probe);
+			if ($grant['sourceClass'] !== 'standard' || $grant['audience'] !== 'private') {
+				throw new JournalException('recovery_protection_changed', 403);
+			}
 		}
 	}
 

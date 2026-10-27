@@ -5,6 +5,7 @@ export type FileToolName =
 	| 'nc_get_file_metadata' | 'nc_search_in_file' | 'nc_search_content'
 	| 'nc_search_files' | 'nc_get_selected_file' | 'nc_read_file'
 	| 'nc_list_folder' | 'nc_create_text_file' | 'nc_update_text_file'
+	| 'nc_actions_undo' | 'nc_actions_redo'
 
 export interface FileToolCapability {
 	readonly name: FileToolName
@@ -42,8 +43,14 @@ export const FILE_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
 	capability('nc_update_text_file', 'replace-file', 'known-or-included'),
 ])
 
+// Opt-in tools are registered separately; reviewing the legacy surface enables none.
+export const HISTORY_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
+	capability('nc_actions_undo', 'replace-file', 'known-or-included'),
+	capability('nc_actions_redo', 'replace-file', 'known-or-included'),
+])
+
 export function fileCapability(name: string): FileToolCapability | undefined {
-	return FILE_CAPABILITIES.find(tool => tool.name === name)
+	return [...FILE_CAPABILITIES, ...HISTORY_CAPABILITIES].find(tool => tool.name === name)
 }
 
 export function stricterRisk(host: ToolRisk, published: ToolRisk): ToolRisk {

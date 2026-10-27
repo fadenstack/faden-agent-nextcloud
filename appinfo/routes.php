@@ -18,4 +18,9 @@ return ['routes' => [
 	['name' => 'files#approve', 'url' => '/proposals/{id}/approve', 'verb' => 'POST'],
 	['name' => 'files#commit', 'url' => '/proposals/{id}/commit', 'verb' => 'POST'],
 	['name' => 'files#finishCreate', 'url' => '/creations/finish', 'verb' => 'POST'],
+	['name' => 'history#listing', 'url' => '/history/list', 'verb' => 'POST'],
+	['name' => 'history#prepare', 'url' => '/history/prepare', 'verb' => 'POST'],
+	['name' => 'history#approve', 'url' => '/history/{id}/approve', 'verb' => 'POST'],
+	['name' => 'history#execute', 'url' => '/history/{id}/execute', 'verb' => 'POST'],
+	['name' => 'history#cancel', 'url' => '/history/{id}/cancel', 'verb' => 'POST'],
 ]];

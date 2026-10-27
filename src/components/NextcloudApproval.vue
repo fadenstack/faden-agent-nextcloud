@@ -31,7 +31,7 @@ async function approve() {
 			{{ part.reason }}
 		</p>
 		<p class="fdn-approval-target">
-			{{ part.toolName === 'nc_create_text_file' ? t('fadenstack_agent', 'Create file') : t('fadenstack_agent', 'Replace file') }}:
+			{{ part.toolName === 'nc_actions_undo' ? t('fadenstack_agent', 'Undo file change') : part.toolName === 'nc_actions_redo' ? t('fadenstack_agent', 'Redo file change') : part.toolName === 'nc_create_text_file' ? t('fadenstack_agent', 'Create file') : t('fadenstack_agent', 'Replace file') }}:
 			<strong>{{ part.request.arguments.target }}</strong>
 		</p>
 		<details v-if="part.request.arguments.before !== null && part.request.arguments.before !== undefined">

@@ -4,13 +4,16 @@ import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalP
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
-import { nextcloudTools, WRITE_TOOLS, writeArguments } from '../integrations/nextcloud/tools.ts'
-import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults } from '../integrations/nextcloud/types.ts'
+import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
+import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults, HistoryDirection, HistoryItem, HistoryPreview } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 import type { MutationBinding, WorkspaceCoordinator } from '../workspace/coordinator.ts'
 import { TurnScope, type ScopeIdentity } from '../platform/scope.ts'
 import type { ToolRisk } from '../platform/catalog.ts'
 import { SourceLedger } from '../platform/sourceLedger.ts'
+import { shallowReactive } from 'vue'
+import { commandChat } from './commands.ts'
+import { errorMessage } from '../integrations/nextcloud/files.ts'
 
 export class NextcloudAgent {
 
@@ -22,6 +25,8 @@ export class NextcloudAgent {
 	readonly approvals = new ApprovalBroker()
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
+	readonly #historyPreviews = new Map<string, HistoryPreview>()
+	readonly history = shallowReactive({ items: [] as HistoryItem[], loading: false, error: '', active: false, target: '' })
 	readonly #proposalViews = new Map<string, MutationBinding>()
 	readonly #proposalResources = new Map<string, unknown>()
 	readonly #proposalParents = new Map<string, number>()
@@ -69,6 +74,7 @@ export class NextcloudAgent {
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
 			.addTools(...nextcloudTools(this))
+			.addTools(...(config.historyEnabled && files.history ? historyTools(this) : []))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
 					const available = this.#scope?.offeredTools
@@ -80,13 +86,28 @@ export class NextcloudAgent {
 					this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
 					const result = await next(invocation)
-					try { this.#scope?.budget.consumeResult(result, resultRecords(result)) } catch (error) { if (WRITE_TOOLS.has(invocation.tool.name)) this.#writeBlocked = true; throw error }
+					try { this.#scope?.budget.consumeResult(result, resultRecords(result)) } catch (error) { if (WRITE_TOOLS.has(invocation.tool.name) || HISTORY_TOOLS.has(invocation.tool.name)) this.#writeBlocked = true; throw error }
 					return result
 				},
 			})
 			.useSessionStore(new MemorySessionStore()).useApprovalStore(new MemoryApprovalStore())
 			.useApprovals({
 				request: async (request, signal) => {
+					if (HISTORY_TOOLS.has(request.toolName) && request.source === 'host') {
+						if (this.#writeBlocked || !files.history || typeof request.arguments.action_id !== 'string' || !/^[a-f0-9]{32}$/.test(request.arguments.action_id)) throw new Error('A valid, available history action is required.')
+						const binding = this.workspace?.prepare('files')
+						const direction = request.toolName === 'nc_actions_undo' ? 'undo' : 'redo'
+						const preview = await files.history.prepare(request.arguments.action_id, direction, signal)
+						this.history.target = preview.target
+						this.#historyPreviews.set(request.callId, preview)
+						if (binding) this.#proposalViews.set(request.callId, binding)
+						request = {
+							...request,
+							canAllowAlways: false,
+							canAllowForSession: false,
+							arguments: { ...request.arguments, historyPreviewId: preview.id, digest: preview.digest, target: preview.target, before: preview.before, content: preview.content },
+						}
+					}
 					if (WRITE_TOOLS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const binding = this.workspace?.prepare('files')
@@ -110,13 +131,13 @@ export class NextcloudAgent {
 						}
 					}
 					const result = await this.approvals.request(request, signal)
-					if (!result.approved) { this.#proposals.delete(request.callId); this.#proposalViews.delete(request.callId); this.#proposalResources.delete(request.callId); this.#proposalParents.delete(request.callId); if (WRITE_TOOLS.has(request.toolName)) this.#writeBlocked = true }
+					if (!result.approved) { this.#proposals.delete(request.callId); this.cancelHistory(request.callId); this.#proposalViews.delete(request.callId); this.#proposalResources.delete(request.callId); this.#proposalParents.delete(request.callId); if (WRITE_TOOLS.has(request.toolName) || HISTORY_TOOLS.has(request.toolName)) this.#writeBlocked = true }
 					return result
 				},
 			})
 			// What the app brings, for the agent's Apps tab: its tools, the context it offers, and the greeting and
 			// suggestions an administrator can take in, so the empty chat starts with ready questions.
-			.describeApp({ name: 'Nextcloud Files', version: '0.1.3', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
+			.describeApp({ name: 'Nextcloud Files', version: '0.1.4', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
 			.build()
 		const locale = config.locale ?? navigator.language
 		this.chat = new AgentChatViewModel(this.agent, this.approvals, {
@@ -129,12 +150,20 @@ export class NextcloudAgent {
 			// takes the file context it includes; the turn's tools read that context until it ends.
 			beforeSend: (_message, signal) => this.#prepare(signal),
 			afterSend: () => this.#finish(),
+			...{
+				// Public companion SDK hooks; ignored by the pinned older SDK, whose
+				// missing invokeTool API keeps explicit history controls disabled.
+				beforeCommand: async (_command: unknown, signal: AbortSignal) => { this.history.active = true; this.history.target = ''; this.workspace?.prepare('files'); await this.#prepare(signal, true) },
+				afterCommand: () => this.#finish(true),
+			},
 		})
 	}
 
 	async signIn(email: string, password: string): Promise<void> {
+		this.history.items = []
 		const login = await loginWithPassword({ apiUrl: this.config.serverUrl, email, password, fetch: this.#fetch, signal: this.#stop.signal, allowInsecureHttp: this.#developmentHttp })
 		await this.tokens.signIn(login, 'Nextcloud Files', this.#stop.signal)
+		if (this.config.historyEnabled) this.files.setCloudIdentity?.(signal => this.tokens.getAccessToken(signal))
 		await this.chat.initialize()
 		if (!this.chat.isReady) throw new Error(this.chat.error || 'The agent could not be initialized.')
 		if (this.agent.profile.draft || this.agent.profile.version === null) throw new Error('Use a published agent version for the Nextcloud integration.')
@@ -143,6 +172,49 @@ export class NextcloudAgent {
 	context(): FileContext {
 		if (!this.#active || this.#closed) throw new Error('Include the selected file or folder in this request first.')
 		return this.#active
+	}
+
+	get historyAvailable(): boolean { return this.config.historyEnabled === true && !!this.files.history }
+	get historyCommandsAvailable(): boolean { return this.historyAvailable && !!commandChat(this.chat) }
+
+	async refreshHistory(signal: AbortSignal): Promise<void> {
+		if (!this.historyAvailable || !this.files.history) return
+		this.history.loading = true
+		this.history.error = ''
+		try { this.history.items = await this.files.history.list(signal) } catch (error) { this.history.items = []; if (!signal.aborted) this.history.error = errorMessage(error) } finally { this.history.loading = false }
+	}
+
+	async invokeHistory(direction: HistoryDirection, actionId: string, label = direction === 'undo' ? 'Undo file change' : 'Redo file change'): Promise<void> {
+		const commands = commandChat(this.chat)
+		if (!this.historyAvailable || !commands || !/^[a-f0-9]{32}$/.test(actionId)) throw new Error('Action history commands are unavailable.')
+		await commands.invokeTool(`nc_actions_${direction}`, { action_id: actionId }, { origin: 'user_history', label })
+	}
+
+	private cancelHistory(callId: string): void {
+		const preview = this.#historyPreviews.get(callId)
+		this.#historyPreviews.delete(callId)
+		if (preview && this.files.history) void this.files.history.cancel(preview, AbortSignal.any([this.#stop.signal, AbortSignal.timeout(3000)])).catch(() => {})
+	}
+
+	async reverse(direction: HistoryDirection, actionId: unknown, call: ToolCallContext): Promise<unknown> {
+		const preview = this.#historyPreviews.get(call.callId)
+		if (this.#writeBlocked || !this.files.history || !preview || preview.actionId !== actionId || preview.direction !== direction) throw new Error('No matching individually approved history preview exists.')
+		this.#historyPreviews.delete(call.callId)
+		const binding = this.#proposalViews.get(call.callId)
+		this.#proposalViews.delete(call.callId)
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+		try {
+			const result = await this.files.history.execute(preview, call.signal)
+			const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, result, call.signal) : undefined
+			this.history.items = this.history.items.map(item => item.id === preview.actionId ? { ...item, state: result.state, eligible: result.state === 'undone' ? 'redo' : 'undo' } : item)
+			return activity ? { ...result, view: activity.view } : result
+		} catch (error) {
+			this.#writeBlocked = true
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, preview.target, error)
+			throw error
+		}
 	}
 
 	/** Metadata for presentation only: tools still resolve and authorize their frozen turn context. */
@@ -272,6 +344,12 @@ export class NextcloudAgent {
 	}
 
 	async approve(part: ApprovalPart): Promise<void> {
+		if (HISTORY_TOOLS.has(part.toolName) && part.request.source === 'host') {
+			const preview = this.#historyPreviews.get(part.request.callId)
+			if (!this.files.history || !preview || preview.id !== part.request.arguments.historyPreviewId || preview.digest !== part.request.arguments.digest || !part.isPending) throw new Error('This history preview is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+			await this.files.history.approve(preview, this.#stop.signal)
+		}
 		const id = part.request.arguments.proposalId
 		if (WRITE_TOOLS.has(part.toolName) && part.request.source === 'host') {
 			const proposal = this.#proposals.get(part.request.callId)
@@ -324,8 +402,8 @@ export class NextcloudAgent {
 	}
 
 	/** Before a message goes: the Nextcloud session still holds, and the file context it includes is taken. */
-	async #prepare(signal: AbortSignal): Promise<void> {
-		const include = this.#include ?? this.#attachment?.sends ?? false
+	async #prepare(signal: AbortSignal, command = false): Promise<void> {
+		const include = !command && (this.#include ?? this.#attachment?.sends ?? false)
 		this.#include = undefined
 		try {
 			if (this.#closed) throw new Error('This connection has ended. Sign in again.')
@@ -334,7 +412,7 @@ export class NextcloudAgent {
 			this.#active = include ? this.selection.snapshot() : undefined
 			await this.files.assertIdentity(stopped)
 			const session = this.chat.currentSessionId
-			this.#sources = new SourceLedger(session ? this.#sessionSources.get(session) : undefined)
+			this.#sources = new SourceLedger(!command && session ? this.#sessionSources.get(session) : undefined)
 			this.#scope?.invalidate()
 			this.#scope = undefined
 			if (this.config.scopePolicy) {
@@ -373,8 +451,10 @@ export class NextcloudAgent {
 	}
 
 	/** After the turn: its file context and any proposals it left are gone. */
-	#finish(): void {
-		if (this.chat.currentSessionId) this.#sessionSources.set(this.chat.currentSessionId, new SourceLedger(this.#sources))
+	#finish(command = false): void {
+		if (command) { this.history.active = false; this.history.target = '' }
+		if (!command && this.chat.currentSessionId) this.#sessionSources.set(this.chat.currentSessionId, new SourceLedger(this.#sources))
+		for (const callId of this.#historyPreviews.keys()) this.cancelHistory(callId)
 		this.#scope?.invalidate()
 		this.#scope = undefined
 		this.#active = undefined
@@ -389,6 +469,8 @@ export class NextcloudAgent {
 	async dispose(): Promise<void> {
 		if (this.#closed) return
 		this.#closed = true
+		this.files.setCloudIdentity?.()
+		this.history.items = []
 		this.#stop.abort()
 		this.chat.stop()
 		this.chat.dispose()

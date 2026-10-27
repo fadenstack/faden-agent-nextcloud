@@ -1,7 +1,9 @@
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
+import { commandSdkAliases } from './scripts/command-sdk.ts'
 export default defineConfig({
 	plugins: [vue()],
+	resolve: { alias: commandSdkAliases(), dedupe: ['vue'] },
 	test: {
 		environment: 'jsdom',
 		include: ['tests/unit/**/*.test.ts'],

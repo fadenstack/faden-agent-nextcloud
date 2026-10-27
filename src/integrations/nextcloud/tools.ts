@@ -1,6 +1,7 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
-import type { FileContext, WriteArguments, SearchFilters } from './types.ts'
+import type { FileContext, WriteArguments, SearchFilters, HistoryDirection } from './types.ts'
+import historyContract from '../../../contracts/history-tools.json'
 
 export interface ToolHost {
 	context(): FileContext
@@ -12,6 +13,7 @@ export interface ToolHost {
 	inFile(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
 	contentSearch(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
 	recordResult(callId: string, value: unknown): void
+	reverse?(direction: HistoryDirection, actionId: unknown, call: ToolCallContext): Promise<unknown>
 }
 export function writeArguments(name: string, args: Readonly<Record<string, unknown>>): WriteArguments {
 	if (typeof args.content !== 'string' || new TextEncoder().encode(args.content).length > 262144 || args.content.includes('\0')) {
@@ -30,6 +32,19 @@ export function writeArguments(name: string, args: Readonly<Record<string, unkno
 	return { operation: 'update', content: args.content, expectedEtag: args.expectedEtag }
 }
 export const WRITE_TOOLS = new Set(['nc_create_text_file', 'nc_update_text_file'])
+export const HISTORY_TOOLS = new Set(['nc_actions_undo', 'nc_actions_redo'])
+export function historyTools(host: ToolHost) {
+	return (['undo', 'redo'] as const).map(direction => defineTool({
+		name: `nc_actions_${direction}`,
+		toolClass: 'destructive',
+		description: `${direction === 'undo' ? 'Undo' : 'Redo'} one recorded whole-text file update by its action ID. Requires current native access, central policy and an individual exact-content preview. Refuses changed files, later dependent actions, unknown outcomes and unavailable inverses. Never undoes delivery or external workflow effects.`,
+		parameters: historyContract.parameters as JsonSchema,
+		run: (args, call) => {
+			if (!host.reverse) throw new Error('Action history is unavailable.')
+			return host.reverse(direction, args.action_id, call)
+		},
+	}))
+}
 
 export function nextcloudTools(host: ToolHost) {
 	const capture = async (operation: Promise<unknown>, call: ToolCallContext) => {

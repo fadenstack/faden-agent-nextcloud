@@ -10,6 +10,7 @@ use OCA\FadenstackAgent\History\JournalIdentity;
 use OCA\FadenstackAgent\History\JournalResource;
 use OCA\FadenstackAgent\History\JournalService;
 use OCA\FadenstackAgent\History\VerifiedReadback;
+use OCA\FadenstackAgent\Identity\VerifiedCloudPrincipal;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
@@ -24,6 +25,7 @@ class FileService {
 	public const MAX_PDF_BYTES = 10485760;
 	public const MAX_WRITE_BYTES = 262144;
 	private const KEY = 'fadenstack_agent.state';
+	private ?VerifiedCloudPrincipal $principal = null;
 
 	public function __construct(
 		private IRootFolder $root,
@@ -40,13 +42,45 @@ class FileService {
 
 	private function journalIdentity(): JournalIdentity {
 		$state = $this->state();
-		// Native account/configuration binding only. This is not proof of a cloud subject.
-		return new JournalIdentity($this->uid(), hash('sha256', json_encode([$this->config->get(), $this->scope->configStamp(), 'files-history-v1'], JSON_THROW_ON_ERROR)), $state['binding']);
+		$scope = hash('sha256', json_encode([$this->config->get(), $this->scope->configStamp(), 'files-history-v1'], JSON_THROW_ON_ERROR));
+		return $this->principal === null ? new JournalIdentity($this->uid(), $scope, $state['binding'])
+			: $this->pairedHistoryIdentity($this->principal);
+	}
+
+	/** Request-local only; the controller supplies a freshly verified server profile. */
+	public function bindCloudPrincipal(VerifiedCloudPrincipal $principal): void {
+		$this->principal = $principal;
+	}
+
+	public function pairedHistoryIdentity(VerifiedCloudPrincipal $principal): JournalIdentity {
+		$state = $this->state();
+		// Durable private history survives app/policy upgrades. Current native policy
+		// and configuration still invalidate tickets and previews, not ownership.
+		$scope = hash('sha256', 'nextcloud-files-paired-history-v1');
+		$binding = hash('sha256', json_encode([$state['binding'], $this->config->get(), $this->scope->configStamp(), $this->config->historyEnabled()], JSON_THROW_ON_ERROR));
+		return JournalIdentity::forPrincipal($this->uid(), $scope, $binding, $principal);
+	}
+
+	private function assertProposalIdentity(array $proposal): void {
+		$identity = $this->journalIdentity();
+		if (($proposal['identityScope'] ?? null) !== $identity->scopeHash || ($proposal['identitySession'] ?? null) !== $identity->sessionHash) {
+			throw new Problem('The account, device, profile or scope changed. Review a new proposal.', 409);
+		}
 	}
 
 	private function prepareJournal(array $proposal, Folder $folder, Node $node): array {
 		$reference = 'parent:' . $folder->getId() . '/name:' . $proposal['filename'];
-		$resource = new JournalResource('files', $reference, ($proposal['operation'] === 'create' ? 'folder:' . $folder->getId() : 'file:' . $node->getId()));
+		$recovery = null;
+		if ($proposal['operation'] === 'update') {
+			$grant = $this->scope->describeNode($node, 'history');
+			// Do not infer historical protection from today's filename/classification.
+			// Broader/protected-input snapshots require a separate lineage handler.
+			if ($grant['sourceClass'] === 'standard' && $grant['audience'] === 'private'
+				&& ($this->identity()['scopePolicy']['sourceClasses'] ?? []) === ['standard']) {
+				$recovery = JournalResource::PRIVATE_TEXT_RECOVERY;
+			}
+		}
+		$resource = new JournalResource('files', $reference, ($proposal['operation'] === 'create' ? 'folder:' . $folder->getId() : 'file:' . $node->getId()), $recovery);
 		return $this->journal->prepare($this->journalIdentity(), $resource, $proposal['operation'] === 'create' ? 'nc_create_text_file' : 'nc_update_text_file',
 			['operation' => $proposal['operation'], 'filename' => $proposal['filename'], 'content' => $proposal['content']],
 			['operation' => $proposal['operation'] === 'create' ? 'delete_created_file' : 'update', 'content' => $proposal['before']],
@@ -55,7 +89,7 @@ class FileService {
 				'afterHash' => hash('sha256', $proposal['content'])]);
 	}
 
-	/** Internal typed preview only; no HTTP route or native history execution is enabled. */
+	/** Legacy internal typed preview. Public paired recovery goes through HistoryService. */
 	public function prepareHistory(string $actionId, string $direction): FilesHistoryPlan {
 		return $this->history->prepare($this->journalIdentity(), $actionId, $direction);
 	}
@@ -82,7 +116,7 @@ class FileService {
 		$s = $this->state();
 		$config = $this->config->get();
 		$policy = $config['enabled'] && $config['agent'] && $config['serverUrl'] ? $this->scope->getPolicy($s['user'], $config['serverUrl']) : null;
-		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy];
+		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled()];
 	}
 
 	public function check(string $binding): void {
@@ -337,6 +371,9 @@ class FileService {
 			'filename' => $filename, 'content' => $content, 'before' => $before, 'expectedEtag' => $expectedEtag,
 			'folderId' => $folder->getId(), 'target' => rtrim($this->root->getUserFolder($this->uid())->getRelativePath($folder->getPath()), '/') . '/' . $filename,
 			'expires' => time() + 600, 'approved' => false];
+		$identity = $this->journalIdentity();
+		$p['identityScope'] = $identity->scopeHash;
+		$p['identitySession'] = $identity->sessionHash;
 		$s = $this->state();
 		$s['proposals'] = array_filter($s['proposals'], fn ($p) => $p['expires'] > time());
 		if (count($s['proposals']) >= 10) {
@@ -357,6 +394,7 @@ class FileService {
 
 	public function approve(string $id): array {
 		$p = $this->proposal($id);
+		$this->assertProposalIdentity($p);
 		$this->selected($p['contextId']);
 		$s = $this->state();
 		$s['proposals'][$id]['approved'] = true;
@@ -366,6 +404,7 @@ class FileService {
 
 	public function commit(string $id, int $createProtocol = 0): array {
 		$p = $this->proposal($id);
+		$this->assertProposalIdentity($p);
 		if (!$p['approved']) {
 			throw new Problem('This operation requires explicit approval.', 403);
 		}
@@ -398,7 +437,8 @@ class FileService {
 				throw new Problem('Too many unfinished creations. Wait for them to expire.', 429);
 			}
 			$s['receipts'][$p['id']] = ['folderId' => $folder->getId(), 'folderPath' => $parent['path'], 'filename' => $p['filename'],
-				'hash' => hash('sha256', $p['content']), 'expires' => time() + 600, 'journal' => $journal];
+				'hash' => hash('sha256', $p['content']), 'expires' => time() + 600, 'journal' => $journal,
+				'identityScope' => $p['identityScope'], 'identitySession' => $p['identitySession']];
 			$this->session->set(self::KEY, $s);
 			// From this point a client may dispatch the native conditional PUT. Never
 			// infer that an interrupted/missing finish call means the file was not saved.
@@ -481,6 +521,7 @@ class FileService {
 		if (!$r || $r['expires'] < time()) {
 			throw new Problem('Creation receipt expired or was already consumed.', 410);
 		}
+		$this->assertProposalIdentity($r);
 		unset($s['receipts'][$receiptId]);
 		$this->session->set(self::KEY, $s);
 		$folder = $this->node($r['folderId']);

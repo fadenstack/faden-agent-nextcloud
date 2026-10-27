@@ -66,6 +66,11 @@ final class JournalService {
 		return [...$this->summary($row), 'ticket' => $ticket];
 	}
 
+	/** Authorized metadata only; no saved payload is decrypted. */
+	public function describe(JournalIdentity $identity, string $id): array {
+		return $this->summary($this->authorized($identity, $id, 'list'));
+	}
+
 	/** Never return this generic snapshot directly from a browser/model endpoint. */
 	public function preview(JournalIdentity $identity, string $id): array {
 		$row = $this->authorized($identity, $id, 'preview');

@@ -81,6 +81,13 @@ final class FilesHistoryPlanner {
 			throw new JournalException('native_conflict');
 		}
 		$this->scope->assertMovement($file, $file);
+		$private = ($entry['resource']['recovery'] ?? null) === JournalResource::PRIVATE_TEXT_RECOVERY;
+		if ($private) {
+			$grant = $this->scope->describeNode($file, 'history');
+			if ($grant['sourceClass'] !== 'standard' || $grant['audience'] !== 'private') {
+				throw new JournalException('recovery_protection_changed', 403);
+			}
+		}
 		$expected = $direction === 'undo' ? $forward['content'] : $inverse['content'];
 		$content = $direction === 'undo' ? $inverse['content'] : $forward['content'];
 		if ($file->getSize() > FileService::MAX_WRITE_BYTES || $file->getStorage()->getETag($file->getInternalPath()) !== $snapshot['revision']) {
@@ -102,7 +109,7 @@ final class FilesHistoryPlanner {
 		// This preview cannot exclude later native writers. Commit must repeat these
 		// checks under the broker's existing exclusive stream before changing bytes.
 		return new FilesHistoryPlan($actionId, $direction, $entry['version'], $identity->scopeHash,
-			$file->getId(), $preconditions['parentId'], $home->getRelativePath($file->getPath()), $snapshot['revision'], $current, $content);
+			$file->getId(), $preconditions['parentId'], $home->getRelativePath($file->getPath()), $snapshot['revision'], $current, $content, $private);
 	}
 
 	public function revalidate(JournalIdentity $identity, FilesHistoryPlan $plan): FilesHistoryPlan {

@@ -115,6 +115,28 @@ class CloudIdentityTest extends TestCase {
 		}
 	}
 
+	public function testDiagnosticBacktracesRedactTheTokenEvenWhenPhpCapturesArguments(): void {
+		$previous = ini_set('zend.exception_ignore_args', '0');
+		try {
+			$client = $this->createMock(IClient::class);
+			$client->method('get')->willThrowException(new \RuntimeException(self::TOKEN));
+			try {
+				$this->verifier($client)->verify(self::TOKEN);
+				self::fail('The unavailable identity service must fail closed.');
+			} catch (Problem $error) {
+				self::assertStringNotContainsString(self::TOKEN, $error->getTraceAsString());
+				$frames = array_values(array_filter($error->getTrace(), static fn ($frame) => in_array($frame['class'] ?? '',
+					[CloudIdentityVerifier::class, \OCA\FadenstackAgent\Identity\CloudApi::class], true)));
+				self::assertCount(2, $frames);
+				foreach ($frames as $frame) {
+					self::assertInstanceOf(\SensitiveParameterValue::class, $frame['args'][0]);
+				}
+			}
+		} finally {
+			ini_set('zend.exception_ignore_args', $previous);
+		}
+	}
+
 	public function testResponseStreamsAreClosedOnSuccessAndDenial(): void {
 		foreach ([200, 401] as $status) {
 			$body = fopen('php://temp', 'w+');

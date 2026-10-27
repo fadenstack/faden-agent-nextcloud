@@ -26,8 +26,8 @@ policy are checked before saved payload access. Snapshots expire after seven day
 (hourly bounded maintenance and opportunistic cleanup), with 1 MiB per snapshot
 JSON, 25 MiB encrypted payload per native user and 1,000 metadata entries. Unknown dispatched
 effects retain an unresolved claim rather than retrying. This records existing
-effects; it does not yet expose governed Undo/Redo or a generic snapshot endpoint.
-It binds native user/configuration/session, not a verified cloud principal pair.
+effects. Version 0.1.4 optionally binds new writes to a server-verified cloud
+principal pair and exposes typed history endpoints, never a generic snapshot endpoint.
 Key rotation, production-database concurrency and deletion/recreation inverses
 remain release gates. Keep the Nextcloud instance secret with journal backups;
 changing it without a migration makes authentication/decryption fail closed.
@@ -38,12 +38,11 @@ write/movement policy, storage revision and content-hash checks under a seekable
 exclusive stream, and records success only after verified native readback.
 Pre-dispatch failures release the claim without losing the action. Failures after
 dispatch retain `needs_reconciliation`, both snapshots and the resource claim;
-they cannot be retried automatically. This service has no controller/tool/UI caller.
-Its plan/digest is not an approval or cloud execution permit. Current central
-governance, exact individual approval and trusted native/cloud identity binding
-remain mandatory before it can be exposed.
+they cannot be retried automatically. Its plan/digest is not an approval or cloud
+execution permit. The opt-in HistoryService joins fresh verified identity,
+prepare/dispatch central governance and one-use individual approval to this executor.
 
-An internal `CloudIdentityVerifier` now projects an authenticated published
+`CloudIdentityVerifier` projects an authenticated published
 Fadenstack agent profile using a short agent-device access token. It sends that
 token only to the fixed administrator-configured origin, preserves Nextcloud's
 verified CA bundle, refuses redirects, bounds the response and rechecks configuration.
@@ -55,13 +54,30 @@ or cookies to Fadenstack.
 
 `JournalIdentity::forPrincipal` derives a separate native/cloud user namespace and
 device/profile-bound claim session. It preserves native-user aggregate quotas and
-does not adopt legacy native-only records. These primitives have no controller
-or active Files-journal caller yet. Identity verification is not a tool grant or
-approval. Fresh verification must join current native ACL/scope, central policy,
-exact approval and claim/readback guards at every future history boundary. Native
-CA/deployment-network acceptance, server revocation latency, SDK compatibility and
-governed UI integration remain open. Native loopback HTTP verifies refusal of
+does not adopt legacy native-only records. With history enabled, modifying Files
+and history requests send the current memory-only cloud token in a dedicated header
+to the same-origin backend. The backend independently verifies that identity;
+no browser-asserted subject is trusted. Identity verification is not a tool grant
+or approval. Durable ownership survives app/policy versions while pending approvals
+bind their current configuration and device. Native CA/deployment-network
+acceptance and server revocation latency remain deployment work. Native loopback HTTP verifies refusal of
 redirects, revoked grants, malformed/oversized profiles and slow responses.
+
+Public recovery is deliberately narrower than journal storage: only new updates
+recorded under a standard-only input policy to a private standard file receive
+MAC-bound `standard_private_v1` metadata. Missing metadata is never backfilled.
+Protected/broader-input snapshots cannot become eligible through later classification
+changes. Private audience and classification are checked again at preview and under
+the executor's stream lock, even if current general movement policy permits sharing.
+Full protected-content lineage and shared-file restoration require separate design.
+
+History preview session state contains IDs, digests, comparison stamps and expiry,
+never tokens or saved file content. Exact approvals expire after ten minutes,
+are capped at ten and are consumed before execution attempts. Every boundary fetches
+a fresh cloud profile; dispatch repeats central policy and native validation. Fixed
+routes refuse redirects/cookies and bound response size/time. Token arguments use
+PHP SensitiveParameter so debug backtraces cannot expose their values. Central
+policy receives only tool name and action ID, not original/restored file bytes.
 
 Version 0.1.3 shares native-user history coordination across those private scopes:
 an unresolved action cannot be bypassed by switching cloud identity/configuration

@@ -14,6 +14,7 @@ for (const item of ['appinfo', 'lib', 'templates', 'img', 'js', 'css', 'dist', '
 await mkdir(join(app, 'scripts'))
 await cp('scripts/package.mjs', join(app, 'scripts', 'package.mjs'))
 await cp('scripts/clean.mjs', join(app, 'scripts', 'clean.mjs'))
+await cp('scripts/command-sdk.ts', join(app, 'scripts', 'command-sdk.ts'))
 await cp('scripts/l10n.mjs', join(app, 'scripts', 'l10n.mjs'))
 await cp('scripts/seed-search.mjs', join(app, 'scripts', 'seed-search.mjs'))
 const attribution = join(app, 'third-party')

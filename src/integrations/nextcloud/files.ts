@@ -1,11 +1,49 @@
 import axios from '@nextcloud/axios'
+import { getRequestToken } from '@nextcloud/auth'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 
 export class NextcloudFiles implements FileApi {
 
 	constructor(readonly initial: Identity) {}
+	#cloudIdentity: ((signal?: AbortSignal) => Promise<string>) | undefined
+	setCloudIdentity(provider?: (signal?: AbortSignal) => Promise<string>): void { this.#cloudIdentity = provider }
+	readonly history: HistoryApi = {
+		list: signal => this.authenticatedPost('/history/list', {}, signal),
+		prepare: (actionId, direction, signal) => this.authenticatedPost('/history/prepare', { actionId, direction }, signal),
+		approve: async (preview, signal) => { await this.authenticatedPost(this.historyPath(preview.id, preview.digest, 'approve'), { digest: preview.digest }, signal) },
+		execute: (preview, signal) => this.authenticatedPost(this.historyPath(preview.id, preview.digest, 'execute'), { digest: preview.digest }, signal),
+		cancel: async (preview, signal) => { await this.authenticatedPost(this.historyPath(preview.id, preview.digest, 'cancel'), { digest: preview.digest }, signal) },
+	}
+
+	private historyPath(id: string, digest: string, operation: 'approve' | 'execute' | 'cancel'): string {
+		if (!/^[a-f0-9]{48}$/.test(id) || !/^[a-f0-9]{64}$/.test(digest)) throw new Error('Invalid history preview.')
+		return `/history/${id}/${operation}`
+	}
+
+	private async authenticatedPost<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+		signal?.throwIfAborted()
+		await this.assertIdentity(signal)
+		if (!this.#cloudIdentity) throw new Error('Sign in to Fadenstack again.')
+		const token = await this.#cloudIdentity(signal)
+		signal?.throwIfAborted()
+		const url = generateUrl(`/apps/fadenstack_agent${path}`)
+		if (new URL(url, location.href).origin !== location.origin) throw new Error('The Nextcloud request origin changed.')
+		const response = await fetch(url, {
+			method: 'POST',
+			credentials: 'same-origin',
+			redirect: 'error',
+			cache: 'no-store',
+			headers: { 'Content-Type': 'application/json', requesttoken: getRequestToken() ?? '', 'X-Fadenstack-Session': this.initial.binding, 'X-Fadenstack-Agent-Token': token },
+			body: JSON.stringify(body),
+			signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000),
+		})
+		const data = await response.json() as T & { message?: unknown }
+		if (!response.ok) throw Object.assign(new Error(typeof data.message === 'string' ? data.message : 'The Nextcloud operation could not be confirmed.'), { response: { status: response.status, data } })
+		return data
+	}
+
 	readonly searchTransport: SearchTransport = {
 		plan: (filters, signal) => this.post<SearchPlan>('/search/plan', { filters }, signal),
 		resolve: (resourceIds, scope, signal, content = false) => this.post<FileMetadata[]>('/search/resolve', { resourceIds, scope, content }, signal),
@@ -34,6 +72,7 @@ export class NextcloudFiles implements FileApi {
 	async assertIdentity(signal?: AbortSignal): Promise<void> {
 		const now = await this.identity(signal)
 		if (now.userId !== this.initial.userId || now.binding !== this.initial.binding
+			|| now.historyEnabled !== this.initial.historyEnabled
 			|| now.scopePolicy?.version !== this.initial.scopePolicy?.version
 			|| now.serverUrl !== this.initial.serverUrl || now.agent !== this.initial.agent || !now.enabled) {
 			throw new Error('The Nextcloud session or agent configuration changed. Reload and sign in again.')
@@ -41,6 +80,7 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+		if (this.initial.historyEnabled && (/^\/proposals(?:\/|$)/.test(path) || path === '/creations/finish')) return this.authenticatedPost(path, body, signal)
 		return (await axios.post<T>(generateUrl(`/apps/fadenstack_agent${path}`), body, {
 			headers: { 'X-Fadenstack-Session': this.initial.binding }, signal, timeout: 20000,
 		})).data

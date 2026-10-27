@@ -45,7 +45,9 @@ including a user-tested real-server conversation from the full-screen Text edito
   active editors retain their view and require an explicit handoff.
 - Native source/destination policy and per-turn budgets restrict the published
   Files tools. Encrypted write-ahead receipts record existing creates/updates.
-  User-facing Undo/Redo and additional app tools are still under implementation.
+  Optional **Agent actions** provides governed Undo/Redo for eligible private text
+  updates. It requires the companion command SDK and gateway contract; see
+  [administrator setup](docs/admin-guide.md). Additional app tools remain planned.
 - Per-user session capabilities, server permissions, CSRF, CSP, sanitized Markdown,
   the chat in English, German, French, Spanish and Simplified Chinese (the user
   picks it in the settings; Automatic is their Nextcloud language), the app's own
@@ -66,7 +68,7 @@ npm run build
 npm run package
 ```
 
-Extract `build/fadenstack_agent-0.1.3.tar.gz` into Nextcloud's `custom_apps` directory.
+Extract `build/fadenstack_agent-0.1.4.tar.gz` into Nextcloud's `custom_apps` directory.
 Keep the resulting folder name `fadenstack_agent`, then run
 `php occ app:enable fadenstack_agent` as the Nextcloud web user. For upgrades, use
 Nextcloud's normal `occ upgrade` lifecycle. Version 0.1.2 creates four app-owned

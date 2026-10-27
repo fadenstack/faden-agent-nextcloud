@@ -6,14 +6,18 @@ namespace OCA\FadenstackAgent\History;
 
 /** Provider references, never an executable URL or a client permission assertion. */
 final class JournalResource {
+	public const PRIVATE_TEXT_RECOVERY = 'standard_private_v1';
+
 	public function __construct(
 		public readonly string $provider,
 		public readonly string $reference,
 		public readonly string $authorityReference,
+		public readonly ?string $recovery = null,
 	) {
 		if (!preg_match('/^[a-z][a-z0-9_]{0,31}$/D', $provider)
 			|| $reference === '' || strlen($reference) > 1024 || preg_match('/[\x00-\x1f\x7f]/', $reference)
-			|| $authorityReference === '' || strlen($authorityReference) > 255 || preg_match('/[\x00-\x1f\x7f]/', $authorityReference)) {
+			|| $authorityReference === '' || strlen($authorityReference) > 255 || preg_match('/[\x00-\x1f\x7f]/', $authorityReference)
+			|| ($recovery !== null && $recovery !== self::PRIVATE_TEXT_RECOVERY)) {
 			throw new JournalException('invalid_resource', 400);
 		}
 	}
@@ -30,7 +34,8 @@ final class JournalResource {
 	}
 
 	public function toArray(): array {
-		return ['provider' => $this->provider, 'reference' => $this->reference, 'authorityReference' => $this->authorityReference];
+		return ['provider' => $this->provider, 'reference' => $this->reference, 'authorityReference' => $this->authorityReference,
+			...($this->recovery === null ? [] : ['recovery' => $this->recovery])];
 	}
 
 	public static function fromArray(array $resource): self {
@@ -39,6 +44,6 @@ final class JournalResource {
 				throw new JournalException('invalid_resource', 400);
 			}
 		}
-		return new self($resource['provider'], $resource['reference'], $resource['authorityReference']);
+		return new self($resource['provider'], $resource['reference'], $resource['authorityReference'], $resource['recovery'] ?? null);
 	}
 }

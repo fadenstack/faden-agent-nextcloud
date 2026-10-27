@@ -19,11 +19,12 @@ final class FilesHistoryPlan {
 		public readonly string $expectedEtag,
 		public readonly string $before,
 		public readonly string $content,
+		public readonly bool $privateRecovery = false,
 	) {
 		$this->digest = hash('sha256', JournalCipher::json([
 			'actionId' => $actionId, 'direction' => $direction, 'version' => $version,
 			'scopeHash' => $scopeHash, 'fileId' => $fileId, 'parentId' => $parentId,
-			'target' => $target, 'expectedEtag' => $expectedEtag, 'before' => $before, 'content' => $content,
+			'target' => $target, 'expectedEtag' => $expectedEtag, 'before' => $before, 'content' => $content, 'privateRecovery' => $privateRecovery,
 		]));
 	}
 }

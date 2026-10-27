@@ -6,7 +6,7 @@ export interface AppConfig {
 	agent: string
 	development: boolean
 }
-export interface Identity extends AppConfig { userId: string; binding: string; locale?: string; scopePolicy?: ScopePolicy | null }
+export interface Identity extends AppConfig { userId: string; binding: string; locale?: string; scopePolicy?: ScopePolicy | null; historyEnabled?: boolean }
 export interface FileMetadata {
 	id: number
 	name: string
@@ -47,7 +47,17 @@ export interface Proposal extends WriteArguments {
 	before: string | null
 	contextId: string
 }
-export interface WriteResult { operation: string; file: FileMetadata }
+export interface WriteResult { operation: string; file: FileMetadata; actionId?: string }
+export type HistoryDirection = 'undo' | 'redo'
+export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number }
+export interface HistoryPreview { id: string; actionId: string; direction: HistoryDirection; digest: string; target: string; before: string; content: string; expires: number }
+export interface HistoryApi {
+	list(signal: AbortSignal): Promise<HistoryItem[]>
+	prepare(actionId: string, direction: HistoryDirection, signal: AbortSignal): Promise<HistoryPreview>
+	approve(preview: HistoryPreview, signal: AbortSignal): Promise<void>
+	execute(preview: HistoryPreview, signal: AbortSignal): Promise<WriteResult & { state: string }>
+	cancel(preview: HistoryPreview, signal: AbortSignal): Promise<void>
+}
 export interface DavCreatePlan { kind: 'dav-create'; receiptId: string; dav_path: string; parent_resource_id: string; parent_path: string; parent_etag: string; content: string }
 export interface SearchFilters {
 	query?: string
@@ -117,6 +127,8 @@ export interface DocumentSearchResults {
 export type SearchViewResults = SearchResults | DocumentSearchResults
 
 export interface FileApi {
+	history?: HistoryApi
+	setCloudIdentity?(provider?: (signal?: AbortSignal) => Promise<string>): void
 	searchTransport?: SearchTransport
 	identity(signal?: AbortSignal): Promise<Identity>
 	assertIdentity(signal?: AbortSignal): Promise<void>

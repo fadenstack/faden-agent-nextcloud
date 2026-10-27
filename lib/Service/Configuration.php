@@ -39,6 +39,11 @@ class Configuration {
 		];
 	}
 
+	/** Opt-in until compatible SDK/gateway and deployment acceptance are complete. */
+	public function historyEnabled(): bool {
+		return $this->config->getAppValue(Application::APP_ID, 'history_enabled', '0') === '1';
+	}
+
 	public function save(string $serverUrl, string $agent, bool $enabled, bool $development): array {
 		$origin = self::origin(trim($serverUrl), $development);
 		if (!preg_match('/^[a-zA-Z0-9_-]{1,100}$/D', $agent)) {

@@ -1,5 +1,27 @@
 # Pilot verification — 13 October 2026
 
+## 27 October: opt-in governed Files history (0.1.4)
+
+The current phase adds paired native Files writes, fresh authenticated profiles,
+prepare/dispatch central policy and one-use exact approval to typed Undo/Redo.
+The published-SDK build passes 125 UI tests; the explicit companion-SDK build
+passes 129 (remaining cases are configuration-specific skips). Typecheck,
+lint/style, build/package and 75 PHP tests/143 assertions pass. Native HTTP
+passes 27 authentication/CSRF/policy/replay/conflict checks on the isolated local
+Nextcloud35.0.2/PHP8.5.12/SQLite clone. Session/upgrade/protection and existing
+storage regression drivers remain under `tests/integration/`.
+
+Public recovery only certifies new private standard-file updates made under a
+standard-only native input policy. Native checks include protected snapshots that
+cannot be retroactively certified and widening a private audience even when the
+general movement policy allows sharing. The gateway producer/authentication
+suite passes 64 tests independently. The native/browser issuer is synthetic;
+real deployment TLS/CA, production database, storage and event effects remain open.
+
+The normal package still uses published SDK 0.2.0-rc.2. Explicit command controls
+are verified with a separate public-export SDK0.3.0-rc.1 test overlay, never a
+release package. History defaults off. Earlier sections describe prior checkpoints.
+
 ## 27 October: private scopes and shared native history
 
 The 0.1.2 → 0.1.3 normal app upgrade passes on a local isolated Nextcloud
