@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\FadenstackAgent\Service;
 
+use OCA\FadenstackAgent\History\FilesHistoryPlan;
+use OCA\FadenstackAgent\History\FilesHistoryPlanner;
 use OCA\FadenstackAgent\History\JournalIdentity;
 use OCA\FadenstackAgent\History\JournalResource;
 use OCA\FadenstackAgent\History\JournalService;
@@ -32,6 +34,7 @@ class FileService {
 		private IMountManager $mounts,
 		private JournalService $journal,
 		private ScopePolicy $scope,
+		private FilesHistoryPlanner $history,
 	) {
 	}
 
@@ -50,6 +53,11 @@ class FileService {
 			['parentId' => $folder->getId(), 'parentPath' => $this->root->getUserFolder($this->uid())->getRelativePath($folder->getPath()), 'fileId' => $proposal['operation'] === 'create' ? null : $node->getId(),
 				'expectedEtag' => $proposal['expectedEtag'], 'beforeHash' => $proposal['before'] === null ? null : hash('sha256', $proposal['before']),
 				'afterHash' => hash('sha256', $proposal['content'])]);
+	}
+
+	/** Internal typed preview only; no HTTP route or native history execution is enabled. */
+	public function prepareHistory(string $actionId, string $direction): FilesHistoryPlan {
+		return $this->history->prepare($this->journalIdentity(), $actionId, $direction);
 	}
 
 	private function uid(): string {
@@ -436,7 +444,7 @@ class FileService {
 				$this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'unknown');
 				throw new Problem('The saved result could not be confirmed. Inspect the file before retrying.', 409);
 			}
-			$this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'verified', new VerifiedReadback($result->getEtag()));
+			$this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'verified', new VerifiedReadback($result->getStorage()->getETag($result->getInternalPath())));
 		}
 		return ['operation' => $p['operation'], 'file' => $this->metadata($this->node($result->getId()), 'write'), 'actionId' => $journal['id']];
 	}
@@ -459,7 +467,7 @@ class FileService {
 			throw new Problem('The created content changed or the write was incomplete. No success is claimed.', 409);
 		}
 		$resource = new JournalResource('files', 'parent:' . $folder->getId() . '/name:' . $r['filename'], 'file:' . $file->getId());
-		$this->journal->finish($this->journalIdentity(), $r['journal']['id'], $r['journal']['ticket'], 'verified', new VerifiedReadback($file->getEtag(), $resource));
+		$this->journal->finish($this->journalIdentity(), $r['journal']['id'], $r['journal']['ticket'], 'verified', new VerifiedReadback($file->getStorage()->getETag($file->getInternalPath()), $resource));
 		return ['operation' => 'create', 'file' => $this->metadata($file, 'write'), 'actionId' => $r['journal']['id']];
 	}
 }

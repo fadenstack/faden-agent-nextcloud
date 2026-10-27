@@ -17,6 +17,7 @@ use OCA\FadenstackAgent\History\JournalIdentity;
 use OCA\FadenstackAgent\History\JournalResource;
 use OCA\FadenstackAgent\History\JournalService;
 use OCA\FadenstackAgent\History\VerifiedReadback;
+use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
 use OCA\FadenstackAgent\Service\ScopePolicy;
 use OCP\Files\IRootFolder;
@@ -116,5 +117,15 @@ try {
 	$config->setAppValue('fadenstack_agent', ScopePolicy::CONFIG_KEY, $old);
 }
 $assert('planning and denied attempts leave the ready native file intact', $ready->getContent() === $after);
+$brokerFile = $folder->newFile('real-broker.md', $before);
+$broker = Server::get(FileService::class);
+$context = $broker->select($brokerFile->getId());
+$read = $broker->read($context['id']);
+$proposal = $broker->propose($context['id'], 'update', '', $after, $read['file']['etag']);
+$broker->approve($proposal['id']);
+$committed = $broker->commit($proposal['id']);
+$brokerPlan = $broker->prepareHistory($committed['actionId'], 'undo');
+$assert('the actual Files broker journal produces a typed Undo with server-derived identity', $brokerPlan->content === $before && $brokerPlan->before === $after && $brokerPlan->fileId === $brokerFile->getId());
+$assert('planning an actual broker action leaves its committed native bytes intact', $folder->get('real-broker.md')->getContent() === $after);
 echo json_encode(['layer' => 'typed Files history planning against real Nextcloud Files, scope and encrypted journal', 'native_executor' => false,
 	'cloud_governance' => false, 'checks' => $checks], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT) . "\n";
