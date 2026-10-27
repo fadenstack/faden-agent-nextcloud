@@ -44,7 +44,12 @@ class CloudPolicyTest extends TestCase {
 		$response->method('getBody')->willReturn(json_encode($body, JSON_THROW_ON_ERROR));
 		return $response;
 	}
-	public function testBothServerChecksUseThePinnedToolAndContentFreeArguments(): void {
+	public static function historyDirections(): array {
+		return [['undo'], ['redo'], ['reconcile']];
+	}
+
+	#[DataProvider('historyDirections')]
+	public function testBothServerChecksUseThePinnedToolAndContentFreeArguments(string $direction): void {
 		$client = $this->createMock(IClient::class);
 		$calls = [];
 		$client->expects(self::exactly(2))->method('post')->willReturnCallback(function ($url, $options) use (&$calls) {
@@ -59,8 +64,9 @@ class CloudPolicyTest extends TestCase {
 			return $this->response($this->decision());
 		});
 		$policy = new CloudToolPolicy($this->api($client));
-		$prepared = $policy->check(self::TOKEN, $this->principal(), 'undo', str_repeat('d', 32));
-		self::assertSame($prepared, $policy->check(self::TOKEN, $this->principal(), 'undo', str_repeat('d', 32), $prepared));
+		$prepared = $policy->check(self::TOKEN, $this->principal(), $direction, str_repeat('d', 32));
+		self::assertSame($prepared, $policy->check(self::TOKEN, $this->principal(), $direction, str_repeat('d', 32), $prepared));
+		self::assertSame(['nc_actions_' . $direction, 'nc_actions_' . $direction], array_column($calls, 'name'));
 		self::assertSame(['prepare', 'dispatch'], array_column($calls, 'phase'));
 		self::assertSame(str_repeat('a', 64), $calls[1]['prepared_profile']);
 		self::assertSame('ask', $calls[1]['tool_mode']);

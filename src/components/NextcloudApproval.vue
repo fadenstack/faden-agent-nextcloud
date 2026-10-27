@@ -31,15 +31,19 @@ async function approve() {
 			{{ part.reason }}
 		</p>
 		<p class="fdn-approval-target">
-			{{ part.toolName === 'nc_actions_undo' ? t('fadenstack_agent', 'Undo file change') : part.toolName === 'nc_actions_redo' ? t('fadenstack_agent', 'Redo file change') : part.toolName === 'nc_create_text_file' ? t('fadenstack_agent', 'Create file') : t('fadenstack_agent', 'Replace file') }}:
+			{{ part.toolName === 'nc_actions_reconcile' ? t('fadenstack_agent', 'Inspect outcome') : part.toolName === 'nc_actions_undo' ? t('fadenstack_agent', 'Undo file change') : part.toolName === 'nc_actions_redo' ? t('fadenstack_agent', 'Redo file change') : part.toolName === 'nc_create_text_file' ? t('fadenstack_agent', 'Create file') : t('fadenstack_agent', 'Replace file') }}:
 			<strong>{{ part.request.arguments.target }}</strong>
 		</p>
-		<details v-if="part.request.arguments.before !== null && part.request.arguments.before !== undefined">
+		<template v-if="part.toolName === 'nc_actions_reconcile'">
+			<p>{{ (part.request.arguments.resolution as { outcome?: string } | undefined)?.outcome === 'verified' ? t('fadenstack_agent', 'The file content matches the intended result.') : t('fadenstack_agent', 'The file content matches the state before this attempt.') }}</p>
+			<p>{{ t('fadenstack_agent', 'Record this inspected result without changing the file. Notifications and other effects are not verified.') }}</p>
+		</template>
+		<details v-else-if="part.request.arguments.before !== null && part.request.arguments.before !== undefined">
 			<summary>{{ t('fadenstack_agent', 'Current content') }}</summary>
 			<pre class="fdn-approval-args" dir="auto">{{ part.request.arguments.before }}</pre>
 		</details>
 		<div class="fdn-label">
-			{{ t('fadenstack_agent', 'Proposed content') }}
+			{{ part.toolName === 'nc_actions_reconcile' ? t('fadenstack_agent', 'Observed content') : t('fadenstack_agent', 'Proposed content') }}
 		</div>
 		<pre class="fdn-approval-args" dir="auto">{{ part.request.arguments.content }}</pre>
 		<div v-if="part.isPending" class="fdn-approval-actions">

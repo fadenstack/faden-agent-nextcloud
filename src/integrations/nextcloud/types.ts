@@ -48,9 +48,9 @@ export interface Proposal extends WriteArguments {
 	contextId: string
 }
 export interface WriteResult { operation: string; file: FileMetadata; actionId?: string }
-export type HistoryDirection = 'undo' | 'redo'
+export type HistoryDirection = 'undo' | 'redo' | 'reconcile'
 export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number }
-export interface HistoryPreview { id: string; actionId: string; direction: HistoryDirection; digest: string; target: string; before: string; content: string; expires: number }
+export interface HistoryPreview { id: string; actionId: string; direction: HistoryDirection; digest: string; target: string; before: string; content: string; expires: number; resolution?: { outcome: 'verified' | 'unchanged'; state: 'applied' | 'undone' | 'failed' } }
 export interface HistoryApi {
 	list(signal: AbortSignal): Promise<HistoryItem[]>
 	prepare(actionId: string, direction: HistoryDirection, signal: AbortSignal): Promise<HistoryPreview>

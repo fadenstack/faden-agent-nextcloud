@@ -11,9 +11,8 @@ use OCP\Files\IRootFolder;
 use OCP\IUserSession;
 
 /**
- * Internal typed whole-text inverse executor. Not registered as a route or tool.
- * A future caller must obtain current central authorization and individual approval
- * for the exact plan first. The plan/digest is not an authorization credential.
+ * Typed whole-text inverse executor. HistoryService obtains current central
+ * authorization and individual approval. The plan/digest is not a credential.
  */
 final class FilesHistoryExecutor {
 	public function __construct(

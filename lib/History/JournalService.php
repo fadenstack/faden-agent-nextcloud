@@ -170,7 +170,7 @@ final class JournalService {
 		if ($row['version'] !== $expectedVersion || !in_array($row['state'], self::DISPATCHED, true) || $outcome === 'unknown') {
 			throw new JournalException('state_conflict');
 		}
-		return $this->complete($identity, $row, $outcome, $readback);
+		return $this->complete($identity, $row, $outcome, $readback, true);
 	}
 
 	/** Stop before dispatch releases the claim. Stop after dispatch remains unknown. */
@@ -239,7 +239,7 @@ final class JournalService {
 		return $count;
 	}
 
-	private function complete(JournalIdentity $identity, array $row, string $outcome, ?VerifiedReadback $readback): array {
+	private function complete(JournalIdentity $identity, array $row, string $outcome, ?VerifiedReadback $readback, bool $inspected = false): array {
 		if (!in_array($row['state'], self::DISPATCHED, true) || !in_array($outcome, ['verified', 'unchanged', 'unknown'], true)) {
 			throw new JournalException('state_conflict');
 		}
@@ -259,7 +259,7 @@ final class JournalService {
 				$this->access->assertAccess($identity, $readback->resource, 'readback');
 			}
 		}
-		return $this->store->atomic(function () use ($row, $outcome, $readback, $payload): array {
+		return $this->store->atomic(function () use ($row, $outcome, $readback, $payload, $inspected): array {
 			$this->store->lockOwner($row['owner_hash']);
 			$updated = $row;
 			if ($outcome === 'unknown') {
@@ -282,7 +282,7 @@ final class JournalService {
 			if ($updated['state'] === 'failed') {
 				$this->purgePayload($updated, $updated);
 			}
-			$updated = $this->transition($row, $updated, $outcome === 'verified' ? $updated['state'] : 'failed');
+			$updated = $this->transition($row, $updated, $inspected ? 'reconciled' : ($outcome === 'verified' ? $updated['state'] : 'failed'), $inspected ? $outcome : '');
 			if ($outcome === 'verified' && $row['direction'] === 'apply') {
 				$this->invalidateRedo($row);
 			}
@@ -368,17 +368,17 @@ final class JournalService {
 		$updated['payload_bytes'] = 0;
 	}
 
-	private function transition(array $previous, array $row, string $outcome): array {
+	private function transition(array $previous, array $row, string $outcome, string $reason = ''): array {
 		$row['version'] = $previous['version'] + 1;
 		$row['updated_at'] = $this->now();
 		$row = $this->cipher->sign($row);
 		$this->store->replaceEntry($row, $previous['version']);
-		$this->store->appendAttempt($this->cipher->receipt($row, $outcome));
+		$this->store->appendAttempt($this->cipher->receipt($row, $outcome, $reason));
 		return $row;
 	}
 
 	private function summary(array $row): array {
-		return ['id' => $row['action_id'], 'operation' => $row['operation'], 'resource' => json_decode($row['resource_json'], true, 8, JSON_THROW_ON_ERROR),
+		return ['id' => $row['action_id'], 'operation' => $row['operation'], 'direction' => $row['direction'], 'resource' => json_decode($row['resource_json'], true, 8, JSON_THROW_ON_ERROR),
 			'state' => $row['state'], 'version' => $row['version'], 'createdAt' => $row['created_at'], 'expiresAt' => $row['expires_at'],
 			'snapshotAvailable' => $row['payload'] !== null && $row['expires_at'] > $this->now(),
 			'journalEligibility' => $row['payload'] !== null && $row['expires_at'] > $this->now()

@@ -25,6 +25,10 @@
   user. Upgrade and two-process alias races pass on NC35.0.2/PHP8.5.12/SQLite.
   Cross-native-user shared-file history and production database races remain open;
   history defaults off. Legacy/protected/shared snapshots are not publicly reversible.
+- Version 0.1.5's inspected reconciliation verifies file content, not whether an
+  external notification/workflow ran. Unknown partial bytes, expired snapshots
+  and identical before/after values cannot be force-cleared. Opening native Text
+  can change an ETag even without changing bytes; recovery remains conservative.
 - The new 0.1.2 scope/journal/activity foundation is tested on NC35 with SQLite.
   It does not inherit NC31 acceptance from earlier search-only checks. Different
   source/destination roots and app-specific dirty/refresh adapters remain open.

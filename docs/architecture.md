@@ -100,6 +100,12 @@ an answer, and never also the drawer.
   quota row serializes these decisions; old encrypted rows and MACs stay unchanged.
   This is not a lock across different native users or a transaction around native
   storage and other installed apps.
+- Version 0.1.5 shares typed target/recipe validation in `FilesHistorySnapshot`.
+  `FilesHistoryReconciler` observes interrupted updates under a read stream and
+  resolves the journal only after exact digest/version checks. HistoryService's
+  existing one-use approval routes dispatch it through `nc_actions_reconcile`.
+  It writes no file bytes, cannot infer external effects, and leaves partial or
+  unavailable evidence unresolved. The shared activity UI says **Outcome recorded**.
 
 One reusable `NextcloudSearchService` composes those existing boundaries for
 discovery, metadata, authorized extraction and passages. Its PHP counterpart

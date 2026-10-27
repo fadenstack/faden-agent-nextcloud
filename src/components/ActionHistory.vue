@@ -20,7 +20,7 @@ async function choose(item: HistoryItem) {
 	// NcDialog is teleported outside the pane. Let it unmount before the native
 	// dirty-editor guard inspects the page; no native dialog is ignored or bypassed.
 	await nextTick()
-	await props.host.invokeHistory(item.eligible, item.id, item.eligible === 'undo' ? t('fadenstack_agent', 'Undo file change') : t('fadenstack_agent', 'Redo file change'))
+	await props.host.invokeHistory(item.eligible, item.id, item.eligible === 'undo' ? t('fadenstack_agent', 'Undo file change') : item.eligible === 'redo' ? t('fadenstack_agent', 'Redo file change') : t('fadenstack_agent', 'Inspect outcome'))
 }
 function state(item: HistoryItem): string {
 	if (item.eligible === 'none' && ['applied', 'undone'].includes(item.state)) return t('fadenstack_agent', 'Restoration unavailable')
@@ -29,6 +29,7 @@ function state(item: HistoryItem): string {
 	if (item.state === 'redo_invalidated') return t('fadenstack_agent', 'Redo unavailable')
 	if (item.state === 'expired') return t('fadenstack_agent', 'History expired')
 	if (item.state === 'cancelled') return t('fadenstack_agent', 'Cancelled')
+	if (item.state === 'failed') return t('fadenstack_agent', 'No content change recorded')
 	return t('fadenstack_agent', 'Needs inspection')
 }
 </script>
@@ -60,7 +61,7 @@ function state(item: HistoryItem): string {
 						<template #icon>
 							<Icon name="history" :size="20" />
 						</template>
-						{{ item.eligible === 'undo' ? t('fadenstack_agent', 'Undo') : t('fadenstack_agent', 'Redo') }}
+						{{ item.eligible === 'undo' ? t('fadenstack_agent', 'Undo') : item.eligible === 'redo' ? t('fadenstack_agent', 'Redo') : t('fadenstack_agent', 'Inspect outcome') }}
 					</NcButton>
 				</li>
 			</ul>

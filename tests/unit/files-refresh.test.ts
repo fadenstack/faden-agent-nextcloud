@@ -17,7 +17,7 @@ beforeEach(() => {
 })
 
 describe('Native Files refresh after history', () => {
-	it.each(['undo', 'redo'])('publishes the canonical DAV node after verified %s', async operation => {
+	it.each(['undo', 'redo', 'reconcile'])('publishes the canonical DAV node after verified %s', async operation => {
 		expect(await refreshFiles({ operation, file }, new AbortController().signal)).toBe('refreshed')
 		expect(native.emit).toHaveBeenCalledExactlyOnceWith('files:node:updated', native.node)
 	})

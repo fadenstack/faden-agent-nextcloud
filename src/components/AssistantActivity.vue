@@ -13,7 +13,7 @@ watch(() => props.runtime?.state.host, (host, _previous, cleanup) => {
 }, { immediate: true })
 const busy = computed(() => { void version.value; return !!props.runtime?.state.host?.chat.isBusy })
 const phase = computed(() => props.runtime?.workspace.state.phase)
-const label = computed(() => phase.value === 'dispatching' ? t('fadenstack_agent', 'Saving changes…') : phase.value === 'refreshing' ? t('fadenstack_agent', 'Updating the view…') : t('fadenstack_agent', 'Assistant is working…'))
+const label = computed(() => phase.value === 'dispatching' ? props.runtime?.state.host?.history.inspecting ? t('fadenstack_agent', 'Recording outcome…') : t('fadenstack_agent', 'Saving changes…') : phase.value === 'refreshing' ? t('fadenstack_agent', 'Updating the view…') : t('fadenstack_agent', 'Assistant is working…'))
 const latest = computed(() => props.runtime?.workspace.state.latest)
 function dismiss() { props.runtime?.workspace.dismissReceipt() }
 </script>
@@ -38,9 +38,9 @@ function dismiss() { props.runtime?.workspace.dismissReceipt() }
 			</button>
 		</div>
 		<div v-else-if="latest" role="status">
-			<strong v-if="latest.outcome === 'committed'">{{ t('fadenstack_agent', 'Saved: {name}', { name: latest.target }) }}</strong>
+			<strong v-if="latest.outcome === 'committed'">{{ latest.operation === 'reconcile' ? t('fadenstack_agent', 'Outcome recorded: {name}', { name: latest.target }) : t('fadenstack_agent', 'Saved: {name}', { name: latest.target }) }}</strong>
 			<strong v-else>{{ latest.message }}</strong>
-			<p v-if="latest.outcome === 'committed' && latest.view !== 'refreshed'">
+			<p v-if="latest.outcome === 'committed' && latest.operation !== 'reconcile' && latest.view !== 'refreshed'">
 				{{ latest.view === 'not_visible' ? t('fadenstack_agent', 'Saved in Nextcloud. Open the changed resource to see it.') : t('fadenstack_agent', 'Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.') }}
 			</p>
 			<button v-if="!open" type="button" @click="emit('show')">

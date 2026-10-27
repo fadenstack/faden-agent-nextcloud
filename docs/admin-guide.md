@@ -6,16 +6,17 @@ published agent identifier in Additional settings. Give employees individual
 Fadenstack access to that agent. Nextcloud access always comes from each user's
 own authenticated session; no administrator search credentials are configured.
 
-## Optional action history (0.1.4)
+## Optional action history (0.1.5)
 
 History defaults off. The normal lockfile still uses published SDK 0.2.0-rc.2;
 its explicit history controls remain unavailable. The separately tested SDK
 0.3.0-rc.1 command build is not published or a production release dependency yet.
 For an accepted command-SDK/gateway deployment, set the app-owned flag with
 `occ config:app:set fadenstack_agent history_enabled --value=1` and reload Files.
-An explicit native `scope_policy.tools` must include `nc_actions_undo` and
-`nc_actions_redo`; empty policy adds them only when the flag is enabled.
-Publish both as destructive tools with the schema in `contracts/history-tools.json`.
+An explicit native `scope_policy.tools` must include `nc_actions_undo`,
+`nc_actions_redo` and `nc_actions_reconcile` for all three controls; empty policy
+adds them only when the flag is enabled. Publish each as destructive with the
+schema in `contracts/history-tools.json`.
 The gateway must provide authenticated profiles and prepare/dispatch `tools/check`
 with matching schema, principal and comparison stamps. Automatic permission is
 insufficient: native history always requires individual approval.
@@ -28,6 +29,15 @@ limits and never restores across a human edit. Review a new preview after accoun
 device, profile or policy changes. Stop before dispatch cancels preparation;
 after dispatch inspect the actual file because the server may complete the write.
 No Nextcloud credential is stored in Fadenstack, and SSO is not required.
+
+An uncertain attempt offers **Inspect outcome**. The backend compares current
+native bytes with the recorded before/intended values, then asks you to record
+that exact observation. It makes no file write. A verified content state can
+enable a fresh Undo/Redo; matching an unapplied original's before-state removes
+unneeded recovery payloads. Partial/later content, identical before/after values,
+expired or uncertified snapshots and a busy writer stay unresolved. Inspect does
+not certify notification, indexing or other external effects. An open editor still
+requires handoff. There is no force-clear or automatic replay.
 
 The nine host tools are discovered on connection. Review them in Fadenstack's
 governance interface and reconnect after policy publication. Search and metadata

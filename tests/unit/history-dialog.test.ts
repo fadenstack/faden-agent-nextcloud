@@ -12,10 +12,10 @@ vi.mock('@nextcloud/vue/components/NcButton', () => ({ default: defineComponent(
 }) }))
 
 describe('native action-history dialog handoff', () => {
-	it('unmounts its own dialog before invoking the SDK command and native editor guard', async () => {
+	it.each([['undo', 'Undo', 'Undo file change'], ['reconcile', 'Inspect outcome', 'Inspect outcome']])('unmounts its dialog before the %s command and native editor guard', async (direction, text, label) => {
 		const invoked = vi.fn(async () => { expect(document.querySelector('[role="dialog"]')).toBeNull() })
 		const host = {
-			history: { items: [{ id: 'a'.repeat(32), name: 'report.md', state: 'applied', eligible: 'undo', version: 2, createdAt: 1 }], loading: false, error: '' },
+			history: { items: [{ id: 'a'.repeat(32), name: 'report.md', state: 'applied', eligible: direction, version: 2, createdAt: 1 }], loading: false, error: '' },
 			historyCommandsAvailable: true, chat: { isBusy: false, version: 0, subscribe: () => () => {} }, refreshHistory: vi.fn(), invokeHistory: invoked,
 		} as unknown as NextcloudAgent
 		const root = document.createElement('div')
@@ -24,12 +24,12 @@ describe('native action-history dialog handoff', () => {
 		const app = createApp({ setup: () => () => visible.value ? h(ActionHistory, { host, onClose: () => { visible.value = false } }) : null })
 		app.mount(root)
 		try {
-			const button = Array.from(root.querySelectorAll('button')).find(element => element.textContent?.trim() === 'Undo')!
+			const button = Array.from(root.querySelectorAll('button')).find(element => element.textContent?.trim() === text)!
 			expect(button).toBeDefined()
 			button.click()
 			await nextTick()
 			await nextTick()
-			expect(invoked).toHaveBeenCalledWith('undo', 'a'.repeat(32), 'Undo file change')
+			expect(invoked).toHaveBeenCalledWith(direction, 'a'.repeat(32), label)
 		} finally { app.unmount(); root.remove() }
 	})
 })

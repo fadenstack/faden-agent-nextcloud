@@ -36,10 +36,11 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('governed history integration', () => {
-	it('retains the legacy nine tools and separately classifies both inverses as destructive', () => {
+	it('retains the legacy nine tools and requires individual approval for all history effects', () => {
 		expect(FILE_CAPABILITIES).toHaveLength(9)
 		expect(HISTORY_CAPABILITIES.map(value => [value.name, value.risk, value.individualApproval])).toEqual([
 			['nc_actions_undo', 'destructive', true], ['nc_actions_redo', 'destructive', true],
+			['nc_actions_reconcile', 'destructive', true],
 		])
 	})
 	it('does not register history tools when the administrator has not enabled them', async () => {

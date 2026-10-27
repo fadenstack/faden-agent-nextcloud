@@ -17,7 +17,7 @@ export async function refreshFiles(result: WriteResult, signal: AbortSignal): Pr
 	// Never use a fabricated Node from a model result. DAV supplies the canonical native object.
 	if (result.operation === 'create') emit('files:node:created', node)
 	// The current typed history provider only reverses/reapplies whole-text updates.
-	else if (['update', 'undo', 'redo'].includes(result.operation)) emit('files:node:updated', node)
+	else if (['update', 'undo', 'redo', 'reconcile'].includes(result.operation)) emit('files:node:updated', node)
 	else return 'refresh_required'
 	return 'refreshed'
 }

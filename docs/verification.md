@@ -1,5 +1,22 @@
 # Pilot verification — 13 October 2026
 
+## 27 October: inspected interrupted outcomes (0.1.5)
+
+`nc_actions_reconcile` uses the governed history path to record an exact native
+content observation without replaying the write. The final UI suites pass 127
+published-SDK / 133 companion tests with configuration-specific skips. PHP passes
+77 tests / 184 assertions. Native inspection covers all interrupted apply/Undo/Redo
+before/intended states, partial/no-op/expired data, stale tickets/plans, native
+target/audience changes and unresolved-claim exclusion. A separate native writer
+blocks inspection; two independent prepared workers produce one durable resolution.
+Twenty new native HTTP cases pass, alongside existing history/regression coverage.
+The gateway suite passes 66 tests, including all three history command names.
+
+These use the isolated NC35.0.2/PHP8.5.12/SQLite clone and synthetic issuer. No file
+bytes or ETags change during inspection. Other installed apps' effects remain
+unverified; production DB/storage/key/deployment and SDK release gates remain open.
+The normal package stays pinned to published SDK0.2.0-rc.2; history defaults off.
+
 ## 27 October: opt-in governed Files history (0.1.4)
 
 The current phase adds paired native Files writes, fresh authenticated profiles,

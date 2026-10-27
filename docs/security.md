@@ -71,6 +71,18 @@ changes. Private audience and classification are checked again at preview and un
 the executor's stream lock, even if current general movement policy permits sharing.
 Full protected-content lineage and shared-file restoration require separate design.
 
+Version 0.1.5 adds `nc_actions_reconcile` through the same individual approval,
+fresh principal and central prepare/dispatch checks. It resolves only typed,
+certified private text content. A bounded native read stream excludes an active
+native writer and stays open through the journal version CAS/claim release; no
+write stream or write-open hook is used. Shared target/recipe validation is reused
+by Undo/Redo and inspection. A changed observation, target, actor or journal version
+refuses resolution. Partial/foreign bytes and identical before/after are inconclusive.
+Expiry cannot be bypassed. A distinct MAC-bound `reconciled` receipt records
+`verified` or `unchanged` content; external effects remain explicitly unverified.
+Local SQLite writer and competing-process tests do not establish production
+database, external-storage or cross-native-user lock acceptance.
+
 History preview session state contains IDs, digests, comparison stamps and expiry,
 never tokens or saved file content. Exact approvals expire after ten minutes,
 are capped at ten and are consumed before execution attempts. Every boundary fetches

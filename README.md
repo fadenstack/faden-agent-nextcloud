@@ -48,6 +48,9 @@ including a user-tested real-server conversation from the full-screen Text edito
   Optional **Agent actions** provides governed Undo/Redo for eligible private text
   updates. It requires the companion command SDK and gateway contract; see
   [administrator setup](docs/admin-guide.md). Additional app tools remain planned.
+- **Inspect outcome** verifies an interrupted private text update and records its
+  content state after approval. It never repeats the write; inconclusive bytes
+  remain unresolved.
 - Per-user session capabilities, server permissions, CSRF, CSP, sanitized Markdown,
   the chat in English, German, French, Spanish and Simplified Chinese (the user
   picks it in the settings; Automatic is their Nextcloud language), the app's own
@@ -68,7 +71,7 @@ npm run build
 npm run package
 ```
 
-Extract `build/fadenstack_agent-0.1.4.tar.gz` into Nextcloud's `custom_apps` directory.
+Extract `build/fadenstack_agent-0.1.5.tar.gz` into Nextcloud's `custom_apps` directory.
 Keep the resulting folder name `fadenstack_agent`, then run
 `php occ app:enable fadenstack_agent` as the Nextcloud web user. For upgrades, use
 Nextcloud's normal `occ upgrade` lifecycle. Version 0.1.2 creates four app-owned

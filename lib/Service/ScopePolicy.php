@@ -18,7 +18,7 @@ class ScopePolicy {
 	public const CONFIG_KEY = 'scope_policy';
 	public const FILE_TOOLS = ['nc_get_file_metadata', 'nc_search_in_file', 'nc_search_content', 'nc_search_files',
 		'nc_get_selected_file', 'nc_read_file', 'nc_list_folder', 'nc_create_text_file', 'nc_update_text_file'];
-	public const HISTORY_TOOLS = ['nc_actions_undo', 'nc_actions_redo'];
+	public const HISTORY_TOOLS = ['nc_actions_undo', 'nc_actions_redo', 'nc_actions_reconcile'];
 	private const LIMITS = ['calls' => 30, 'mutations' => 10, 'elapsedMs' => 180000, 'resultBytes' => 262144, 'records' => 200, 'bulkItems' => 20];
 	private const CLASSES = ['standard', 'protected', 'unknown'];
 	private const AUDIENCES = ['private', 'shared', 'public', 'unknown'];
