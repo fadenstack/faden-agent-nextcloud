@@ -16,8 +16,9 @@
   minutes. Revision/path changes require reselection.
 - Conversation history exists only in the current page runtime; no SSO. Version
   0.1.2 adds encrypted server-side action receipts/snapshots for existing writes,
-  with quotas and retention. This does not enable Undo/Redo controls or typed
-  inverses. Cloud-principal binding, key rotation, production-database races and
+  with quotas and retention. An internal whole-text update inverse/redo executor
+  is native-tested but has no route, tool or UI control. Cloud-principal binding,
+  compatible SDK commands, key rotation, production-database races and
   inspected resolution of expired unknown effects remain release gates.
 - The new 0.1.2 scope/journal/activity foundation is tested on NC35 with SQLite.
   It does not inherit NC31 acceptance from earlier search-only checks. Different
@@ -29,6 +30,10 @@
   not fixed here.
 - Updates require seekable Nextcloud write streams. I/O failures can leave partial
   content after writing starts; no success is reported. Versioning aids recovery.
+  Current native file size/ETag and parent metadata are refreshed explicitly after
+  flushing, under the native write lock. Native workflow/event side effects of
+  streamed writes require separate acceptance; this is not a universal transaction
+  around other installed apps' hooks.
 - Folder output is bounded, but Nextcloud materializes the underlying directory.
 - Primary German elements are translated; server/profile/error text can remain English.
 - Production npm audit passes. Inherited developer tooling has remaining transitive

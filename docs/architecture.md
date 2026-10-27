@@ -56,7 +56,8 @@ an answer, and never also the drawer.
   approves that exact proposal; the host tool then commits it. Write tools use the
   SDK's stricter destructive class to require individual approval in every mode.
   Updates open the public `File::fopen('r+')` write stream and compare storage ETags
-  under its exclusive lock before truncating/writing. Creations reauthorize the
+  and the approved before-state bytes under its exclusive lock before
+  truncating/writing. Creations reauthorize the
   parent and use native DAV `If-None-Match: *` with an expiring one-use receipt
   verifying the exact content and destination. There is no overwrite fallback.
 - Fadenstack calls go directly from the browser to the configured origin, with
@@ -71,8 +72,19 @@ an answer, and never also the drawer.
   against the recorded action, current native scope, object/parent/path, storage
   revision and exact bytes. `FilesHistoryPlan` is immutable preview data. Preparing
   or revalidating it performs no native write, claims no approval and exposes no
-  new route/tool. A future typed executor must repeat the checks under the native
-  write stream and pass current governance/approval before dispatch.
+  new route/tool. The internal `FilesHistoryExecutor` claims one journal attempt,
+  repeats target/policy/revision/byte checks under the native write stream, applies
+  only the recorded whole-text inverse/forward value and verifies native readback.
+  It has no HTTP/controller/tool/UI caller. Trusted principal-pair binding,
+  compatible SDK commands and current central authorization/individual approval
+  must be integrated before enabling history execution.
+- Guarded stream writes flush and use public `IUpdater`/`IScanner` interfaces
+  while the native write lock is held. This refreshes size, parent metadata and
+  the file ETag, including repeated writes within one second. Native `fopen`
+  emits node hooks when opened; closing alone does not update the file cache.
+  Complete native workflow/event side-effect acceptance remains a release gate:
+  opening a write stream can itself emit events before a guarded byte write is
+  dispatched. A rejected byte update does not establish absence of those effects.
 
 One reusable `NextcloudSearchService` composes those existing boundaries for
 discovery, metadata, authorized extraction and passages. Its PHP counterpart

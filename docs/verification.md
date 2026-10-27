@@ -1,5 +1,26 @@
 # Pilot verification — 13 October 2026
 
+## 27 October: internal Files history execution
+
+The new native executor is tested on the isolated Nextcloud 35.0.1/SQLite clone.
+The actual Files broker's journal is reversed and reapplied with exact-byte and
+native ID checks. Human edits, stale/competing claims, changed paths, substituted
+plans, native scope, audience and user changes refuse execution. Empty originals
+and outputs retain correct native size/ETag metadata. Independent DAV HTTP
+readback checks both metadata and saved bytes.
+
+A real quota-limited write fails after truncation and retains an unresolved action,
+snapshots and resource claim. A separate PHP process holding a native read stream
+blocks the write lock; the uncommitted claim is released and a fresh plan succeeds
+after that lock is released. Stateful suites run sequentially. Test drivers are
+under `tests/integration/history-execute*.php` and require the disposable-fixture
+environment marker; the external runner also verifies container labels/mounts.
+
+This does not verify a cloud-governed history button or enable an execution route.
+The published SDK dependency remains 0.2.0-rc.2. Production databases, encrypted and
+external storage, other supported Nextcloud versions, native workflow side effects
+and the complete history release matrix remain unaccepted.
+
 ## The SDK's Vue panel (SDK 0.2.0-rc.2)
 
 The hand-made chat was replaced by `@fadenstack/ui-vue` with `@fadenstack/ui-web`, from npm.

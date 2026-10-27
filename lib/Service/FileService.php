@@ -285,6 +285,19 @@ class FileService {
 		}
 	}
 
+	/** Call after flushing a guarded stream, before releasing its native write lock. */
+	public static function updateStreamMetadata(File $file): void {
+		$storage = $file->getStorage();
+		$path = $file->getInternalPath();
+		// The updater propagates the actual size delta and parent metadata. Its
+		// scanner may reuse an ETag for same-second local writes, so explicitly
+		// rescan this one file without reuse while our exclusive lock is held.
+		$storage->getUpdater()->update($path);
+		if ($storage->getScanner()->scanFile($path, 0, -1, null, false) === null) {
+			throw new Problem('The saved metadata could not be confirmed. Inspect the file before retrying.', 409);
+		}
+	}
+
 	public function propose(string $contextId, string $operation, string $filename, string $content, string $expectedEtag): array {
 		if (strlen($content) > self::MAX_WRITE_BYTES || !mb_check_encoding($content, 'UTF-8') || str_contains($content, "\0")) {
 			throw new Problem('The replacement must be UTF-8 text of at most 256 KiB.', 413);
@@ -415,6 +428,13 @@ class FileService {
 					if (!stream_get_meta_data($stream)['seekable'] || !rewind($stream)) {
 						throw new Problem('This storage does not support guarded text updates.', 422);
 					}
+					$current = stream_get_contents($stream, self::MAX_WRITE_BYTES + 1);
+					if (!is_string($current) || !hash_equals(hash('sha256', $p['before']), hash('sha256', $current))) {
+						throw new Problem('Another user changed the file. Read it again; no changes were saved.', 409);
+					}
+					if (!rewind($stream)) {
+						throw new Problem('This storage does not support guarded text updates.', 422);
+					}
 					$this->journal->markDispatched($this->journalIdentity(), $journal['id'], $journal['ticket']);
 					$dispatched = true;
 					if (!ftruncate($stream, 0)) {
@@ -428,8 +448,14 @@ class FileService {
 						}
 						$offset += $written;
 					}
+					if (!fflush($stream)) {
+						throw new Problem('The storage could not complete the write. Inspect the file before retrying.', 500);
+					}
+					// fopen's node hooks run before stream changes. Refresh the native
+					// cache through its public updater before releasing the write lock.
+					self::updateStreamMetadata($n);
 				} finally {
-					fclose($stream); // Nextcloud updates metadata, fires hooks and releases its write lock.
+					fclose($stream); // Releases Nextcloud's write lock.
 				}
 			} catch (\Throwable $error) {
 				if ($dispatched) {

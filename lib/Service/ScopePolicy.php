@@ -260,9 +260,10 @@ class ScopePolicy {
 			'sourceClass' => $class, 'audience' => $this->audience($node), 'scope' => $scope];
 	}
 
-	public function assertMovement(Node $source, Node $destination): void {
+	/** Disable the read probe only while holding an already-authorized native write stream. */
+	public function assertMovement(Node $source, Node $destination, bool $probe = true): void {
 		$policy = $this->currentPolicy();
-		$from = $this->describeNode($source, 'read');
+		$from = $this->describeNode($source, 'read', $probe);
 		$to = $this->describeNode($destination, 'write');
 		if ($to['audience'] === 'unknown' || !in_array($to['audience'], $policy['destinationAudiences'], true)
 			|| !in_array(['source' => $from['sourceClass'], 'destination' => $to['audience']], $policy['movements'], true)) {

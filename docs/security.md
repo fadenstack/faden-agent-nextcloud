@@ -13,8 +13,10 @@ Writes use immutable proposals (ten minutes, ≤10 pending, ≤256 KiB replaceme
 original preview). Only the user's Allow click marks that exact proposal approved;
 the SDK then commits it once. Creation reauthorizes the parent, uses native WebDAV
 `If-None-Match: *`, and verifies an expiring one-use destination/content receipt.
-Updates use a permission-checked Nextcloud write stream and compare storage ETags
-under its exclusive lock before changing bytes. Storage failures after writing
+Updates use a permission-checked Nextcloud write stream and compare both storage
+ETags and the exact approved before-state hash under its exclusive lock before
+changing bytes. Native local ETags can collide for same-size/mtime changes;
+the byte comparison refuses that conflict. Storage failures after writing
 begins may leave partial content; the error asks the user to inspect the file.
 Nextcloud versioning remains the recovery mechanism where enabled.
 
@@ -29,6 +31,17 @@ It binds native user/configuration/session, not a verified cloud principal pair.
 Key rotation, production-database concurrency and deletion/recreation inverses
 remain release gates. Keep the Nextcloud instance secret with journal backups;
 changing it without a migration makes authentication/decryption fail closed.
+
+The internal `FilesHistoryExecutor` accepts only a revalidated immutable typed
+whole-text update plan. It claims the journal action once, repeats native target,
+write/movement policy, storage revision and content-hash checks under a seekable
+exclusive stream, and records success only after verified native readback.
+Pre-dispatch failures release the claim without losing the action. Failures after
+dispatch retain `needs_reconciliation`, both snapshots and the resource claim;
+they cannot be retried automatically. This service has no controller/tool/UI caller.
+Its plan/digest is not an approval or cloud execution permit. Current central
+governance, exact individual approval and trusted native/cloud identity binding
+remain mandatory before it can be exposed.
 
 Modifying endpoints retain CSRF and use explicit session handling. Admin settings
 retain administrator middleware. The app's toggle is `integration_enabled`;
