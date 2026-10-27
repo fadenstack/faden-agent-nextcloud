@@ -18,7 +18,9 @@ service, database migration, background crawler or new document index.
 
 The app's new 0.1.2 action journal does require its own four-table migration and
 hourly retention job. Use normal `occ upgrade` and keep Nextcloud background jobs
-running. The new journal/scope/activity foundation has isolated NC35 acceptance;
+running. Version 0.1.3 adds an owner-wide generation counter to the journal quota
+table; its normal migration preserves existing encrypted entries and byte quotas.
+The journal/scope/activity foundation has isolated NC35 acceptance;
 the earlier NC31 search results below do not validate this new foundation on 31.
 The administrator-owned `scope_policy` app setting can restrict native sources,
 destinations, classifications, audiences and turn limits. Invalid policy fails

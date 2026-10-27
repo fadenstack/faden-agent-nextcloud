@@ -22,6 +22,13 @@ final class JournalResource {
 		return hash('sha256', json_encode([$identity->ownerHash, $identity->scopeHash, $this->provider, $this->reference], JSON_THROW_ON_ERROR));
 	}
 
+	/** Private namespaces may still address the same native object or creation target. */
+	public function conflictsWith(self $other): bool {
+		return $this->provider === $other->provider && ($this->reference === $other->reference
+			|| ($this->provider === 'files' && str_starts_with($this->authorityReference, 'file:')
+				&& $this->authorityReference === $other->authorityReference));
+	}
+
 	public function toArray(): array {
 		return ['provider' => $this->provider, 'reference' => $this->reference, 'authorityReference' => $this->authorityReference];
 	}

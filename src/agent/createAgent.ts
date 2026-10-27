@@ -116,7 +116,7 @@ export class NextcloudAgent {
 			})
 			// What the app brings, for the agent's Apps tab: its tools, the context it offers, and the greeting and
 			// suggestions an administrator can take in, so the empty chat starts with ready questions.
-			.describeApp({ name: 'Nextcloud Files', version: '0.1.2', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
+			.describeApp({ name: 'Nextcloud Files', version: '0.1.3', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
 			.build()
 		const locale = config.locale ?? navigator.language
 		this.chat = new AgentChatViewModel(this.agent, this.approvals, {

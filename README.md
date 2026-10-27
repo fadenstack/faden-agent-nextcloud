@@ -66,12 +66,14 @@ npm run build
 npm run package
 ```
 
-Extract `build/fadenstack_agent-0.1.2.tar.gz` into Nextcloud's `custom_apps` directory.
+Extract `build/fadenstack_agent-0.1.3.tar.gz` into Nextcloud's `custom_apps` directory.
 Keep the resulting folder name `fadenstack_agent`, then run
 `php occ app:enable fadenstack_agent` as the Nextcloud web user. For upgrades, use
 Nextcloud's normal `occ upgrade` lifecycle. Version 0.1.2 creates four app-owned
-journal tables and registers an hourly retention job; normal Nextcloud background
-jobs must run. No runtime PHP package dependencies are required.
+journal tables and registers an hourly retention job. Version 0.1.3 adds an
+owner-wide history generation counter without rewriting encrypted entries.
+Normal Nextcloud background jobs must run. No runtime PHP package dependencies
+are required.
 
 In **Administration settings → Additional settings → Fadenstack Agent**, configure
 the HTTPS server origin, published agent identifier and integration toggle. Reload

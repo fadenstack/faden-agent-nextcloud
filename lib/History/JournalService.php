@@ -46,8 +46,18 @@ final class JournalService {
 		$payload = ['schema' => 1, 'forward' => $forward, 'inverse' => $inverse, 'preconditions' => $preconditions, 'revision' => null];
 		$this->setPayload($row, $payload);
 		$this->store->ensureQuotaRows($identity->ownerHash, $row['resource_hash']);
-		$row = $this->store->atomic(function () use ($row): array {
+		$row = $this->store->atomic(function () use ($row, $resource): array {
 			$row['resource_seq'] = $this->store->reserve($row['owner_hash'], $row['resource_hash'], $row['action_id'], $row['payload_bytes'], $this->policy);
+			$entries = 0;
+			foreach ($this->coordinated($row['owner_hash'], $resource) as $other) {
+				if (in_array($other['state'], self::BUSY, true)) {
+					throw new JournalException('resource_busy_or_quota');
+				}
+				$entries += $other['payload'] !== null ? 1 : 0;
+			}
+			if ($entries >= $this->policy->maxResourceEntries) {
+				throw new JournalException('resource_busy_or_quota');
+			}
 			$row = $this->cipher->sign($row);
 			$this->store->insertEntry($row);
 			$this->store->appendAttempt($this->cipher->receipt($row, 'prepared'));
@@ -101,15 +111,20 @@ final class JournalService {
 		}
 		$ticket = bin2hex(random_bytes(32));
 		return $this->store->atomic(function () use ($identity, $row, $direction, $ticket): array {
+			$this->store->lockOwner($row['owner_hash']);
 			$this->store->lockResource($row);
-			foreach ($this->store->owned($row['owner_hash'], $row['scope_hash'], $row['resource_hash']) as $other) {
-				$this->cipher->verify($other);
+			foreach ($this->coordinated($row['owner_hash'], JournalResource::fromArray(json_decode($row['resource_json'], true, 8, JSON_THROW_ON_ERROR))) as $other) {
 				if ($other['action_id'] === $row['action_id']) {
 					continue;
 				}
+				// Generation is global for new records. Legacy scopes may have
+				// incomparable generations; time/ties then conservatively refuse.
+				$later = $other['resource_seq'] > $row['resource_seq'] || $other['created_at'] > $row['created_at'];
+				$earlier = $other['resource_seq'] < $row['resource_seq'] || $other['created_at'] < $row['created_at'];
+				$ambiguous = $other['resource_seq'] === $row['resource_seq'] && $other['created_at'] === $row['created_at'];
 				if (in_array($other['state'], self::BUSY, true)
-					|| ($direction === 'undo' && $other['resource_seq'] > $row['resource_seq'] && $other['state'] === 'applied')
-					|| ($direction === 'redo' && $other['resource_seq'] < $row['resource_seq'] && $other['state'] === 'undone')) {
+					|| ($direction === 'undo' && ($later || $ambiguous) && $other['state'] === 'applied')
+					|| ($direction === 'redo' && ($earlier || $ambiguous) && $other['state'] === 'undone')) {
 					throw new JournalException('dependent_action');
 				}
 			}
@@ -164,6 +179,7 @@ final class JournalService {
 			throw new JournalException('state_conflict');
 		}
 		return $this->store->atomic(function () use ($row): array {
+			$this->store->lockOwner($row['owner_hash']);
 			$updated = $row;
 			$updated['state'] = match ($row['direction']) {
 				'apply' => 'cancelled', 'undo' => 'applied', 'redo' => 'undone'
@@ -195,6 +211,7 @@ final class JournalService {
 			$this->cipher->verify($row);
 			if ($row['payload'] !== null && $row['expires_at'] <= $this->now()) {
 				$this->store->atomic(function () use ($row): void {
+					$this->store->lockOwner($row['owner_hash']);
 					$updated = $row;
 					$this->purgePayload($row, $updated);
 					$updated['state'] = in_array($row['state'], self::DISPATCHED, true) ? 'needs_reconciliation' : 'expired';
@@ -208,7 +225,10 @@ final class JournalService {
 				$count++;
 			} elseif ($row['payload'] === null && $row['updated_at'] < $this->now() - 2592000
 				&& in_array($row['state'], ['expired', 'failed', 'cancelled', 'redo_invalidated'], true)) {
-				$this->store->atomic(fn () => $this->store->purgeTerminal($row));
+				$this->store->atomic(function () use ($row): void {
+					$this->store->lockOwner($row['owner_hash']);
+					$this->store->purgeTerminal($row);
+				});
 			}
 		}
 		return $count;
@@ -235,6 +255,7 @@ final class JournalService {
 			}
 		}
 		return $this->store->atomic(function () use ($row, $outcome, $readback, $payload): array {
+			$this->store->lockOwner($row['owner_hash']);
 			$updated = $row;
 			if ($outcome === 'unknown') {
 				$updated['state'] = 'needs_reconciliation';
@@ -266,8 +287,7 @@ final class JournalService {
 	}
 
 	private function invalidateRedo(array $new): void {
-		foreach ($this->store->owned($new['owner_hash'], $new['scope_hash'], $new['resource_hash']) as $row) {
-			$this->cipher->verify($row);
+		foreach ($this->coordinated($new['owner_hash'], JournalResource::fromArray(json_decode($new['resource_json'], true, 8, JSON_THROW_ON_ERROR))) as $row) {
 			if ($row['action_id'] !== $new['action_id'] && $row['state'] === 'undone') {
 				$updated = $row;
 				$updated['state'] = 'redo_invalidated';
@@ -275,6 +295,19 @@ final class JournalService {
 				$this->transition($row, $updated, 'redo_invalidated');
 			}
 		}
+	}
+
+	/** Internal coordination only: no other scope's payload is decrypted or returned. */
+	private function coordinated(string $owner, JournalResource $resource): array {
+		$matching = [];
+		foreach ($this->store->owned($owner) as $row) {
+			$this->cipher->verify($row);
+			$other = JournalResource::fromArray(json_decode($row['resource_json'], true, 8, JSON_THROW_ON_ERROR));
+			if ($resource->conflictsWith($other)) {
+				$matching[] = $row;
+			}
+		}
+		return $matching;
 	}
 
 	private function owned(JournalIdentity $identity, string $id): array {

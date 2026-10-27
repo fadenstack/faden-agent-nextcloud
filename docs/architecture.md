@@ -90,8 +90,16 @@ an answer, and never also the drawer.
   HTTP client. `JournalIdentity::forPrincipal` separates cloud tenant/user/agent
   namespaces while retaining native-user quotas; device/profile drift invalidates
   claim sessions. They do not change the active Files broker's native-only identity
-  or add an endpoint. Native HTTP acceptance and full governed wiring must precede
-  exposing history. Existing SDK sign-in remains independent of enterprise SSO.
+  or add an endpoint. Native loopback HTTP and paired journal execution are tested
+  independently of real gateway authentication. Full governed wiring and deployment
+  TLS acceptance must precede exposing history. SDK sign-in remains independent of
+  enterprise SSO.
+- Version 0.1.3 coordinates history claims, dependencies, Redo invalidation and
+  retention limits across private scopes belonging to the same native user. Files
+  references also conflict when they resolve to the same native file ID. The owner
+  quota row serializes these decisions; old encrypted rows and MACs stay unchanged.
+  This is not a lock across different native users or a transaction around native
+  storage and other installed apps.
 
 One reusable `NextcloudSearchService` composes those existing boundaries for
 discovery, metadata, authorized extraction and passages. Its PHP counterpart

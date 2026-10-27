@@ -58,18 +58,26 @@ final class SqlJournalStore {
 		}
 	}
 
-	/** Call in atomic(). Returns the next per-resource sequence. */
+	/** Call in atomic(). Returns the next native-owner generation across private scopes. */
 	public function reserve(string $owner, string $resource, string $id, int $bytes, JournalPolicy $policy): int {
 		if ($bytes > $policy->maxUserBytes || $this->db->executeStatement(
-			'UPDATE *PREFIX*fdn_jr_owners SET used_bytes = used_bytes + ?, entries = entries + 1 WHERE owner_hash = ? AND used_bytes <= ? AND entries < ?',
+			'UPDATE *PREFIX*fdn_jr_owners SET used_bytes = used_bytes + ?, entries = entries + 1, action_seq = action_seq + 1 WHERE owner_hash = ? AND used_bytes <= ? AND entries < ? AND action_seq < 2147483647',
 			[$bytes, $owner, $policy->maxUserBytes - $bytes, $policy->maxUserEntries]) !== 1) {
 			throw new JournalException('user_quota', 507);
 		}
-		if ($this->db->executeStatement('UPDATE *PREFIX*fdn_jr_resources SET active_id = ?, resource_seq = resource_seq + 1, entries = entries + 1 WHERE resource_hash = ? AND owner_hash = ? AND active_id IS NULL AND entries < ?',
-			[$id, $resource, $owner, $policy->maxResourceEntries]) !== 1) {
+		$sequence = (int)$this->one('SELECT action_seq FROM *PREFIX*fdn_jr_owners WHERE owner_hash = ?', [$owner])['action_seq'];
+		if ($this->db->executeStatement('UPDATE *PREFIX*fdn_jr_resources SET active_id = ?, resource_seq = ?, entries = entries + 1 WHERE resource_hash = ? AND owner_hash = ? AND active_id IS NULL AND entries < ?',
+			[$id, $sequence, $resource, $owner, $policy->maxResourceEntries]) !== 1) {
 			throw new JournalException('resource_busy_or_quota');
 		}
-		return (int)$this->one('SELECT resource_seq FROM *PREFIX*fdn_jr_resources WHERE resource_hash = ?', [$resource])['resource_seq'];
+		return $sequence;
+	}
+
+	/** A real value change takes the owner lock without relying on no-op row-count semantics. */
+	public function lockOwner(string $owner): void {
+		if ($this->db->executeStatement('UPDATE *PREFIX*fdn_jr_owners SET action_seq = action_seq + 1 WHERE owner_hash = ? AND action_seq < 2147483647', [$owner]) !== 1) {
+			throw new JournalException('journal_owner_unavailable', 503);
+		}
 	}
 
 	public function lockResource(array $row): void {
@@ -136,7 +144,7 @@ final class SqlJournalStore {
 
 	public function resizePayload(array $row, int $newBytes, JournalPolicy $policy): void {
 		$delta = $newBytes - (int)$row['payload_bytes'];
-		if ($this->db->executeStatement('UPDATE *PREFIX*fdn_jr_owners SET used_bytes = used_bytes + ? WHERE owner_hash = ? AND used_bytes >= ? AND used_bytes <= ?',
+		if ($delta !== 0 && $this->db->executeStatement('UPDATE *PREFIX*fdn_jr_owners SET used_bytes = used_bytes + ? WHERE owner_hash = ? AND used_bytes >= ? AND used_bytes <= ?',
 			[$delta, $row['owner_hash'], max(0, -$delta), $policy->maxUserBytes - max(0, $delta)]) !== 1) {
 			throw new JournalException('user_quota', 507);
 		}
@@ -182,7 +190,7 @@ final class SqlJournalStore {
 	}
 
 	private function normalize(array $row): array {
-		foreach (['version', 'resource_seq', 'payload_bytes', 'created_at', 'updated_at', 'expires_at', 'used_bytes', 'entries'] as $column) {
+		foreach (['version', 'resource_seq', 'action_seq', 'payload_bytes', 'created_at', 'updated_at', 'expires_at', 'used_bytes', 'entries'] as $column) {
 			if (isset($row[$column])) {
 				$row[$column] = (int)$row[$column];
 			}

@@ -59,8 +59,19 @@ does not adopt legacy native-only records. These primitives have no controller
 or active Files-journal caller yet. Identity verification is not a tool grant or
 approval. Fresh verification must join current native ACL/scope, central policy,
 exact approval and claim/readback guards at every future history boundary. Native
-HTTP/CA/private-network acceptance, server revocation latency, cross-principal
-resource ordering, SDK compatibility and governed UI integration remain open.
+CA/deployment-network acceptance, server revocation latency, SDK compatibility and
+governed UI integration remain open. Native loopback HTTP verifies refusal of
+redirects, revoked grants, malformed/oversized profiles and slow responses.
+
+Version 0.1.3 shares native-user history coordination across those private scopes:
+an unresolved action cannot be bypassed by switching cloud identity/configuration
+or using another reference to the same file ID. Claims, dependency checks and Redo
+invalidation serialize on the native owner's quota row. Coordination verifies
+metadata MACs without decrypting or returning another scope's snapshot. The normal
+migration initializes a shared generation counter and leaves old signed/encrypted
+entries unchanged; ambiguous legacy ordering refuses reversal conservatively.
+This has native SQLite upgrade and competing-process coverage, not production
+database or cross-native-user/shared-file acceptance.
 
 Modifying endpoints retain CSRF and use explicit session handling. Admin settings
 retain administrator middleware. The app's toggle is `integration_enabled`;

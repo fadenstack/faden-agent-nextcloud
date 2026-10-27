@@ -1,5 +1,17 @@
 # Pilot verification — 13 October 2026
 
+## 27 October: private scopes and shared native history
+
+The 0.1.2 → 0.1.3 normal app upgrade passes on a local isolated Nextcloud
+35.0.2/PHP8.5.12/SQLite clone. Old journal rows, ciphertext and MACs remain byte
+identical. Native HTTP verification plus paired typed Undo/Redo, scope revocation,
+unknown effects, cross-cloud dependencies, Redo invalidation and shared resource
+limits pass 37 checks. Five barrier-released two-process file-reference races
+each produce one durable claim and one resource conflict. The driver is
+`tests/integration/history-principal.php`; the issuer is a synthetic loopback
+fixture, with real gateway authentication tested separately. These checks do not
+enable public history or establish deployment TLS/production-database acceptance.
+
 ## 27 October: internal Files history execution
 
 The new native executor is tested on the isolated Nextcloud 35.0.1/SQLite clone.

@@ -20,6 +20,10 @@
   is native-tested but has no route, tool or UI control. Cloud-principal binding,
   compatible SDK commands, key rotation, production-database races and
   inspected resolution of expired unknown effects remain release gates.
+- Version 0.1.3 coordinates private cloud/configuration scopes within one native
+  user. Upgrade and two-process alias races pass on NC35.0.2/PHP8.5.12/SQLite.
+  Cross-native-user shared-file history and production database races remain open;
+  no public paired-history endpoint or control is enabled.
 - The new 0.1.2 scope/journal/activity foundation is tested on NC35 with SQLite.
   It does not inherit NC31 acceptance from earlier search-only checks. Different
   source/destination roots and app-specific dirty/refresh adapters remain open.
