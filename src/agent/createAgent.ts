@@ -5,6 +5,7 @@ import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
+import { filesExtendedTools, EXTENDED_FILES_MUTATIONS, validateFolderName, validateCopyMoveArgs, validateShareReadonlyArgs, type ExtendedProposal } from '../integrations/nextcloud/filesExtended.ts'
 import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults, HistoryDirection, HistoryItem, HistoryPreview, HistoryAvailability } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 import type { MutationBinding, WorkspaceCoordinator } from '../workspace/coordinator.ts'
@@ -25,6 +26,7 @@ export class NextcloudAgent {
 	readonly approvals = new ApprovalBroker()
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
+	readonly #extendedProposals = new Map<string, ExtendedProposal>()
 	readonly #historyPreviews = new Map<string, HistoryPreview>()
 	readonly history = shallowReactive({ items: [] as HistoryItem[], availability: undefined as HistoryAvailability | undefined, loading: false, error: '', active: false, target: '', inspecting: false, verifying: false })
 	readonly #proposalViews = new Map<string, MutationBinding>()
@@ -72,8 +74,10 @@ export class NextcloudAgent {
 		}
 		this.tokens = new AgentTokenProvider({ apiUrl: config.serverUrl, agent: config.agent, store: new MemoryTokenStore(), fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
+		const extendedFiles = (config.extendedFilesEnabled || config.scopePolicy?.tools?.some(t => EXTENDED_FILES_MUTATIONS.has(t))) && !!files.createFolder
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
 			.addTools(...nextcloudTools(this))
+			.addTools(...(extendedFiles ? filesExtendedTools(this) : []))
 			.addTools(...(config.historyEnabled && files.history ? historyTools(this) : []))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
@@ -86,7 +90,7 @@ export class NextcloudAgent {
 					this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
 					const result = await next(invocation)
-					try { this.#scope?.budget.consumeResult(result, resultRecords(result)) } catch (error) { if (WRITE_TOOLS.has(invocation.tool.name) || HISTORY_TOOLS.has(invocation.tool.name)) this.#writeBlocked = true; throw error }
+					try { this.#scope?.budget.consumeResult(result, resultRecords(result)) } catch (error) { if (WRITE_TOOLS.has(invocation.tool.name) || HISTORY_TOOLS.has(invocation.tool.name) || EXTENDED_FILES_MUTATIONS.has(invocation.tool.name)) this.#writeBlocked = true; throw error }
 					return result
 				},
 			})
@@ -108,6 +112,19 @@ export class NextcloudAgent {
 							canAllowAlways: false,
 							canAllowForSession: false,
 							arguments: { ...request.arguments, historyPreviewId: preview.id, digest: preview.digest, target: preview.target, before: preview.before, content: preview.content, ...(preview.resolution ? { resolution: preview.resolution } : {}), ...(preview.revalidation ? { revalidation: preview.revalidation } : {}) },
+						}
+					}
+					if (EXTENDED_FILES_MUTATIONS.has(request.toolName) && request.source === 'host') {
+						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+						const binding = this.workspace?.prepare('files')
+						const plan = await this.planExtendedMutation(request.toolName, request.arguments, signal)
+						this.#extendedProposals.set(request.callId, plan)
+						if (binding) this.#proposalViews.set(request.callId, binding)
+						request = {
+							...request,
+							canAllowAlways: false,
+							canAllowForSession: false,
+							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after },
 						}
 					}
 					if (WRITE_TOOLS.has(request.toolName) && request.source === 'host') {
@@ -133,7 +150,15 @@ export class NextcloudAgent {
 						}
 					}
 					const result = await this.approvals.request(request, signal)
-					if (!result.approved) { this.#proposals.delete(request.callId); this.cancelHistory(request.callId); this.#proposalViews.delete(request.callId); this.#proposalResources.delete(request.callId); this.#proposalParents.delete(request.callId); if (WRITE_TOOLS.has(request.toolName) || HISTORY_TOOLS.has(request.toolName)) this.#writeBlocked = true }
+					if (!result.approved) {
+						this.#proposals.delete(request.callId)
+						this.#extendedProposals.delete(request.callId)
+						this.cancelHistory(request.callId)
+						this.#proposalViews.delete(request.callId)
+						this.#proposalResources.delete(request.callId)
+						this.#proposalParents.delete(request.callId)
+						if (WRITE_TOOLS.has(request.toolName) || HISTORY_TOOLS.has(request.toolName) || EXTENDED_FILES_MUTATIONS.has(request.toolName)) this.#writeBlocked = true
+					}
 					return result
 				},
 			})
@@ -351,6 +376,72 @@ export class NextcloudAgent {
 		}
 	}
 
+	private async planExtendedMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<ExtendedProposal> {
+		await this.files.assertIdentity(signal)
+		if (name === 'nc_files_create_folder') {
+			const folderName = validateFolderName(args.name)
+			const parent = String(args.resource_id ?? (this.turnContext ? this.turnContext.file.path : '/'))
+			const target = `${parent.replace(/\/$/, '')}/${folderName}`
+			return { name, args: { ...args }, target, before: null, after: { folder: folderName }, revision: `create_folder:${target}` }
+		}
+		if (name === 'nc_files_copy' || name === 'nc_files_move') {
+			const v = validateCopyMoveArgs(args)
+			const target = `${name === 'nc_files_copy' ? 'Copy' : 'Move'}: ${v.source} to ${v.destination}`
+			return { name, args: { ...args }, target, before: { expectedEtag: v.expectedEtag }, after: { destination: v.destination }, revision: `${name}:${v.source}:${v.destination}:${v.expectedEtag}` }
+		}
+		if (name === 'nc_files_share_readonly') {
+			const v = validateShareReadonlyArgs(args)
+			const target = `Read-only share of ${v.path} with ${v.recipientUserId}`
+			return { name, args: { ...args }, target, before: { expectedEtag: v.expectedEtag }, after: { recipientUserId: v.recipientUserId, permissions: 1, sendMail: false }, revision: `share:${v.path}:${v.recipientUserId}:${v.expectedEtag}` }
+		}
+		throw new Error('Unsupported operation.')
+	}
+
+	async commitMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		const proposal = this.#extendedProposals.get(call.callId)
+		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.#extendedProposals.delete(call.callId)
+		const binding = this.#proposalViews.get(call.callId)
+		this.#proposalViews.delete(call.callId)
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+		try {
+			let result: unknown
+			if (name === 'nc_files_create_folder') {
+				const parent = String(args.resource_id ?? (this.turnContext ? this.turnContext.file.path : ''))
+				if (!this.files.createFolder) throw new Error('Folder creation is unavailable.')
+				result = await this.files.createFolder(parent, String(args.name), call.signal)
+			} else if (name === 'nc_files_copy') {
+				const v = validateCopyMoveArgs(args)
+				if (!this.files.copyFile) throw new Error('File copying is unavailable.')
+				result = await this.files.copyFile(v.source, v.destination, v.expectedEtag, call.signal)
+			} else if (name === 'nc_files_move') {
+				const v = validateCopyMoveArgs(args)
+				if (!this.files.moveFile) throw new Error('File moving is unavailable.')
+				result = await this.files.moveFile(v.source, v.destination, v.expectedEtag, call.signal)
+			} else if (name === 'nc_files_share_readonly') {
+				const v = validateShareReadonlyArgs(args)
+				if (!this.files.shareReadonly) throw new Error('Read-only sharing is unavailable.')
+				result = await this.files.shareReadonly(v.path, v.recipientUserId, v.expectedEtag, call.signal)
+			} else {
+				throw new Error('Unsupported mutation.')
+			}
+			const activity = binding && generation !== undefined
+				? await this.workspace!.committed(call.callId, generation, binding, {
+					operation: name,
+					file: { id: 0, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
+				}, call.signal)
+				: undefined
+			return activity ? { ...((result as object) ?? {}), view: activity.view } : result
+		} catch (error) {
+			this.#writeBlocked = true
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
+			throw error
+		}
+	}
+
 	async approve(part: ApprovalPart): Promise<void> {
 		if (HISTORY_TOOLS.has(part.toolName) && part.request.source === 'host') {
 			const preview = this.#historyPreviews.get(part.request.callId)
@@ -359,6 +450,11 @@ export class NextcloudAgent {
 			await this.files.history.approve(preview, this.#stop.signal)
 		}
 		const id = part.request.arguments.proposalId
+		if (EXTENDED_FILES_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
+			const proposal = this.#extendedProposals.get(part.request.callId)
+			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+		}
 		if (WRITE_TOOLS.has(part.toolName) && part.request.source === 'host') {
 			const proposal = this.#proposals.get(part.request.callId)
 			if (!proposal || proposal.id !== id || !part.isPending) throw new Error('This proposal is no longer pending.')

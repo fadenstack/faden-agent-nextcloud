@@ -1,4 +1,4 @@
-import { fileCapability, stricterRisk, type FileToolName, type ToolRisk } from './catalog.ts'
+import { fileCapability, stricterRisk, type FileToolName, type NextcloudToolName, type ToolRisk } from './catalog.ts'
 import { ScopeViolation, TurnBudget, type TurnLimits } from './limits.ts'
 
 export type SourceClass = 'standard' | 'protected' | 'unknown'
@@ -28,7 +28,7 @@ export interface ScopePolicy {
 	readonly destinations: readonly FileSourceScope[]
 	readonly destinationAudiences: readonly DestinationAudience[]
 	readonly movements: readonly Readonly<{ source: SourceClass; destination: DestinationAudience }>[]
-	readonly tools: readonly FileToolName[]
+	readonly tools: readonly (FileToolName | NextcloudToolName)[]
 	readonly gatewayOrigin: string
 	readonly sourceClasses: readonly SourceClass[]
 	/** Gateway origin does not attest which downstream model/provider it uses. */
@@ -152,12 +152,12 @@ export class TurnScope {
 		this.budget.assertLive()
 	}
 
-	get offeredTools(): readonly FileToolName[] {
+	get offeredTools(): readonly NextcloudToolName[] {
 		this.assertCurrent()
 		return Object.freeze([...this.#tools.keys()].filter(name => name !== 'nc_search_content' || this.policy.sources.some(source => source.kind === 'user-files'))
 			.filter(name => name !== 'nc_search_files' || this.policy.sources.some(source => source.kind !== 'file'))
 			.filter(name => name !== 'nc_list_folder' || this.policy.sources.some(source => source.kind !== 'file'))
-			.filter(name => fileCapability(name)!.risk === 'read' || this.policy.destinations.length > 0) as FileToolName[])
+			.filter(name => fileCapability(name)!.risk === 'read' || this.policy.destinations.length > 0) as NextcloudToolName[])
 	}
 
 	get durablePrincipalBinding(): boolean { return this.identity.fadenstackPrincipal.kind === 'subject' }

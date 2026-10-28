@@ -6,7 +6,19 @@ export interface AppConfig {
 	agent: string
 	development: boolean
 }
-export interface Identity extends AppConfig { userId: string; binding: string; locale?: string; scopePolicy?: ScopePolicy | null; historyEnabled?: boolean }
+export interface Identity extends AppConfig {
+	userId: string
+	binding: string
+	locale?: string
+	scopePolicy?: ScopePolicy | null
+	historyEnabled?: boolean
+	extendedFilesEnabled?: boolean
+	tablesEnabled?: boolean
+	deckEnabled?: boolean
+	calendarEnabled?: boolean
+	tasksEnabled?: boolean
+	contactsEnabled?: boolean
+}
 export interface FileMetadata {
 	id: number
 	name: string
@@ -128,6 +140,52 @@ export interface DocumentSearchResults {
 }
 export type SearchViewResults = SearchResults | DocumentSearchResults
 
+export interface ShareEntry {
+	id: number
+	shareType: number
+	shareWith?: string
+	shareWithDisplayName?: string
+	permissions: number
+	path: string
+	fileTarget?: string
+	expiration?: string | null
+	mailSend?: boolean
+}
+
+export interface FolderListingEntry {
+	href: string
+	filename: string
+	etag: string
+	folder: boolean
+}
+
+export interface FolderListing {
+	directory: string
+	entries: FolderListingEntry[]
+}
+
+export interface FolderCreateResult {
+	path: string
+	name: string
+	file?: FileMetadata
+}
+
+export interface FileCopyMoveResult {
+	operation: 'copy' | 'move'
+	source: string
+	destination: string
+	etag?: string
+}
+
+export interface AppCapabilities {
+	capabilities?: Record<string, unknown>
+	files_sharing?: { api_enabled?: boolean }
+	tables?: Record<string, unknown>
+	deck?: { version?: string }
+	dav?: Record<string, unknown>
+	[key: string]: unknown
+}
+
 export interface FileApi {
 	history?: HistoryApi
 	setCloudIdentity?(provider?: (signal?: AbortSignal) => Promise<string>): void
@@ -142,4 +200,11 @@ export interface FileApi {
 	approve(id: string, signal?: AbortSignal): Promise<void>
 	commit(id: string, signal?: AbortSignal): Promise<WriteResult>
 	scopeResource?(resourceId: string, purpose: ResourcePurpose, signal: AbortSignal): Promise<NativeResource>
+	createFolder?(folderPath: string, name: string, signal?: AbortSignal): Promise<FolderCreateResult>
+	copyFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>
+	moveFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>
+	sharesRead?(path: string, signal?: AbortSignal): Promise<ShareEntry[]>
+	shareReadonly?(path: string, recipientUserId: string, expectedEtag: string, signal?: AbortSignal): Promise<ShareEntry>
+	organizeRead?(folderPath?: string, signal?: AbortSignal): Promise<FolderListing>
+	getAppCapabilities?(signal?: AbortSignal): Promise<AppCapabilities>
 }
