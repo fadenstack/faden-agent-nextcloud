@@ -1,8 +1,21 @@
 import axios from '@nextcloud/axios'
 import { getRequestToken } from '@nextcloud/auth'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderListingEntry, FolderCreateResult, FileCopyMoveResult, AppCapabilities } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderListingEntry, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
+import { sha256Hex } from './tables.ts'
+
+function resolveRouteTableId(): number | undefined {
+	if (typeof location === 'undefined') return undefined
+	const match = /^#\/table\/([1-9]\d*)\/?$/.exec(location.hash)
+	return match ? Number(match[1]) : undefined
+}
+
+function resolveRouteBoardId(): number | undefined {
+	if (typeof location === 'undefined') return undefined
+	const match = /^#\/board\/([1-9]\d*)\/?$/.exec(location.hash)
+	return match ? Number(match[1]) : undefined
+}
 
 const HISTORY_CONFLICTS: Record<string, string> = {
 	inspection_inconclusive: 'The file content does not establish whether this attempt completed. Its outcome remains unresolved. Review the file and action history before making further changes.',
@@ -22,6 +35,134 @@ export class NextcloudFiles implements FileApi {
 		approve: async (preview, signal) => { await this.authenticatedPost(this.historyPath(preview.id, preview.digest, 'approve'), { digest: preview.digest }, signal) },
 		execute: (preview, signal) => this.authenticatedPost(this.historyPath(preview.id, preview.digest, 'execute'), { digest: preview.digest }, signal),
 		cancel: async (preview, signal) => { await this.authenticatedPost(this.historyPath(preview.id, preview.digest, 'cancel'), { digest: preview.digest }, signal) },
+	}
+
+	readonly tables: TablesApi = {
+		readTable: async (tableId?: number, signal?: AbortSignal): Promise<TableSnapshot> => {
+			await this.assertIdentity(signal)
+			const id = tableId ?? resolveRouteTableId()
+			if (!id) throw new Error('A valid tableId or open native Tables route is required.')
+			const tableUrl = generateUrl(`/apps/tables/api/1/tables/${id}`)
+			const colsUrl = generateUrl(`/apps/tables/api/1/tables/${id}/columns`)
+			const rowsUrl = generateUrl(`/apps/tables/api/1/tables/${id}/rows?limit=101&offset=0`)
+			const [tableRes, colsRes, rowsRes] = await Promise.all([
+				axios.get<TableSnapshot['table']>(tableUrl, { headers: { 'OCS-APIRequest': 'true' }, signal, timeout: 15000 }),
+				axios.get<TableColumn[]>(colsUrl, { headers: { 'OCS-APIRequest': 'true' }, signal, timeout: 15000 }),
+				axios.get<TableRow[]>(rowsUrl, { headers: { 'OCS-APIRequest': 'true' }, signal, timeout: 15000 }),
+			])
+			const rows = rowsRes.data
+			if (rows.length > 100) throw new Error('Prototype limit: open a table with at most 100 rows.')
+			const columns = colsRes.data
+			const schemaRevision = await sha256Hex(columns)
+			return { table: tableRes.data, columns, rows, schemaRevision }
+		},
+		addColumn: async (tableId: number, title: string, type: 'text' | 'number', signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = generateUrl(`/apps/tables/api/1/tables/${tableId}/columns`)
+			const res = await axios.post(url, { title, type, subtype: type === 'text' ? 'line' : '', mandatory: false }, {
+				headers: { 'OCS-APIRequest': 'true', 'Content-Type': 'application/json' },
+				signal,
+				timeout: 15000,
+			})
+			return res.data
+		},
+		addRow: async (tableId: number, cells: Record<string, unknown>, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = generateUrl(`/apps/tables/api/1/tables/${tableId}/rows`)
+			const res = await axios.post(url, { data: cells }, {
+				headers: { 'OCS-APIRequest': 'true', 'Content-Type': 'application/json' },
+				signal,
+				timeout: 15000,
+			})
+			return res.data
+		},
+		updateRow: async (tableId: number, rowId: number, cells: Record<string, unknown>, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = generateUrl(`/apps/tables/api/1/rows/${rowId}`)
+			const res = await axios.put(url, { data: cells }, {
+				headers: { 'OCS-APIRequest': 'true', 'Content-Type': 'application/json' },
+				signal,
+				timeout: 15000,
+			})
+			return res.data
+		},
+		deleteRow: async (tableId: number, rowId: number, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = generateUrl(`/apps/tables/api/1/rows/${rowId}`)
+			const res = await axios.delete(url, {
+				headers: { 'OCS-APIRequest': 'true' },
+				signal,
+				timeout: 15000,
+			})
+			return res.data
+		},
+	}
+
+	readonly deck: DeckApi = {
+		readBoard: async (boardId?: number, signal?: AbortSignal): Promise<DeckBoardSnapshot> => {
+			await this.assertIdentity(signal)
+			const id = boardId ?? resolveRouteBoardId()
+			if (!id) throw new Error('A valid boardId or open native Deck board route is required.')
+			const boardUrl = generateUrl(`/apps/deck/api/v1.0/boards/${id}`)
+			const stacksUrl = generateUrl(`/apps/deck/api/v1.0/boards/${id}/stacks`)
+			const [boardRes, stacksRes] = await Promise.all([
+				axios.get<DeckBoard>(boardUrl, { headers: { 'OCS-APIRequest': 'true' }, signal, timeout: 15000 }),
+				axios.get<DeckStack[]>(stacksUrl, { headers: { 'OCS-APIRequest': 'true' }, signal, timeout: 15000 }),
+			])
+			const totalCards = stacksRes.data.reduce((sum, s) => sum + (s.cards?.length ?? 0), 0)
+			if (totalCards > 50) throw new Error('Limit exceeded: board has more than 50 cards.')
+			return { id, board: boardRes.data, stacks: stacksRes.data }
+		},
+		patchCard: async (boardId: number, stackId: number, cardId: number, cardData: Record<string, unknown>, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = generateUrl(`/apps/deck/api/v1.0/boards/${boardId}/stacks/${stackId}/cards/${cardId}`)
+			const res = await axios.put(url, cardData, {
+				headers: { 'OCS-APIRequest': 'true', 'Content-Type': 'application/json' },
+				signal,
+				timeout: 15000,
+			})
+			return res.data
+		},
+		createCard: async (boardId: number, stackId: number, title: string, description?: string, duedate?: string | null, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = generateUrl(`/apps/deck/api/v1.0/boards/${boardId}/stacks/${stackId}/cards`)
+			const res = await axios.post(url, { title, description: description ?? '', type: 'plain', order: 999, duedate: duedate ?? null }, {
+				headers: { 'OCS-APIRequest': 'true', 'Content-Type': 'application/json' },
+				signal,
+				timeout: 15000,
+			})
+			return res.data
+		},
+		moveCard: async (cardId: number, stackId: number, order = 0, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = generateUrl(`/apps/deck/cards/${cardId}/reorder`)
+			const res = await axios.put(url, { stackId, order }, {
+				headers: { 'OCS-APIRequest': 'true', 'Content-Type': 'application/json' },
+				signal,
+				timeout: 15000,
+			})
+			return res.data
+		},
+		assignCard: async (boardId: number, stackId: number, cardId: number, userId: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = generateUrl(`/apps/deck/api/v1.0/boards/${boardId}/stacks/${stackId}/cards/${cardId}/assignUser`)
+			const res = await axios.put(url, { userId, type: 0 }, {
+				headers: { 'OCS-APIRequest': 'true', 'Content-Type': 'application/json' },
+				signal,
+				timeout: 15000,
+			})
+			return res.data
+		},
+		labelCard: async (boardId: number, stackId: number, cardId: number, labelId: number, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = generateUrl(`/apps/deck/api/v1.0/boards/${boardId}/stacks/${stackId}/cards/${cardId}/assignLabel`)
+			const res = await axios.put(url, { labelId }, {
+				headers: { 'OCS-APIRequest': 'true', 'Content-Type': 'application/json' },
+				signal,
+				timeout: 15000,
+			})
+			return res.data
+		},
 	}
 
 	private historyPath(id: string, digest: string, operation: 'approve' | 'execute' | 'cancel'): string {

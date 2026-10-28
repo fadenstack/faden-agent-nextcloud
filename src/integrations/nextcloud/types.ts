@@ -186,8 +186,100 @@ export interface AppCapabilities {
 	[key: string]: unknown
 }
 
+export interface TableColumn {
+	id: number
+	title: string
+	type: string
+	subtype: string
+	mandatory?: boolean
+	[key: string]: unknown
+}
+
+export interface TableRow {
+	id: number
+	tableId: number
+	data: { columnId: number; value: unknown }[]
+	lastEditBy?: unknown
+	lastEditAt?: unknown
+	[key: string]: unknown
+}
+
+export interface TableSnapshot {
+	table: { id: number; title: string }
+	columns: TableColumn[]
+	rows: TableRow[]
+	schemaRevision: string
+}
+
+export interface TableReadResult {
+	table: { id: number; title: string }
+	schemaRevision: string
+	columns: { id: number; title: string; type: string; subtype: string }[]
+	rows: { id: number; revision: string; cells: Record<string, unknown> }[]
+	instructions: string
+}
+
+export interface TablesApi {
+	readTable(tableId?: number, signal?: AbortSignal): Promise<TableSnapshot>
+	addColumn(tableId: number, title: string, type: 'text' | 'number', signal?: AbortSignal): Promise<unknown>
+	addRow(tableId: number, cells: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
+	updateRow(tableId: number, rowId: number, cells: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
+	deleteRow(tableId: number, rowId: number, signal?: AbortSignal): Promise<unknown>
+}
+
+export interface DeckCard {
+	id: number
+	title: string
+	description: string
+	type: string
+	order: number
+	owner: unknown
+	stackId: number
+	duedate: string | null
+	startdate?: string | null
+	color?: string | null
+	archived: boolean
+	done: string | null
+	assignedUsers?: unknown[]
+	labels?: { id: number; title: string; color: string }[]
+	[key: string]: unknown
+}
+
+export interface DeckStack {
+	id: number
+	title: string
+	cards?: DeckCard[]
+	[key: string]: unknown
+}
+
+export interface DeckBoard {
+	id: number
+	title: string
+	color: string
+	labels: { id: number; title: string; color: string }[]
+	acl?: unknown[]
+	[key: string]: unknown
+}
+
+export interface DeckBoardSnapshot {
+	id: number
+	board: DeckBoard
+	stacks: DeckStack[]
+}
+
+export interface DeckApi {
+	readBoard(boardId?: number, signal?: AbortSignal): Promise<DeckBoardSnapshot>
+	patchCard(boardId: number, stackId: number, cardId: number, cardData: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>
+	createCard(boardId: number, stackId: number, title: string, description?: string, duedate?: string | null, signal?: AbortSignal): Promise<unknown>
+	moveCard(cardId: number, stackId: number, order?: number, signal?: AbortSignal): Promise<unknown>
+	assignCard(boardId: number, stackId: number, cardId: number, userId: string, signal?: AbortSignal): Promise<unknown>
+	labelCard(boardId: number, stackId: number, cardId: number, labelId: number, signal?: AbortSignal): Promise<unknown>
+}
+
 export interface FileApi {
 	history?: HistoryApi
+	tables?: TablesApi
+	deck?: DeckApi
 	setCloudIdentity?(provider?: (signal?: AbortSignal) => Promise<string>): void
 	searchTransport?: SearchTransport
 	identity(signal?: AbortSignal): Promise<Identity>

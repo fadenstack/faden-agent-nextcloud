@@ -19,11 +19,26 @@ export type ExtendedFileToolName =
 	| 'nc_files_share_readonly'
 	| 'nc_files_organize_read'
 
-export type NextcloudToolName = FileToolName | ExtendedFileToolName
+export type TablesToolName =
+	| 'nc_tables_read'
+	| 'nc_tables_add_column'
+	| 'nc_tables_add_row'
+	| 'nc_tables_update_row'
+	| 'nc_tables_delete_row'
+
+export type DeckToolName =
+	| 'nc_deck_read'
+	| 'nc_deck_patch'
+	| 'nc_deck_create'
+	| 'nc_deck_move'
+	| 'nc_deck_assign'
+	| 'nc_deck_label'
+
+export type NextcloudToolName = FileToolName | ExtendedFileToolName | TablesToolName | DeckToolName
 
 export interface FileToolCapability {
 	readonly name: NextcloudToolName
-	readonly subsystem: 'files'
+	readonly subsystem: 'files' | 'tables' | 'deck'
 	readonly risk: ToolRisk
 	readonly effect: FileEffect
 	readonly individualApproval: boolean
@@ -31,12 +46,12 @@ export interface FileToolCapability {
 	readonly reversal: 'not-applicable' | 'not-integrated' | 'supported' | 'compensating-only'
 }
 
-function capability(name: NextcloudToolName, effect: FileEffect, source: FileToolCapability['source'], reversal?: FileToolCapability['reversal']): FileToolCapability {
+function capability(name: NextcloudToolName, effect: FileEffect, source: FileToolCapability['source'], reversal?: FileToolCapability['reversal'], subsystem: 'files' | 'tables' | 'deck' = 'files'): FileToolCapability {
 	const mutation = effect === 'create-file' || effect === 'replace-file' || effect === 'reconcile-history' || effect === 'revalidate-history'
 		|| effect === 'create-folder' || effect === 'copy-file' || effect === 'move-file' || effect === 'share-file'
 	return Object.freeze({
 		name,
-		subsystem: 'files',
+		subsystem,
 		risk: mutation ? 'destructive' : 'read',
 		effect,
 		individualApproval: mutation,
@@ -76,8 +91,27 @@ export const EXTENDED_FILE_CAPABILITIES: readonly FileToolCapability[] = Object.
 	capability('nc_files_organize_read', 'metadata', 'included', 'not-applicable'),
 ])
 
+// NC09: Tables tools slice (five tested tools)
+export const TABLES_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
+	capability('nc_tables_read', 'read-content', 'known-or-included', 'not-applicable', 'tables'),
+	capability('nc_tables_add_column', 'create-file', 'known-or-included', 'compensating-only', 'tables'),
+	capability('nc_tables_add_row', 'create-file', 'known-or-included', 'compensating-only', 'tables'),
+	capability('nc_tables_update_row', 'replace-file', 'known-or-included', 'compensating-only', 'tables'),
+	capability('nc_tables_delete_row', 'replace-file', 'known-or-included', 'compensating-only', 'tables'),
+])
+
+// NC09: Deck focused card tools slice
+export const DECK_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
+	capability('nc_deck_read', 'read-content', 'known-or-included', 'not-applicable', 'deck'),
+	capability('nc_deck_patch', 'replace-file', 'known-or-included', 'compensating-only', 'deck'),
+	capability('nc_deck_create', 'create-file', 'known-or-included', 'compensating-only', 'deck'),
+	capability('nc_deck_move', 'move-file', 'known-or-included', 'compensating-only', 'deck'),
+	capability('nc_deck_assign', 'share-file', 'known-or-included', 'compensating-only', 'deck'),
+	capability('nc_deck_label', 'replace-file', 'known-or-included', 'compensating-only', 'deck'),
+])
+
 export function fileCapability(name: string): FileToolCapability | undefined {
-	return [...FILE_CAPABILITIES, ...HISTORY_CAPABILITIES, ...EXTENDED_FILE_CAPABILITIES].find(tool => tool.name === name)
+	return [...FILE_CAPABILITIES, ...HISTORY_CAPABILITIES, ...EXTENDED_FILE_CAPABILITIES, ...TABLES_CAPABILITIES, ...DECK_CAPABILITIES].find(tool => tool.name === name)
 }
 
 export function stricterRisk(host: ToolRisk, published: ToolRisk): ToolRisk {
