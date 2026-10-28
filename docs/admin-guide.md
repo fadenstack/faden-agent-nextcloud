@@ -6,7 +6,7 @@ published agent identifier in Additional settings. Give employees individual
 Fadenstack access to that agent. Nextcloud access always comes from each user's
 own authenticated session; no administrator search credentials are configured.
 
-## Optional action history (0.1.5)
+## Optional action history (0.1.7)
 
 History defaults off. The normal lockfile still uses published SDK 0.2.0-rc.2;
 its explicit history controls remain unavailable. The separately tested SDK
@@ -14,7 +14,7 @@ its explicit history controls remain unavailable. The separately tested SDK
 For an accepted command-SDK/gateway deployment, set the app-owned flag with
 `occ config:app:set fadenstack_agent history_enabled --value=1` and reload Files.
 An explicit native `scope_policy.tools` must include `nc_actions_undo`,
-`nc_actions_redo` and `nc_actions_reconcile` for all three controls; empty policy
+`nc_actions_redo`, `nc_actions_reconcile` and `nc_actions_revalidate` for all four controls; empty policy
 adds them only when the flag is enabled. Publish each as destructive with the
 schema in `contracts/history-tools.json`.
 The gateway must provide authenticated profiles and prepare/dispatch `tools/check`
@@ -47,7 +47,13 @@ rollback; replacing only app files with an older version cannot read new tags.
 Replacing the instance secret is not a supported journal key-rotation procedure.
 Restoring files into a new volume can change native storage ETags despite identical
 content. Existing snapshots then remain readable, but the strict Undo revision
-guard refuses them. An approved restore-revalidation path is not implemented yet.
+guard refuses them. Version 0.1.7 offers **Verify file revision** for a settled
+private standard text update. It checks the exact content of the recorded saved
+or undone state and requires fresh individual approval. Only the encrypted journal
+revision changes; file bytes, action state and ordering stay unchanged. Undo/Redo
+then requires a separate approval. Later edits, ambiguous/expired snapshots,
+shared targets and dependent actions remain blocked. Verification cannot prove
+notification or other external effects.
 Keep background jobs running for physical snapshot expiry. App disable/removal
 and database-engine conversion need their own retention/migration acceptance.
 

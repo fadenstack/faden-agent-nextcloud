@@ -38,7 +38,11 @@ final class FilesAccessResolver implements AccessResolver {
 					// Dispatch intent reveals no payload. A typed Files broker may already
 					// hold its authorized r+ write stream; opening a second read would
 					// conflict with that same native lock. Preview/readback still probe.
-					$this->scope->describeNode($node, 'history', $purpose !== 'dispatch');
+					$grant = $this->scope->describeNode($node, 'history', $purpose !== 'dispatch');
+					if ($purpose === 'revalidate' && (!$node->isUpdateable() || !$node->getStorage()->isLocal() || $node->isEncrypted()
+						|| $grant['sourceClass'] !== 'standard' || $grant['audience'] !== 'private')) {
+						throw new JournalException('permission_lost', 403);
+					}
 					return;
 				}
 			}

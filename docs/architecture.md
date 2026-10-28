@@ -107,6 +107,15 @@ an answer, and never also the drawer.
   It writes no file bytes, cannot infer external effects, and leaves partial or
   unavailable evidence unresolved. The shared activity UI says **Outcome recorded**.
 
+- Version 0.1.7 adds `FilesRevisionRevalidator` and `nc_actions_revalidate`.
+  Settled applied/undone private text content must match its own exact recipe.
+  A native read stream stays open through the owner/resource locks and journal CAS.
+  Fresh identity, central policy and one-use approval bind both revisions, target,
+  state, version and observed bytes. The signed `revalidated` receipt preserves
+  the original state, direction and sequence. No write stream or native refresh
+  is triggered; the activity UI says **File revision verified**. The next Undo/Redo
+  is separately approved.
+
 One reusable `NextcloudSearchService` composes those existing boundaries for
 discovery, metadata, authorized extraction and passages. Its PHP counterpart
 validates bounded native DAV plans and optionally uses Nextcloud's public

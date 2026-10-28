@@ -4,6 +4,12 @@ import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
 import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 
+const HISTORY_CONFLICTS: Record<string, string> = {
+	inspection_inconclusive: 'The file content does not establish whether this attempt completed. Its outcome remains unresolved. Review the file and action history before making further changes.',
+	revalidation_content_changed: 'The file content does not match its recorded state. Its revision was not verified. Review the file and action history before making further changes.',
+	revalidation_not_needed: 'The recorded file revision is already current. Review the available Undo or Redo action.',
+}
+
 export class NextcloudFiles implements FileApi {
 
 	constructor(readonly initial: Identity) {}
@@ -41,8 +47,8 @@ export class NextcloudFiles implements FileApi {
 		})
 		const data = await response.json() as T & { message?: unknown, code?: unknown }
 		if (!response.ok) {
-			const message = response.status === 409 && data.code === 'inspection_inconclusive'
-				? 'The file content does not establish whether this attempt completed. Its outcome remains unresolved. Review the file and action history before making further changes.'
+			const message = response.status === 409 && typeof data.code === 'string' && typeof HISTORY_CONFLICTS[data.code] === 'string'
+				? HISTORY_CONFLICTS[data.code]!
 				: typeof data.message === 'string' ? data.message : 'The Nextcloud operation could not be confirmed.'
 			throw Object.assign(new Error(message), { response: { status: response.status, data: { ...data, message } } })
 		}

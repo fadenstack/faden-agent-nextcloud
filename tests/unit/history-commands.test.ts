@@ -9,12 +9,12 @@ const action = 'a'.repeat(32)
 const preview: HistoryPreview = { id: 'b'.repeat(48), digest: 'c'.repeat(64), actionId: action, direction: 'undo', target: '/draft.md', before: 'Generated content', content: 'Original content', expires: 9999999999 }
 const context: FileContext = { id: 'context', parentId: 1, expires: 9999999999, file: { id: 2, name: 'draft.md', path: '/draft.md', mime: 'text/markdown', size: 16, etag: 'revision', folder: false, permissions: 31, url: 'https://cloud.test/f/2' } }
 async function fixture(workspace?: WorkspaceCoordinator, direction: HistoryDirection = 'undo') {
-	const gateway = new FakeGateway({ agents: [{ slug: 'nc', version: 1, contract: ['undo', 'redo', 'reconcile'].map(value => ({ name: `nc_actions_${value}`, risk: 'destructive' as const })) }], users: [{ email: 'alice', password: 'test', agents: ['nc'] }] })
+	const gateway = new FakeGateway({ agents: [{ slug: 'nc', version: 1, contract: ['undo', 'redo', 'reconcile', 'revalidate'].map(value => ({ name: `nc_actions_${value}`, risk: 'destructive' as const })) }], users: [{ email: 'alice', password: 'test', agents: ['nc'] }] })
 	const identity: Identity = { userId: 'alice', binding: 'native-binding', enabled: true, serverUrl: gateway.serverUrl, agent: 'nc', development: false, historyEnabled: true }
 	const files: FileApi = {
 		identity: vi.fn(async () => identity), assertIdentity: vi.fn(async () => {}), setCloudIdentity: vi.fn(), select: vi.fn(async () => context),
 		read: vi.fn(), pdf: vi.fn(), list: vi.fn(), propose: vi.fn(), approve: vi.fn(), commit: vi.fn(),
-		history: { list: vi.fn(async () => []), prepare: vi.fn(async () => direction === 'reconcile' ? { ...preview, direction, before: 'Observed file', content: 'Observed file', resolution: { outcome: 'verified' as const, state: 'applied' as const } } : preview), approve: vi.fn(async () => {}), cancel: vi.fn(async () => {}), execute: vi.fn(async () => ({ operation: direction, state: direction === 'reconcile' ? 'applied' : 'undone', actionId: action, file: context.file })) },
+		history: { list: vi.fn(async () => []), prepare: vi.fn(async () => direction === 'reconcile' ? { ...preview, direction, before: 'Observed file', content: 'Observed file', resolution: { outcome: 'verified' as const, state: 'applied' as const } } : direction === 'revalidate' ? { ...preview, direction, content: preview.before, revalidation: { state: 'applied' as const, recordedRevision: 'old-revision', currentRevision: 'restored-revision' } } : preview), approve: vi.fn(async () => {}), cancel: vi.fn(async () => {}), execute: vi.fn(async () => ({ operation: direction, state: ['reconcile', 'revalidate'].includes(direction) ? 'applied' : 'undone', actionId: action, file: context.file })) },
 	}
 	const host = new NextcloudAgent(identity, files, gateway.fetch, workspace)
 	const resource = host.agent.client.agent!
@@ -44,6 +44,26 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe.runIf(!!process.env.FADENSTACK_COMMAND_SDK)('companion SDK explicit native history contract', () => {
+	it.each(['approve', 'stop'] as const)('verifies restored revision through individual approval; %s preserves the settled state without replay', async answer => {
+		const { host, files, gateway, check } = await fixture(undefined, 'revalidate')
+		host.history.items = [{ id: action, name: 'draft.md', state: 'applied', eligible: 'revalidate', version: 3, createdAt: 1 }]
+		const running = host.invokeHistory('revalidate', action)
+		const part = await pending(host)
+		expect(part.request.arguments).toMatchObject({ action_id: action, before: preview.before, content: preview.before, revalidation: { state: 'applied', recordedRevision: 'old-revision', currentRevision: 'restored-revision' } })
+		expect(part.request.canAllowAlways).toBe(false)
+		expect(part.request.canAllowForSession).toBe(false)
+		expect(files.history!.execute).not.toHaveBeenCalled()
+		if (answer === 'approve') await host.approve(part)
+		else host.stop()
+		await running
+		expect(files.history!.execute).toHaveBeenCalledTimes(answer === 'approve' ? 1 : 0)
+		expect(host.history.items[0]).toMatchObject({ state: 'applied', eligible: answer === 'approve' ? 'undo' : 'revalidate' })
+		expect(files.propose).not.toHaveBeenCalled()
+		expect(files.commit).not.toHaveBeenCalled()
+		expect(gateway.modelCalls).toHaveLength(0)
+		expect(check.mock.calls.map(([request]) => [request.name, request.phase])).toEqual(answer === 'approve' ? [['nc_actions_revalidate', 'prepare'], ['nc_actions_revalidate', 'dispatch']] : [['nc_actions_revalidate', 'prepare']])
+		await host.dispose()
+	})
 	it('governs inspection with exact observed content, individual approval and no replayed file write', async () => {
 		const { host, files, gateway, check } = await fixture(undefined, 'reconcile')
 		host.history.items = [{ id: action, name: 'draft.md', state: 'needs_reconciliation', eligible: 'reconcile', version: 3, createdAt: 1 }]

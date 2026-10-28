@@ -118,21 +118,7 @@ final class JournalService {
 		return $this->store->atomic(function () use ($identity, $row, $direction, $ticket): array {
 			$this->store->lockOwner($row['owner_hash']);
 			$this->store->lockResource($row);
-			foreach ($this->coordinated($row['owner_hash'], JournalResource::fromArray(json_decode($row['resource_json'], true, 8, JSON_THROW_ON_ERROR))) as $other) {
-				if ($other['action_id'] === $row['action_id']) {
-					continue;
-				}
-				// Generation is global for new records. Legacy scopes may have
-				// incomparable generations; time/ties then conservatively refuse.
-				$later = $other['resource_seq'] > $row['resource_seq'] || $other['created_at'] > $row['created_at'];
-				$earlier = $other['resource_seq'] < $row['resource_seq'] || $other['created_at'] < $row['created_at'];
-				$ambiguous = $other['resource_seq'] === $row['resource_seq'] && $other['created_at'] === $row['created_at'];
-				if (in_array($other['state'], self::BUSY, true)
-					|| ($direction === 'undo' && ($later || $ambiguous) && $other['state'] === 'applied')
-					|| ($direction === 'redo' && ($earlier || $ambiguous) && $other['state'] === 'undone')) {
-					throw new JournalException('dependent_action');
-				}
-			}
+			$this->assertOrder($row, $direction);
 			$updated = $row;
 			$updated['direction'] = $direction;
 			$updated['state'] = $direction . '_prepared';
@@ -171,6 +157,34 @@ final class JournalService {
 			throw new JournalException('state_conflict');
 		}
 		return $this->complete($identity, $row, $outcome, $readback, true);
+	}
+
+	/** Typed internal handler only: update a settled observation, never its state or ordering. */
+	public function refreshRevision(JournalIdentity $identity, string $id, int $expectedVersion, string $recordedRevision, VerifiedReadback $readback): array {
+		$row = $this->authorized($identity, $id, 'revalidate');
+		return $this->store->atomic(function () use ($identity, $row, $expectedVersion, $recordedRevision, $readback): array {
+			$this->store->lockOwner($row['owner_hash']);
+			$current = $this->authorized($identity, $row['action_id'], 'revalidate');
+			$this->requireSnapshot($current);
+			$resource = JournalResource::fromArray(json_decode($current['resource_json'], true, 8, JSON_THROW_ON_ERROR));
+			if ($current['version'] !== $expectedVersion || !in_array($current['state'], ['applied', 'undone'], true)
+				|| $current['operation'] !== 'nc_update_text_file' || $resource->recovery !== JournalResource::PRIVATE_TEXT_RECOVERY) {
+				throw new JournalException('state_conflict');
+			}
+			$payload = $this->cipher->decrypt($current);
+			if (($payload['revision'] ?? null) !== $recordedRevision || hash_equals($recordedRevision, $readback->revision)) {
+				throw new JournalException('plan_changed');
+			}
+			$this->store->lockResource($current);
+			$this->assertOrder($current, $current['state'] === 'applied' ? 'undo' : 'redo');
+			$updated = $current;
+			$payload['revision'] = $readback->revision;
+			$this->setPayload($updated, $payload);
+			$this->store->resizePayload($current, $updated['payload_bytes'], $this->policy);
+			$updated = $this->transition($current, $updated, 'revalidated', 'storage_revision');
+			$this->store->releaseResource($updated);
+			return $this->summary($updated);
+		});
 	}
 
 	/** Stop before dispatch releases the claim. Stop after dispatch remains unknown. */
@@ -315,6 +329,24 @@ final class JournalService {
 				$updated['state'] = 'redo_invalidated';
 				$this->purgePayload($row, $updated);
 				$this->transition($row, $updated, 'redo_invalidated');
+			}
+		}
+	}
+
+	/** Under the owner lock: preserve the same dependency ordering for revision verification and reversal. */
+	private function assertOrder(array $row, string $direction): void {
+		foreach ($this->coordinated($row['owner_hash'], JournalResource::fromArray(json_decode($row['resource_json'], true, 8, JSON_THROW_ON_ERROR))) as $other) {
+			if ($other['action_id'] === $row['action_id']) {
+				continue;
+			}
+			// Generation is global for new records; legacy scopes may be incomparable.
+			$later = $other['resource_seq'] > $row['resource_seq'] || $other['created_at'] > $row['created_at'];
+			$earlier = $other['resource_seq'] < $row['resource_seq'] || $other['created_at'] < $row['created_at'];
+			$ambiguous = $other['resource_seq'] === $row['resource_seq'] && $other['created_at'] === $row['created_at'];
+			if (in_array($other['state'], self::BUSY, true)
+				|| ($direction === 'undo' && ($later || $ambiguous) && $other['state'] === 'applied')
+				|| ($direction === 'redo' && ($earlier || $ambiguous) && $other['state'] === 'undone')) {
+				throw new JournalException('dependent_action');
 			}
 		}
 	}

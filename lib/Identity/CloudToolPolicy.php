@@ -28,7 +28,7 @@ final class CloudToolPolicy {
 	}
 
 	public function check(#[\SensitiveParameter] string $token, VerifiedCloudPrincipal $principal, string $direction, string $actionId, ?array $prepared = null): array {
-		if (!in_array($direction, ['undo', 'redo', 'reconcile'], true) || !preg_match('/^[a-f0-9]{32}$/D', $actionId)) {
+		if (!in_array($direction, ['undo', 'redo', 'reconcile', 'revalidate'], true) || !preg_match('/^[a-f0-9]{32}$/D', $actionId)) {
 			throw new Problem('Invalid history command.', 400);
 		}
 		$payload = ['name' => 'nc_actions_' . $direction, 'arguments' => ['action_id' => $actionId],

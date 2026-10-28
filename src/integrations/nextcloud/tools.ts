@@ -32,14 +32,16 @@ export function writeArguments(name: string, args: Readonly<Record<string, unkno
 	return { operation: 'update', content: args.content, expectedEtag: args.expectedEtag }
 }
 export const WRITE_TOOLS = new Set(['nc_create_text_file', 'nc_update_text_file'])
-export const HISTORY_TOOLS = new Set(['nc_actions_undo', 'nc_actions_redo', 'nc_actions_reconcile'])
+export const HISTORY_TOOLS = new Set(['nc_actions_undo', 'nc_actions_redo', 'nc_actions_reconcile', 'nc_actions_revalidate'])
 export function historyTools(host: ToolHost) {
-	return (['undo', 'redo', 'reconcile'] as const).map(direction => defineTool({
+	return (['undo', 'redo', 'reconcile', 'revalidate'] as const).map(direction => defineTool({
 		name: `nc_actions_${direction}`,
 		toolClass: 'destructive',
-		description: direction === 'reconcile'
-			? 'Inspect an interrupted recorded whole-text update by action ID and record a verified native content outcome after individual approval. Never rewrites the file or repeats the original action. Partial, changed, identical-before/after or unavailable snapshots stay unresolved. This does not verify notifications or external effects.'
-			: `${direction === 'undo' ? 'Undo' : 'Redo'} one recorded whole-text file update by its action ID. Requires current native access, central policy and an individual exact-content preview. Refuses changed files, later dependent actions, unknown outcomes and unavailable inverses. Never undoes delivery or external workflow effects.`,
+		description: direction === 'revalidate'
+			? 'Verify the changed native revision of a settled private whole-text file action by action ID after individual approval. Only the exact content of its recorded applied or undone state qualifies. Update the journal revision without rewriting the file or changing the recorded outcome. Refuses later edits, unknown outcomes, dependent actions and unavailable snapshots. Undo or Redo needs a separate approval. Does not verify external effects.'
+			: direction === 'reconcile'
+				? 'Inspect an interrupted recorded whole-text update by action ID and record a verified native content outcome after individual approval. Never rewrites the file or repeats the original action. Partial, changed, identical-before/after or unavailable snapshots stay unresolved. This does not verify notifications or external effects.'
+				: `${direction === 'undo' ? 'Undo' : 'Redo'} one recorded whole-text file update by its action ID. Requires current native access, central policy and an individual exact-content preview. Refuses changed files, later dependent actions, unknown outcomes and unavailable inverses. Never undoes delivery or external workflow effects.`,
 		parameters: historyContract.parameters as JsonSchema,
 		run: (args, call) => {
 			if (!host.reverse) throw new Error('Action history is unavailable.')

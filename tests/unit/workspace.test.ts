@@ -71,6 +71,14 @@ function coordinator() {
 }
 
 describe('Change and refresh coordination', () => {
+	it('does not publish a native update or refresh after journal-only revision verification', async () => {
+		const { workspace, refresh } = coordinator()
+		const binding = workspace.prepare('files')
+		const generation = workspace.begin('verify', binding)
+		expect(await workspace.committed('verify', generation, binding, { operation: 'revalidate', file }, new AbortController().signal)).toMatchObject({ outcome: 'committed', operation: 'revalidate', view: 'unchanged' })
+		expect(refresh).not.toHaveBeenCalled()
+		expect(workspace.state.locked).toBe(false)
+	})
 	it('blocks a dirty view both before proposal and after an approval wait', () => {
 		const { workspace, view } = coordinator()
 		const binding = workspace.prepare('files')

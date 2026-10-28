@@ -2,7 +2,7 @@ import { shallowReactive } from 'vue'
 import type { WriteResult } from '../integrations/nextcloud/types.ts'
 import type { NativeView, NativeViewGuard } from './nativeView.ts'
 
-export type ViewOutcome = 'refreshed' | 'refresh_required' | 'refresh_failed' | 'not_visible'
+export type ViewOutcome = 'refreshed' | 'refresh_required' | 'refresh_failed' | 'not_visible' | 'unchanged'
 export interface WorkspaceReceipt {
 	id: string
 	operation: string
@@ -52,6 +52,7 @@ export class WorkspaceCoordinator {
 		try {
 			const view = this.dependencies.guard.snapshot()
 			if (view.app !== binding.app || view.key !== binding.view.key || view.epoch !== binding.view.epoch) receipt.view = 'not_visible'
+			else if (result.operation === 'revalidate') receipt.view = 'unchanged'
 			else if (view.editState !== 'clean' || signal.aborted) receipt.view = 'refresh_required'
 			else {
 				this.state.phase = 'refreshing'
@@ -63,10 +64,10 @@ export class WorkspaceCoordinator {
 		} finally { this.release(id, generation) }
 	}
 
-	failed(id: string, generation: number, target: string, error: unknown): void {
+	failed(id: string, generation: number, target: string, error: unknown, operation = 'write'): void {
 		if (this.#owner !== id || generation !== this.#sequence) return
 		const status = (error as { response?: { status?: number } })?.response?.status
-		this.state.latest = { id, operation: 'write', target, outcome: status === 409 || status === 412 ? 'conflict' : 'unknown_completion', view: 'refresh_required', message: status === 409 || status === 412 ? 'The native resource changed. Review a new proposal.' : 'The request may have reached Nextcloud. Inspect the resource before trying again.' }
+		this.state.latest = { id, operation, target, outcome: status === 409 || status === 412 ? 'conflict' : 'unknown_completion', view: 'refresh_required', message: operation === 'revalidate' ? 'File revision verification could not be confirmed. Review the file and action history before retrying.' : status === 409 || status === 412 ? 'The native resource changed. Review a new proposal.' : 'The request may have reached Nextcloud. Inspect the resource before trying again.' }
 		this.release(id, generation)
 	}
 

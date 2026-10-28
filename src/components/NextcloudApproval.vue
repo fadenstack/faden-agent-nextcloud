@@ -31,10 +31,19 @@ async function approve() {
 			{{ part.reason }}
 		</p>
 		<p class="fdn-approval-target">
-			{{ part.toolName === 'nc_actions_reconcile' ? t('fadenstack_agent', 'Inspect outcome') : part.toolName === 'nc_actions_undo' ? t('fadenstack_agent', 'Undo file change') : part.toolName === 'nc_actions_redo' ? t('fadenstack_agent', 'Redo file change') : part.toolName === 'nc_create_text_file' ? t('fadenstack_agent', 'Create file') : t('fadenstack_agent', 'Replace file') }}:
+			{{ part.toolName === 'nc_actions_revalidate' ? t('fadenstack_agent', 'Verify file revision') : part.toolName === 'nc_actions_reconcile' ? t('fadenstack_agent', 'Inspect outcome') : part.toolName === 'nc_actions_undo' ? t('fadenstack_agent', 'Undo file change') : part.toolName === 'nc_actions_redo' ? t('fadenstack_agent', 'Redo file change') : part.toolName === 'nc_create_text_file' ? t('fadenstack_agent', 'Create file') : t('fadenstack_agent', 'Replace file') }}:
 			<strong>{{ part.request.arguments.target }}</strong>
 		</p>
-		<template v-if="part.toolName === 'nc_actions_reconcile'">
+		<template v-if="part.toolName === 'nc_actions_revalidate'">
+			<p>{{ (part.request.arguments.revalidation as { state?: string } | undefined)?.state === 'undone' ? t('fadenstack_agent', 'The content matches the recorded undone state.') : t('fadenstack_agent', 'The content matches the recorded saved state.') }}</p>
+			<p>{{ t('fadenstack_agent', 'Verify this revision without changing the file. Undo or Redo will require another approval. Notifications and other effects are not verified.') }}</p>
+			<details>
+				<summary>{{ t('fadenstack_agent', 'Revision details') }}</summary>
+				<p>{{ t('fadenstack_agent', 'Recorded revision') }}: {{ (part.request.arguments.revalidation as { recordedRevision?: string } | undefined)?.recordedRevision }}</p>
+				<p>{{ t('fadenstack_agent', 'Current revision') }}: {{ (part.request.arguments.revalidation as { currentRevision?: string } | undefined)?.currentRevision }}</p>
+			</details>
+		</template>
+		<template v-else-if="part.toolName === 'nc_actions_reconcile'">
 			<p>{{ (part.request.arguments.resolution as { outcome?: string } | undefined)?.outcome === 'verified' ? t('fadenstack_agent', 'The file content matches the intended result.') : t('fadenstack_agent', 'The file content matches the state before this attempt.') }}</p>
 			<p>{{ t('fadenstack_agent', 'Record this inspected result without changing the file. Notifications and other effects are not verified.') }}</p>
 		</template>
@@ -43,7 +52,7 @@ async function approve() {
 			<pre class="fdn-approval-args" dir="auto">{{ part.request.arguments.before }}</pre>
 		</details>
 		<div class="fdn-label">
-			{{ part.toolName === 'nc_actions_reconcile' ? t('fadenstack_agent', 'Observed content') : t('fadenstack_agent', 'Proposed content') }}
+			{{ ['nc_actions_reconcile', 'nc_actions_revalidate'].includes(part.toolName) ? t('fadenstack_agent', 'Observed content') : t('fadenstack_agent', 'Proposed content') }}
 		</div>
 		<pre class="fdn-approval-args" dir="auto">{{ part.request.arguments.content }}</pre>
 		<div v-if="part.isPending" class="fdn-approval-actions">

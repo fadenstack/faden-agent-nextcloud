@@ -26,6 +26,7 @@ final class HistoryService {
 		private FilesHistoryExecutor $executor,
 		private ISession $session,
 		private FilesHistoryReconciler $reconciler,
+		private FilesRevisionRevalidator $revalidator,
 	) {
 	}
 
@@ -44,7 +45,7 @@ final class HistoryService {
 	}
 
 	private function assertDirection(string $direction): void {
-		if (!in_array($direction, ['undo', 'redo', 'reconcile'], true)) {
+		if (!in_array($direction, ['undo', 'redo', 'reconcile', 'revalidate'], true)) {
 			throw new Problem('Invalid history direction.', 400);
 		}
 		if (!in_array('nc_actions_' . $direction, $this->files->identity()['scopePolicy']['tools'] ?? [], true)) {
@@ -68,6 +69,16 @@ final class HistoryService {
 				$eligible = $standardPolicy && ($item['resource']['recovery'] ?? null) === JournalResource::PRIVATE_TEXT_RECOVERY
 					&& $file['agentScope']['sourceClass'] === 'standard' && $file['agentScope']['audience'] === 'private';
 				$command = $item['snapshotAvailable'] && in_array($item['state'], FilesHistoryReconciler::STATES, true) ? 'reconcile' : $item['journalEligibility'];
+				if ($eligible && $item['snapshotAvailable'] && in_array($item['state'], ['applied', 'undone'], true)) {
+					try {
+						if ($this->revalidator->needed($identity, $item['id'])) {
+							$command = 'revalidate';
+						}
+					} catch (Problem) {
+						// Metadata availability never bypasses fresh typed verification.
+						$command = 'none';
+					}
+				}
 				$result[] = ['id' => $item['id'], 'name' => $file['name'], 'target' => $file['path'], 'state' => $item['state'],
 					'eligible' => $eligible ? $command : 'none', 'version' => $item['version'], 'createdAt' => $item['createdAt']];
 			} catch (Problem) {
@@ -86,7 +97,11 @@ final class HistoryService {
 		$plan = $this->recoveryPlan($identity, $actionId, $direction);
 		$policy = $this->policy->check($token, $principal, $direction, $actionId);
 		$this->assertFresh($token, $identity);
-		$plan = $plan instanceof FilesReconciliationPlan ? $this->reconciler->revalidate($identity, $plan) : $this->planner->revalidate($identity, $plan);
+		$plan = match (true) {
+			$plan instanceof FilesRevalidationPlan => $this->revalidator->revalidate($identity, $plan),
+			$plan instanceof FilesReconciliationPlan => $this->reconciler->revalidate($identity, $plan),
+			default => $this->planner->revalidate($identity, $plan),
+		};
 		$state = $this->state();
 		if (count($state) >= 10) {
 			throw new Problem('Too many pending history previews. Wait for them to expire.', 429);
@@ -98,7 +113,9 @@ final class HistoryService {
 		$this->session->set(self::KEY, $state);
 		return ['id' => $id, 'actionId' => $actionId, 'direction' => $direction, 'digest' => $plan->digest,
 			'target' => $plan->target, 'before' => $plan->before, 'content' => $plan->content, 'expires' => $state[$id]['expires'],
-			...($plan instanceof FilesReconciliationPlan ? ['resolution' => ['outcome' => $plan->outcome, 'state' => $plan->settledState]] : [])];
+			...($plan instanceof FilesReconciliationPlan ? ['resolution' => ['outcome' => $plan->outcome, 'state' => $plan->settledState]] : []),
+			...($plan instanceof FilesRevalidationPlan ? ['revalidation' => ['state' => $plan->settledState,
+				'recordedRevision' => $plan->recordedRevision, 'currentRevision' => $plan->expectedEtag]] : [])];
 	}
 
 	private function load(JournalIdentity $identity, string $id, string $digest): array {
@@ -122,7 +139,7 @@ final class HistoryService {
 		return $pending;
 	}
 
-	private function plan(JournalIdentity $identity, array $pending): FilesHistoryPlan|FilesReconciliationPlan {
+	private function plan(JournalIdentity $identity, array $pending): FilesHistoryPlan|FilesReconciliationPlan|FilesRevalidationPlan {
 		$plan = $this->recoveryPlan($identity, $pending['actionId'], $pending['direction']);
 		if (!hash_equals($pending['digest'], $plan->digest)) {
 			throw new Problem('The saved action or native file changed. Review a new preview.', 409);
@@ -130,13 +147,17 @@ final class HistoryService {
 		return $plan;
 	}
 
-	private function recoveryPlan(JournalIdentity $identity, string $actionId, string $direction): FilesHistoryPlan|FilesReconciliationPlan {
+	private function recoveryPlan(JournalIdentity $identity, string $actionId, string $direction): FilesHistoryPlan|FilesReconciliationPlan|FilesRevalidationPlan {
 		$entry = $this->journal->describe($identity, $actionId);
 		if (($entry['resource']['recovery'] ?? null) !== JournalResource::PRIVATE_TEXT_RECOVERY
 			|| ($this->files->identity()['scopePolicy']['sourceClasses'] ?? []) !== ['standard']) {
 			throw new JournalException('recovery_protection_unavailable', 422);
 		}
-		return $direction === 'reconcile' ? $this->reconciler->prepare($identity, $actionId) : $this->planner->prepare($identity, $actionId, $direction);
+		return match ($direction) {
+			'revalidate' => $this->revalidator->prepare($identity, $actionId),
+			'reconcile' => $this->reconciler->prepare($identity, $actionId),
+			default => $this->planner->prepare($identity, $actionId, $direction),
+		};
 	}
 
 	private function assertFresh(#[\SensitiveParameter] string $token, JournalIdentity $expected): VerifiedCloudPrincipal {
@@ -172,7 +193,11 @@ final class HistoryService {
 		$plan = $this->plan($identity, $pending);
 		$this->policy->check($token, $principal, $pending['direction'], $pending['actionId'], $pending['policy']);
 		$this->assertFresh($token, $identity);
-		$result = $plan instanceof FilesReconciliationPlan ? $this->reconciler->execute($identity, $plan) : $this->executor->execute($identity, $plan);
+		$result = match (true) {
+			$plan instanceof FilesRevalidationPlan => $this->revalidator->execute($identity, $plan),
+			$plan instanceof FilesReconciliationPlan => $this->reconciler->execute($identity, $plan),
+			default => $this->executor->execute($identity, $plan),
+		};
 		return [...$result, 'operation' => $pending['direction'], 'file' => $this->files->resource('nextcloud:files:' . $result['fileId'])];
 	}
 

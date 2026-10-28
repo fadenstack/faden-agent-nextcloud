@@ -26,7 +26,7 @@ export class NextcloudAgent {
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
 	readonly #historyPreviews = new Map<string, HistoryPreview>()
-	readonly history = shallowReactive({ items: [] as HistoryItem[], loading: false, error: '', active: false, target: '', inspecting: false })
+	readonly history = shallowReactive({ items: [] as HistoryItem[], loading: false, error: '', active: false, target: '', inspecting: false, verifying: false })
 	readonly #proposalViews = new Map<string, MutationBinding>()
 	readonly #proposalResources = new Map<string, unknown>()
 	readonly #proposalParents = new Map<string, number>()
@@ -96,17 +96,18 @@ export class NextcloudAgent {
 					if (HISTORY_TOOLS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked || !files.history || typeof request.arguments.action_id !== 'string' || !/^[a-f0-9]{32}$/.test(request.arguments.action_id)) throw new Error('A valid, available history action is required.')
 						const binding = this.workspace?.prepare('files')
-						const direction = request.toolName === 'nc_actions_undo' ? 'undo' : request.toolName === 'nc_actions_redo' ? 'redo' : 'reconcile'
+						const direction = request.toolName === 'nc_actions_undo' ? 'undo' : request.toolName === 'nc_actions_redo' ? 'redo' : request.toolName === 'nc_actions_revalidate' ? 'revalidate' : 'reconcile'
 						const preview = await files.history.prepare(request.arguments.action_id, direction, signal)
 						this.history.target = preview.target
 						this.history.inspecting = direction === 'reconcile'
+						this.history.verifying = direction === 'revalidate'
 						this.#historyPreviews.set(request.callId, preview)
 						if (binding) this.#proposalViews.set(request.callId, binding)
 						request = {
 							...request,
 							canAllowAlways: false,
 							canAllowForSession: false,
-							arguments: { ...request.arguments, historyPreviewId: preview.id, digest: preview.digest, target: preview.target, before: preview.before, content: preview.content, ...(preview.resolution ? { resolution: preview.resolution } : {}) },
+							arguments: { ...request.arguments, historyPreviewId: preview.id, digest: preview.digest, target: preview.target, before: preview.before, content: preview.content, ...(preview.resolution ? { resolution: preview.resolution } : {}), ...(preview.revalidation ? { revalidation: preview.revalidation } : {}) },
 						}
 					}
 					if (WRITE_TOOLS.has(request.toolName) && request.source === 'host') {
@@ -185,7 +186,7 @@ export class NextcloudAgent {
 		try { this.history.items = await this.files.history.list(signal) } catch (error) { this.history.items = []; if (!signal.aborted) this.history.error = errorMessage(error) } finally { this.history.loading = false }
 	}
 
-	async invokeHistory(direction: HistoryDirection, actionId: string, label = direction === 'undo' ? 'Undo file change' : direction === 'redo' ? 'Redo file change' : 'Inspect outcome'): Promise<void> {
+	async invokeHistory(direction: HistoryDirection, actionId: string, label = direction === 'undo' ? 'Undo file change' : direction === 'redo' ? 'Redo file change' : direction === 'revalidate' ? 'Verify file revision' : 'Inspect outcome'): Promise<void> {
 		const commands = commandChat(this.chat)
 		if (!this.historyAvailable || !commands || !/^[a-f0-9]{32}$/.test(actionId)) throw new Error('Action history commands are unavailable.')
 		await commands.invokeTool(`nc_actions_${direction}`, { action_id: actionId }, { origin: 'user_history', label })
@@ -213,7 +214,7 @@ export class NextcloudAgent {
 			return activity ? { ...result, view: activity.view } : result
 		} catch (error) {
 			this.#writeBlocked = true
-			if (generation !== undefined) this.workspace!.failed(call.callId, generation, preview.target, error)
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, preview.target, error, direction)
 			throw error
 		}
 	}
@@ -454,6 +455,7 @@ export class NextcloudAgent {
 	/** After the turn: its file context and any proposals it left are gone. */
 	#finish(command = false): void {
 		this.history.inspecting = false
+		this.history.verifying = false
 		if (command) { this.history.active = false; this.history.target = '' }
 		if (!command && this.chat.currentSessionId) this.#sessionSources.set(this.chat.currentSessionId, new SourceLedger(this.#sources))
 		for (const callId of this.#historyPreviews.keys()) this.cancelHistory(callId)

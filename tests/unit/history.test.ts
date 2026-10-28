@@ -41,6 +41,7 @@ describe('governed history integration', () => {
 		expect(HISTORY_CAPABILITIES.map(value => [value.name, value.risk, value.individualApproval])).toEqual([
 			['nc_actions_undo', 'destructive', true], ['nc_actions_redo', 'destructive', true],
 			['nc_actions_reconcile', 'destructive', true],
+			['nc_actions_revalidate', 'destructive', true],
 		])
 	})
 	it('does not register history tools when the administrator has not enabled them', async () => {

@@ -85,6 +85,13 @@ changes. Private audience and classification are checked again at preview and un
 the executor's stream lock, even if current general movement policy permits sharing.
 Full protected-content lineage and shared-file restoration require separate design.
 
+Version 0.1.7 adds explicit settled-state revision verification. It never adopts
+another recipe's bytes or changes an unknown outcome. Certified private/local/
+unencrypted/writable native access is checked again under the journal owner lock.
+Dependency checks and payload quotas apply before the CAS. Old plans and approvals
+become stale after a revision receipt; a separate fresh Undo/Redo approval is needed.
+It provides no force-clear, key migration or external-effect verification.
+
 Version 0.1.5 adds `nc_actions_reconcile` through the same individual approval,
 fresh principal and central prepare/dispatch checks. It resolves only typed,
 certified private text content. A bounded native read stream excludes an active

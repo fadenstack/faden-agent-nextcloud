@@ -45,7 +45,7 @@ class CloudPolicyTest extends TestCase {
 		return $response;
 	}
 	public static function historyDirections(): array {
-		return [['undo'], ['redo'], ['reconcile']];
+		return [['undo'], ['redo'], ['reconcile'], ['revalidate']];
 	}
 
 	#[DataProvider('historyDirections')]

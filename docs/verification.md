@@ -1,5 +1,15 @@
 # Pilot verification — 13 October 2026
 
+## 28 October: restored revision verification (0.1.7)
+
+On isolated Nextcloud 35.0.2/PHP 8.5.12/PostgreSQL 16.15, applied and undone paired
+broker actions survive a consistent backup, copied-volume restore and 0.1.6→0.1.7
+upgrade. Old revision guards refuse reversal; explicit `nc_actions_revalidate`
+preserves bytes/state/direction/ordering, appends a distinct authenticated receipt
+and enables a fresh reversal. Native refusal, active-writer and competing-process
+cases, plus PHP/frontend/gateway checks, cover this bounded path. History remains
+default off and the normal SDK stays pinned; this is not full deployment acceptance.
+
 ## 27 October: inspected interrupted outcomes (0.1.5)
 
 `nc_actions_reconcile` uses the governed history path to record an exact native

@@ -12,7 +12,7 @@ vi.mock('@nextcloud/vue/components/NcButton', () => ({ default: defineComponent(
 }) }))
 
 describe('native action-history dialog handoff', () => {
-	it.each([['undo', 'Undo', 'Undo file change'], ['reconcile', 'Inspect outcome', 'Inspect outcome']])('unmounts its dialog before the %s command and native editor guard', async (direction, text, label) => {
+	it.each([['undo', 'Undo', 'Undo file change'], ['reconcile', 'Inspect outcome', 'Inspect outcome'], ['revalidate', 'Verify file revision', 'Verify file revision']])('unmounts its dialog before the %s command and native editor guard', async (direction, text, label) => {
 		const invoked = vi.fn(async () => { expect(document.querySelector('[role="dialog"]')).toBeNull() })
 		const host = {
 			history: { items: [{ id: 'a'.repeat(32), name: 'report.md', state: 'applied', eligible: direction, version: 2, createdAt: 1 }], loading: false, error: '' },
