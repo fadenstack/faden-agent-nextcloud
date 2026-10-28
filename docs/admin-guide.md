@@ -39,6 +39,18 @@ expired or uncertified snapshots and a busy writer stay unresolved. Inspect does
 not certify notification, indexing or other external effects. An open editor still
 requires handoff. There is no force-clear or automatic replay.
 
+Version 0.1.6 fixes PostgreSQL journal tag storage and concurrent expiry handling.
+It reads existing raw-binary tags, but new tags require this version. Before an
+upgrade, back up the database, data, custom apps and configuration together,
+including the Nextcloud instance secret. Restore that consistent backup for a
+rollback; replacing only app files with an older version cannot read new tags.
+Replacing the instance secret is not a supported journal key-rotation procedure.
+Restoring files into a new volume can change native storage ETags despite identical
+content. Existing snapshots then remain readable, but the strict Undo revision
+guard refuses them. An approved restore-revalidation path is not implemented yet.
+Keep background jobs running for physical snapshot expiry. App disable/removal
+and database-engine conversion need their own retention/migration acceptance.
+
 The nine host tools are discovered on connection. Review them in Fadenstack's
 governance interface and reconnect after policy publication. Search and metadata
 tools are read-class operations; text creation/update stay destructive-class with

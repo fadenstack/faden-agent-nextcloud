@@ -215,8 +215,11 @@ final class JournalService {
 		foreach ($rows as $row) {
 			$this->cipher->verify($row);
 			if ($row['payload'] !== null && $row['expires_at'] <= $this->now()) {
-				$this->store->atomic(function () use ($row): void {
-					$this->store->lockOwner($row['owner_hash']);
+				$changed = $this->store->atomic(function () use ($row): bool {
+					$row = $this->maintenanceRow($row);
+					if ($row === null) {
+						return false;
+					}
 					$updated = $row;
 					$this->purgePayload($row, $updated);
 					$updated['state'] = in_array($row['state'], self::DISPATCHED, true) ? 'needs_reconciliation' : 'expired';
@@ -226,17 +229,31 @@ final class JournalService {
 					if (in_array($row['state'], ['prepared', 'undo_prepared', 'redo_prepared'], true)) {
 						$this->store->releaseResource($row);
 					}
+					return true;
 				});
-				$count++;
+				$count += $changed ? 1 : 0;
 			} elseif ($row['payload'] === null && $row['updated_at'] < $this->now() - 2592000
 				&& in_array($row['state'], ['expired', 'failed', 'cancelled', 'redo_invalidated'], true)) {
 				$this->store->atomic(function () use ($row): void {
-					$this->store->lockOwner($row['owner_hash']);
-					$this->store->purgeTerminal($row);
+					$current = $this->maintenanceRow($row);
+					if ($current !== null) {
+						$this->store->purgeTerminal($current);
+					}
 				});
 			}
 		}
 		return $count;
+	}
+
+	/** Called inside atomic(): another worker may have completed this observation. */
+	private function maintenanceRow(array $observed): ?array {
+		$this->store->lockOwner($observed['owner_hash']);
+		$current = $this->store->get($observed['action_id']);
+		if ($current === null) {
+			return null;
+		}
+		$this->cipher->verify($current);
+		return $current['version'] === $observed['version'] ? $current : null;
 	}
 
 	private function complete(JournalIdentity $identity, array $row, string $outcome, ?VerifiedReadback $readback, bool $inspected = false): array {

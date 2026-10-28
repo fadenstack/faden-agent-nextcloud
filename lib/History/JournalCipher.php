@@ -33,15 +33,14 @@ final class JournalCipher {
 
 	public function sign(array $row): array {
 		unset($row['metadata_mac']);
-		$row['metadata_mac'] = $this->crypto->calculateHMAC('fadenstack-history-header-v1:' . self::json($row));
+		$row['metadata_mac'] = $this->seal('fadenstack-history-header-v1:', $row);
 		return $row;
 	}
 
 	public function verify(array $row): void {
 		$mac = $row['metadata_mac'] ?? '';
-		if (!is_string($mac) || $mac === '' || !hash_equals($this->sign($row)['metadata_mac'], $mac)) {
-			throw new JournalException('journal_integrity', 409);
-		}
+		unset($row['metadata_mac']);
+		$this->verifySeal('fadenstack-history-header-v1:', $row, $mac);
 	}
 
 	public function receipt(array $row, string $outcome, string $reason = ''): array {
@@ -50,14 +49,27 @@ final class JournalCipher {
 		}
 		$receipt = ['action_id' => $row['action_id'], 'version' => (int)$row['version'], 'direction' => $row['direction'],
 			'outcome' => $outcome, 'reason' => $reason, 'created_at' => (int)$row['updated_at']];
-		$receipt['receipt_mac'] = $this->crypto->calculateHMAC('fadenstack-history-receipt-v1:' . self::json($receipt));
+		$receipt['receipt_mac'] = $this->seal('fadenstack-history-receipt-v1:', $receipt);
 		return $receipt;
 	}
 
 	public function verifyReceipt(array $receipt): void {
 		$mac = $receipt['receipt_mac'] ?? '';
 		unset($receipt['receipt_mac']);
-		if (!is_string($mac) || !hash_equals($this->crypto->calculateHMAC('fadenstack-history-receipt-v1:' . self::json($receipt)), $mac)) {
+		$this->verifySeal('fadenstack-history-receipt-v1:', $receipt, $mac);
+	}
+
+	/** ICrypto returns binary bytes; text columns require a portable ASCII envelope. */
+	private function seal(string $domain, array $value): string {
+		return 'b64:' . base64_encode($this->crypto->calculateHMAC($domain . self::json($value)));
+	}
+
+	private function verifySeal(string $domain, array $value, mixed $mac): void {
+		$raw = $this->crypto->calculateHMAC($domain . self::json($value));
+		// Existing SQLite journals used raw binary seals. Verify those in place;
+		// their immutable receipts stay untouched and every new seal is text-safe.
+		if (!is_string($mac) || $mac === ''
+			|| (!hash_equals('b64:' . base64_encode($raw), $mac) && !hash_equals($raw, $mac))) {
 			throw new JournalException('journal_integrity');
 		}
 	}

@@ -28,9 +28,23 @@ JSON, 25 MiB encrypted payload per native user and 1,000 metadata entries. Unkno
 effects retain an unresolved claim rather than retrying. This records existing
 effects. Version 0.1.4 optionally binds new writes to a server-verified cloud
 principal pair and exposes typed history endpoints, never a generic snapshot endpoint.
-Key rotation, production-database concurrency and deletion/recreation inverses
+Key rotation, the full database/storage matrix and deletion/recreation inverses
 remain release gates. Keep the Nextcloud instance secret with journal backups;
 changing it without a migration makes authentication/decryption fail closed.
+
+Version 0.1.6 stores new header and receipt authentication tags as prefixed Base64
+ASCII. Nextcloud's public ICrypto returns binary tags, which PostgreSQL text
+columns reject. Existing raw-binary SQLite tags still verify without rewriting
+immutable receipts. The key, signed fields and payload encryption are unchanged.
+Older app versions cannot read new encoded tags: rollback requires a consistent
+pre-upgrade backup, not an app-files-only downgrade. Converting a legacy SQLite
+database containing binary tags to another engine needs separate acceptance.
+
+Expiry maintenance rechecks each signed row under the owner lock and skips an
+observation already changed or deleted by another worker. It does not suppress
+integrity failures, clear uncertain effects or guess their outcome. Snapshot
+deletion requires the app's retention job to run; stopping/disposing the app does
+not by itself prove that its persisted data was erased.
 
 The internal `FilesHistoryExecutor` accepts only a revalidated immutable typed
 whole-text update plan. It claims the journal action once, repeats native target,
