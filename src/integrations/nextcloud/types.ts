@@ -51,7 +51,9 @@ export interface WriteResult { operation: string; file: FileMetadata; actionId?:
 export type HistoryDirection = 'undo' | 'redo' | 'reconcile' | 'revalidate'
 export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number }
 export interface HistoryPreview { id: string; actionId: string; direction: HistoryDirection; digest: string; target: string; before: string; content: string; expires: number; resolution?: { outcome: 'verified' | 'unchanged'; state: 'applied' | 'undone' | 'failed' }; revalidation?: { state: 'applied' | 'undone'; recordedRevision: string; currentRevision: string } }
+export interface HistoryAvailability { unavailableCount: number; earlierScopeCount: number; earlierContentExpiresBy: number | null; writesPaused?: boolean }
 export interface HistoryApi {
+	availability?(signal: AbortSignal): Promise<HistoryAvailability>
 	list(signal: AbortSignal): Promise<HistoryItem[]>
 	prepare(actionId: string, direction: HistoryDirection, signal: AbortSignal): Promise<HistoryPreview>
 	approve(preview: HistoryPreview, signal: AbortSignal): Promise<void>

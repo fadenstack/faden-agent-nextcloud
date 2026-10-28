@@ -27,6 +27,7 @@ final class HistoryService {
 		private ISession $session,
 		private FilesHistoryReconciler $reconciler,
 		private FilesRevisionRevalidator $revalidator,
+		private JournalInspector $inspector,
 	) {
 	}
 
@@ -53,10 +54,16 @@ final class HistoryService {
 		}
 	}
 
+	public function availability(#[\SensitiveParameter] string $token): array {
+		[, $identity] = $this->identity($token);
+		return [...$this->inspector->availability($identity), 'writesPaused' => $this->journal->writesPaused($identity)];
+	}
+
 	/** Native history UI metadata, not a model tool or a generic snapshot endpoint. */
 	public function listing(#[\SensitiveParameter] string $token): array {
 		[, $identity] = $this->identity($token);
 		$items = $this->journal->list($identity);
+		$writesPaused = $this->journal->writesPaused($identity);
 		$standardPolicy = ($this->files->identity()['scopePolicy']['sourceClasses'] ?? []) === ['standard'];
 		usort($items, static fn ($a, $b) => $b['createdAt'] <=> $a['createdAt']);
 		$result = [];
@@ -78,6 +85,9 @@ final class HistoryService {
 						// Metadata availability never bypasses fresh typed verification.
 						$command = 'none';
 					}
+				}
+				if ($writesPaused && in_array($command, ['undo', 'redo'], true)) {
+					$command = 'none';
 				}
 				$result[] = ['id' => $item['id'], 'name' => $file['name'], 'target' => $file['path'], 'state' => $item['state'],
 					'eligible' => $eligible ? $command : 'none', 'version' => $item['version'], 'createdAt' => $item['createdAt']];

@@ -1,0 +1,291 @@
+{
+  "testSecret": "fadenstack-reader-golden-test-only-2026",
+  "nativeProducer": "0.1.7",
+  "fixtures": [
+    {
+      "producer": {
+        "version": "0.1.3",
+        "commit": "bd7d305",
+        "sourceSha256": "c85ac5dc50f8ea8ca189e88a7449c1d779ea58d8e493361bfee82743f076341c"
+      },
+      "row": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "owner_hash": "cc2f59ff962b99ac564bad4f63da535f575364e93b9349b107fa35e85754ba8c",
+        "scope_hash": "0e972cc4227352acee712c252691ee701f4d52d0f1cc53abf805267f436d965f",
+        "resource_hash": "205ffb8c5a5c241ba9d3a3aa5d36d1bd423d9009a7e14def446a81b9f14cfdd7",
+        "operation": "nc_update_text_file",
+        "state": "applied",
+        "direction": "apply",
+        "ticket_hash": null,
+        "session_hash": null,
+        "resource_json": "{\"authorityReference\":\"file:86\",\"provider\":\"files\",\"recovery\":\"standard_private_v1\",\"reference\":\"parent:80/name:paired.md\"}",
+        "payload": "02eee17237ae10f796cbbe9ab808855d47f48adc5a0a6be5ac4a1cc5047f51d67470ee58f46eebf69899bed3f8a7c0458c2e7ffe78b0ab878a89daf8ccf0f66d2d03f87272c37faab9ebedfc3bd429efb28168ababeac9d213fd3b9aeb51a8f357387f90d00f24cd428e370cf55fc78713d79bb46990753466364746f89aaadce2366543e2904e276cfa3b2a7b42da179653140b09786fba6b85a37bbe782dfbae16b06a09cab1129599232b248979082e92ae6cb325de90c6683637db1b50e2a7683b6e67697102e4d0f552dc8259bc63f313ed2e898ac78679afcc61ae952b56dcca1b1304f52683cf912c588017188e3436b68f45b85cb8e3f15f4b95928a49dbecb7378586c36b8bef2687bd26cd760cb761e73cf328eafd191f019ed47a14966998fc6ed9447c9f788818ce3fb8b9face8bd591c04fa29249f85f2ca25895df28dd06dee084d85b5abb264a7e0a60efc653e55b6ac047a409ad5d4d90327fa866d8e701a7ce8449e639f6d6b0c8ec291186dfb80d99911e10190d8c02539aa5a0a93a23a301d246c453d13319550f5db91a468a19e7e0f80248818929c71afe4172aeb338902c34a4b1aa6f87f2d9d704e1379c4abedc943596d0b03e8d47d366c19f0ad51599b89308211774385c4c734ad5a1e0b67e76e1cf82d44f7a7ec103e3486ed270c28e819ac0dfbac66e4152194f8d5ac2df26d90981c9fef9a3362c7ecfa43e689bf682a8b54f768cd8615cb7ecef35c3a7bda3c42ce279defa6c3222022e02e3969bb4e9eea22b90bf72aa71ba44748baaed5b63d6d5a8f846799b30bd02473e9dc9ef4297ac850e6b9fb8565e444d3b1db606a1857d5c2310c60ac5529b5fa4b3e61740322ff60a56678f54ef93d266f68387f9b9c7bcbd0e9a2459574c4006cbfb24e5e353475ee4ae2ad99c1de44f221419c0d76b374f40089c7d047c217a21f50e0345b5e1221a33ce8815bd5475fd75b4ed27a293b844d726dc45a936f70924ccfa48e95a393e53d7f61b468c4e3e06ed3cfaadcba80941665ee986aeab013694732343c67bd71b540bb1197662d05f7661701ef97b36b85b9932d894ba6774d27b92bc5905f2e6acd4fd471b6e7cd1932d909c581a365038d4f16fad6c27603f3693a12c5c677104704c6480535e59868c8110ed402bc45065cce63611831813202241e62f323a89ea5e115d602bb79f18a27d3b40|f3e99552c0984aaa1f006afa1bc1a9af|3bc7ce54a15cf03e48693fba7d318c8b016e3b440ad880a0cd2f5ae667c9185bb7ccfdfe1b2be37106186b0194010a3fa51028bff31eb30e2b05d679d69561a1|3",
+        "version": 2,
+        "resource_seq": 3,
+        "payload_bytes": 1892,
+        "created_at": 1793197155,
+        "updated_at": 1793197155,
+        "expires_at": 1793801955,
+        "metadata_mac": "owDgl4mObjmblsY43DNLMXkSHsySwf5asmiQtu7AlHoP9/K+xF0Q1liaK0t4VcdfTXuqVornAvHjTfBONv9+rw=="
+      },
+      "receipt": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "version": 2,
+        "direction": "apply",
+        "outcome": "applied",
+        "reason": "",
+        "created_at": 1793197155,
+        "receipt_mac": "oFhcDQ8TeAqCvxbwQtAV7kMxlJGebmcT3EjBmVzOCi8h1KGM0RuAMZ6oYHmtvXxTDwHONr5vZDbS0DZIrys8/Q=="
+      },
+      "payload": {
+        "forward": {
+          "content": "After paired upgrade.\n",
+          "filename": "paired.md",
+          "operation": "update"
+        },
+        "inverse": {
+          "content": "Before paired upgrade.\n",
+          "operation": "update"
+        },
+        "preconditions": {
+          "afterHash": "b187ba890e64a5317dfb49c5434be08d15e4a1b21e756be740860848f55a08bd",
+          "beforeHash": "1296b623c6a1202b9b038ab01e3564691940a36bcaab2fd8ab9cac66b7002a37",
+          "expectedEtag": "6bef47188b0b3db3a4191c0e970e9299",
+          "fileId": 86,
+          "parentId": 80,
+          "parentPath": "/Reader upgrade ff605f58"
+        },
+        "revision": "548c04d1da1f1c53eb4902fd4cbd502f",
+        "schema": 1
+      }
+    },
+    {
+      "producer": {
+        "version": "0.1.4",
+        "commit": "8964b63",
+        "sourceSha256": "c85ac5dc50f8ea8ca189e88a7449c1d779ea58d8e493361bfee82743f076341c"
+      },
+      "row": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "owner_hash": "cc2f59ff962b99ac564bad4f63da535f575364e93b9349b107fa35e85754ba8c",
+        "scope_hash": "0e972cc4227352acee712c252691ee701f4d52d0f1cc53abf805267f436d965f",
+        "resource_hash": "205ffb8c5a5c241ba9d3a3aa5d36d1bd423d9009a7e14def446a81b9f14cfdd7",
+        "operation": "nc_update_text_file",
+        "state": "applied",
+        "direction": "apply",
+        "ticket_hash": null,
+        "session_hash": null,
+        "resource_json": "{\"authorityReference\":\"file:86\",\"provider\":\"files\",\"recovery\":\"standard_private_v1\",\"reference\":\"parent:80/name:paired.md\"}",
+        "payload": "77a998556073281d09b2947ea08f7a397fd2b201b041d043da98e671e2ed9820b4c2d49301cd784857d97e6346443c69d6d6199124bbb04956c0697d4c7395acf4942cd4104f3ab7234f39bc093cd4a7dfb1ec6e4e7045f5ac50a9219f3eb3b2764d9eaa6749d40cbe5de3fcc6a3294c00b5827ca8d017a4623202db0ada3ac96cfb73c50600e5bddf9451f88dcde8b41a6c5c6b8da347436412c9c854fed9d6cee7f5c0bec2305ad6aef1e255905d695e4d36f8bc856ee183c47c776a44a42523f9b42c4bac3f410fa5162691045c09fda42d8c8c7c7532e01b3469519be4c9b9dc21f6f460fb649f567a2d2df7b4e396f6a95fe1ae5827917c8b503c739d5859e6a7c1a7fe8164e4bf82c44e5e3e4a647755e93f8e6bd5690444bb67c4bcc173cdebfb9de6378afd783914f80d346504238435cfa058f747e64ed1bf72e15bbcffa069ad520240426b20b276f30272d9c496f37c87ee849858b8324d12deeead74bed4d3397d3e0ababad0f23e0b56fbff19b3580a6aeb22e628b049a63ee945aa6bb8c6e6fe5db65043618199deeccd68001c232ff947796d46a242f6313ca7196dfc9c00cc835b8cbed4a56380f41b8d14042f2cf7c9a1e4552dd687142fdb61f8b24f123836e8398cf39aeae6c19a78fe458b52fd31a4faf490e81042f7c6e1731f04a4de4a2a24e68a74ebfe0b6265c1835acc0cad9d58e125ee1b73115f47db8f34f265781256a0a722b7cfa2d1f9bbbd9910062daa326f3e6e77f5145b76a5b22dab9d1a4a338586ef834329de8acdef557267c9a7b577795112e17bda6874ed7588c849a37f5dcd218d59c6caef0bd124747a532de578495bae6110cec8dea7329beb9290688cc1a7305f6a7406dbb6a332ad5a1e337a92daf4f085b9a2c4830bd073edf8577e26903cc0d7d2dfe2dfbe98b2cb8228bbd578352857c9ee5cb73bdcd295bf58cf918f7d12927d70d799dc455c89589ed045a06760c38dcd5daf711b6abc563370251453d9c5f5a9024244e328594106362ea2e45025c8778a8b001791660063e3f520dc92e4a80a500d72cb9fce589342de31425f5349c80f92d0fe017ae6b3ca0308f00478f29efd29ba08867691978a24101de60074fd1258537cd5f657236e5ef4ea7942c77b07a6af3bb2efd298b60143ea544d4ada2d28daf11209240a1cf8cde4f4ff26b358a59f32d0fa3b3852e920e53869|34e5cb90f32a897266e2840dc2b25217|88594690ab8f42bd622387ccdd3eab40d1322810e18c519724abf3a61c24658e78861907670b68dbcaa7178b47b10afbd793244a545eb39b9c44a295d8c2f2bb|3",
+        "version": 2,
+        "resource_seq": 3,
+        "payload_bytes": 1892,
+        "created_at": 1793197155,
+        "updated_at": 1793197155,
+        "expires_at": 1793801955,
+        "metadata_mac": "FAJIzTiyq/fs2d1qL8tIE8Jldj6N8SEBqjOEIUi9qka1HKDgnp+04NCKkVP93rHquALmWma0jqCpsXSffLoAuw=="
+      },
+      "receipt": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "version": 2,
+        "direction": "apply",
+        "outcome": "applied",
+        "reason": "",
+        "created_at": 1793197155,
+        "receipt_mac": "oFhcDQ8TeAqCvxbwQtAV7kMxlJGebmcT3EjBmVzOCi8h1KGM0RuAMZ6oYHmtvXxTDwHONr5vZDbS0DZIrys8/Q=="
+      },
+      "payload": {
+        "forward": {
+          "content": "After paired upgrade.\n",
+          "filename": "paired.md",
+          "operation": "update"
+        },
+        "inverse": {
+          "content": "Before paired upgrade.\n",
+          "operation": "update"
+        },
+        "preconditions": {
+          "afterHash": "b187ba890e64a5317dfb49c5434be08d15e4a1b21e756be740860848f55a08bd",
+          "beforeHash": "1296b623c6a1202b9b038ab01e3564691940a36bcaab2fd8ab9cac66b7002a37",
+          "expectedEtag": "6bef47188b0b3db3a4191c0e970e9299",
+          "fileId": 86,
+          "parentId": 80,
+          "parentPath": "/Reader upgrade ff605f58"
+        },
+        "revision": "548c04d1da1f1c53eb4902fd4cbd502f",
+        "schema": 1
+      }
+    },
+    {
+      "producer": {
+        "version": "0.1.5",
+        "commit": "050b243",
+        "sourceSha256": "c85ac5dc50f8ea8ca189e88a7449c1d779ea58d8e493361bfee82743f076341c"
+      },
+      "row": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "owner_hash": "cc2f59ff962b99ac564bad4f63da535f575364e93b9349b107fa35e85754ba8c",
+        "scope_hash": "0e972cc4227352acee712c252691ee701f4d52d0f1cc53abf805267f436d965f",
+        "resource_hash": "205ffb8c5a5c241ba9d3a3aa5d36d1bd423d9009a7e14def446a81b9f14cfdd7",
+        "operation": "nc_update_text_file",
+        "state": "applied",
+        "direction": "apply",
+        "ticket_hash": null,
+        "session_hash": null,
+        "resource_json": "{\"authorityReference\":\"file:86\",\"provider\":\"files\",\"recovery\":\"standard_private_v1\",\"reference\":\"parent:80/name:paired.md\"}",
+        "payload": "f693bd83df9e367781c4f398fedb5ba24289acb129b9358e7d809b16657dcfa4746a42422600891a2a05a41ae7fed4ee9f363913e3d6a0460701073caf423d66201adbbd51cca7bcde25d53bcdf1ae6b37d63eb86e5476815a4372a95a4a1fcd09972380309a70b8e8c7988545111ad34f6e2bbe5ff790f5e259c5dc60cc6783d3cccb5ebb0037f807bab0f39375928ac16db3b27da08f44942d15064c36572699d0c114433d06d0c24ccdf04eabd31b95b851eb9b49b915003a70e0d8d2549dfc8063b9c57a95fdf7af1a234885b3e95d02eea96bca470daa9e24da882b20c53c44bf3b9b31110ca53e0f0bf5110245a329bc19304bfb5b8538774656a971502039e85c6354f106d19473922b5f68c1910b6753c0d5a3ae812263ab54875313ecd553b109f9a60da69a7982cf1d5def7364fb6341db7cad4d06a2433b152846e532c4e6e56e13c87b3e325715dee4cc651b975d6a2e0c7235b9e2677e8d6de1067e9443a4cf205c2dcecd179c12943f12642b207374bf3415c6b042d94c81dc05c45b297436f4e8579e13fc81e83017713978eb5b32393f06647246ded975efc8f3527869ae7dc8c0f1a48776596c4eafebbbe46c85136006794ca8a63cc116e896586a7448a2a0bdebd0c4fcdb036e91f09ee92740281d7d0cbbeeb1ea1702a089fa5eeb0924220b499818705e2ccab03a16403c1c13f8cacc4918c70ecb7d60e1e1044ee3c83569418215e9944b21d8f94a7e20c50987b43b25b68c4813e5189053177f196a012e36182f66bdceccc287f39d7f9adceca6fd6d986bac7a8edd9d4c3c0899da59f3c124cae2713dc96460b9cf8ceca9f4aecbde0fe9303fbdb1f709fdf7f9c6b283d2d6414d0a164472e2d49c868f38414fdf073560629d399ab5306215a6f7f74dca2672a3fb2214e4a27b5f4066660a8a48f8cfeb53c003a7f3d303ec0d63602d78527d3de9ae954028fdce9af9312105da16ae225864460b0b6ea881db9f848d6f69eadb4fbba6746a83bdacf69fcff8e9ca3b8cd3223f433b7977695aaeb090e91ab724abbb84f5005576cc6784d2cb85200b9644cde9c490234941a54a78d41d55ce95fbbafbeee9189769847c6bcde7ee5dee3ecf5f7388052f08a862f47710a02f1e86f10fd0516ae89df1d7228c0586872348a2d2a1c3451e0f825342e84e19fd0add94bdb8b381ffce52738c70cbd196dd2df19d|f777d1734a6f3d4ac56b998870ab918f|c9af5f290fdafb99f9cea2cbee038ec0842c0c9c6ae94b2bf25471a934199caa4c615843f50b6b7c343e54eb570b1e0e9f36a4de387ef177f2ec640ddd391055|3",
+        "version": 2,
+        "resource_seq": 3,
+        "payload_bytes": 1892,
+        "created_at": 1793197155,
+        "updated_at": 1793197155,
+        "expires_at": 1793801955,
+        "metadata_mac": "rVHR7LcAgCnYtsafBmUV4DLw86hLReYT1/tAUc3sg/+xzmsJWFldHeFUOXCSMd/qUnlPh8skWA83fEunP3Z0UQ=="
+      },
+      "receipt": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "version": 2,
+        "direction": "apply",
+        "outcome": "applied",
+        "reason": "",
+        "created_at": 1793197155,
+        "receipt_mac": "oFhcDQ8TeAqCvxbwQtAV7kMxlJGebmcT3EjBmVzOCi8h1KGM0RuAMZ6oYHmtvXxTDwHONr5vZDbS0DZIrys8/Q=="
+      },
+      "payload": {
+        "forward": {
+          "content": "After paired upgrade.\n",
+          "filename": "paired.md",
+          "operation": "update"
+        },
+        "inverse": {
+          "content": "Before paired upgrade.\n",
+          "operation": "update"
+        },
+        "preconditions": {
+          "afterHash": "b187ba890e64a5317dfb49c5434be08d15e4a1b21e756be740860848f55a08bd",
+          "beforeHash": "1296b623c6a1202b9b038ab01e3564691940a36bcaab2fd8ab9cac66b7002a37",
+          "expectedEtag": "6bef47188b0b3db3a4191c0e970e9299",
+          "fileId": 86,
+          "parentId": 80,
+          "parentPath": "/Reader upgrade ff605f58"
+        },
+        "revision": "548c04d1da1f1c53eb4902fd4cbd502f",
+        "schema": 1
+      }
+    },
+    {
+      "producer": {
+        "version": "0.1.6",
+        "commit": "2cea57f",
+        "sourceSha256": "3788db4452f182697873860f993648b3bc78bc2bf9ee9ca08f35db66ebd9c699"
+      },
+      "row": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "owner_hash": "cc2f59ff962b99ac564bad4f63da535f575364e93b9349b107fa35e85754ba8c",
+        "scope_hash": "0e972cc4227352acee712c252691ee701f4d52d0f1cc53abf805267f436d965f",
+        "resource_hash": "205ffb8c5a5c241ba9d3a3aa5d36d1bd423d9009a7e14def446a81b9f14cfdd7",
+        "operation": "nc_update_text_file",
+        "state": "applied",
+        "direction": "apply",
+        "ticket_hash": null,
+        "session_hash": null,
+        "resource_json": "{\"authorityReference\":\"file:86\",\"provider\":\"files\",\"recovery\":\"standard_private_v1\",\"reference\":\"parent:80/name:paired.md\"}",
+        "payload": "d1fa008efbee6583f4dda71a928b023a00a11d6024ea74e5269e7c767dfffafccaf674694222ddc5352807b6e3d51be1363f9634d3a62a06258a303ab48655d607c75a6bd9ffa705f0e9f5863a990fd8a24282f885f99d8fb22e15598b4291f2e68e09c66cc55a95711abb7cfb7211a16695bca9872f8048bc75566fe68b05e1d79078fe8b54426fb748128ea236dce41dd0db72a517e221d538d9373487506f60977da49fa615f1c059d26ce6513b0ce24d119b63f92935d21b6ae082b1b03a3058687969e9f172c74825fbd8e61a4a8a444e1efe6599a582f0ac1d07574d153a7cb5a77ef0becfc315e4a462c4f02c8b3b55b68dd670db58b3d2059f7814bfc50337056b2741fd52b0696b1d4e7e8a507534b99045944ca4a8b25667c062dc5b4132e919ab62c9264da6df359dd5d8bc32af8e2bc5df1cc345b20d7711a7b58c3b23a4ff3da5f580f97d8757b2485db3f59566dcbfa5c884bedbf2955f9a6528ee2d915a81a05616607565b96a1f01b700cd18f06490c2f57b98217ca6c0cb1c4912c909f33f82803f5f92a4a7ce282cfc1f7e5306adf5ccc5cf9e996bea4c67556d7a1c29d9c5e170c78491ccac911b4cc9367f5b9dd4cfe29752e864b8e7f8a4541a43a66ff79d164580d3646c4df2651cf2022cfa87bf4b004b14ff2c308aa7208361e1ca55b795cb0706c362ce30d5fd2593a8fcd42a85dec22e6ed198dec71bba30fc7ac77dc280af4a157f78c07879a0b47f146406885f158b888edb5b2d4d4a8afb3e9ad084b2915d70a3fecb1a0629f1b9e91e207792a4803783975b19c900ce876c3f93375259973b82e592d06f72d009f48ff795ca99827e0f318199a7657d33568a8e0a0d4fa90e8067269b0fde0a001bfc2b5561993f67f058339ad9238f6a0b394efaf695ff64a5e67008a83d8d280ad53dc03fdafa697649ca0b170ef9d2da336e4880b0283070f991f2eb267fadb943469880cb345cec4f745df08dd880ec7628f84a2c82ff65a5232d016400e277d9a4d855accbd282f9d99662fcee2db8abb56d63c414b9ff1682fc0d9bef16b02976788cf57333d5cc51be781516822e9b218a574df7aa209924d0c152034a4b5030f5a12ef79c2ad52caec76935b2883159e4f9554c55bbe6460c2ba86520de9587f827a09d03f8e89c4c7ca7206539dc5c51d1419f8491573de5b4da59e010d309094a321f6e1ede|4efdd761cea71fb0843e1693e01dd8f4|edfd7f95f4f96ecb6dc830db10211cb160a4d17bd5617d58e073be61028681840d4247d2b517e7e3a61755bd323e9915521b9773a10349596334e914209d3b6c|3",
+        "version": 2,
+        "resource_seq": 3,
+        "payload_bytes": 1892,
+        "created_at": 1793197155,
+        "updated_at": 1793197155,
+        "expires_at": 1793801955,
+        "metadata_mac": "YjY0Om11RGJTcTZhbVc1VjRxRXRmVEU1VmZMcWpxMEFOWFpTWWhaUytSemFoR3ArWmZDMCthSkJWZ2ZUY09FRytIUThvYjdycytMMUFxaGJNNlRlOUVCNXZBPT0="
+      },
+      "receipt": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "version": 2,
+        "direction": "apply",
+        "outcome": "applied",
+        "reason": "",
+        "created_at": 1793197155,
+        "receipt_mac": "YjY0Om9GaGNEUThUZUFxQ3Z4YndRdEFWN2tNeGxKR2VibWNUM0VqQm1Wek9DaThoMUtHTTBSdUFNWjZvWUhtdHZYeFREd0hPTnI1dlpEYlMwRFpJcnlzOC9RPT0="
+      },
+      "payload": {
+        "forward": {
+          "content": "After paired upgrade.\n",
+          "filename": "paired.md",
+          "operation": "update"
+        },
+        "inverse": {
+          "content": "Before paired upgrade.\n",
+          "operation": "update"
+        },
+        "preconditions": {
+          "afterHash": "b187ba890e64a5317dfb49c5434be08d15e4a1b21e756be740860848f55a08bd",
+          "beforeHash": "1296b623c6a1202b9b038ab01e3564691940a36bcaab2fd8ab9cac66b7002a37",
+          "expectedEtag": "6bef47188b0b3db3a4191c0e970e9299",
+          "fileId": 86,
+          "parentId": 80,
+          "parentPath": "/Reader upgrade ff605f58"
+        },
+        "revision": "548c04d1da1f1c53eb4902fd4cbd502f",
+        "schema": 1
+      }
+    },
+    {
+      "producer": {
+        "version": "0.1.7",
+        "commit": "7191f9d",
+        "sourceSha256": "3788db4452f182697873860f993648b3bc78bc2bf9ee9ca08f35db66ebd9c699"
+      },
+      "row": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "owner_hash": "cc2f59ff962b99ac564bad4f63da535f575364e93b9349b107fa35e85754ba8c",
+        "scope_hash": "0e972cc4227352acee712c252691ee701f4d52d0f1cc53abf805267f436d965f",
+        "resource_hash": "205ffb8c5a5c241ba9d3a3aa5d36d1bd423d9009a7e14def446a81b9f14cfdd7",
+        "operation": "nc_update_text_file",
+        "state": "applied",
+        "direction": "apply",
+        "ticket_hash": null,
+        "session_hash": null,
+        "resource_json": "{\"authorityReference\":\"file:86\",\"provider\":\"files\",\"recovery\":\"standard_private_v1\",\"reference\":\"parent:80/name:paired.md\"}",
+        "payload": "bc27db792b2125b5e2af97cc274f111d5f6a9a16ac7dd46c9047af6c957eb57ebee17d24411a042bd40a5fb9e6ab1aba500122d5b8b9c72d92b142b21023e6b2aa4f3548150683b27d5f7345ea68f8268150af88a776c0d6917fda44e9695732fc981cf52f4f773b64cf6fbc24f6334cdce4346cf9b4ee6690da2d78472f43240cacd88e79a0d747bab0734a7e1add75957b907e9f9379727d1e224a4607ef20ee9337a862a26411cce9a99b935ba28fe375b1cc5aa236e8d09491ab35887a171b06694ecc72457de21469802fd98c06506c174e739b2b539916a61d1ec011480eaa15023468ab90e44b4f54cc2b4a857764b87a3f18cc6814021c2ee442f445876b854170e65340e6b3852eb28f5e31662200546e87a12406752be7d25d75b5c30ec1bffe3b9450537a144731378b41f62f574729a834dd5e31325b6394b25b2795d823e8e61a387738a5e6fa950adc121c5d950bca94b7dc65ea77b0241a10c4bf1d0bd9643588b3c94be84b1ef660f8b7e41dd1cfb85f7003df3eb0c48e2b7b36e5857cfc844139426862c2fa2813b1ff139a65654e72f8ab8a3608ddfbd231106cd9f61254efa01f71cb38b9113c1cc96658cc735b986e8fe409f8586a3775f91c8c5ffd743ef131bcb76d1e8bcdc0bc9bfb82c7c7bbe4ea7004276b1540c982066f8b6ba199ceb200af92819b74496f1d3868a55a6791ab3e61600a08696e95b07615c3c96b31c5b3edfe533ce991414516f7397ac2f7e289b4d3f5a113198cb3fba4cef3c124892ea826aa1bf2deb0801e3e770f415b15817bb21194d6f263ea79c64dcebc32f342af16e846c346a475a1eb00e85a597912a3a70df3d08f30c7966e9be5c229536930d5dca5bb1ea0a420a2455361c3b0c204442500bd041a9c1e76af469fbaa4712df0648ca3ddd42a4d9b5b0227e979a7486373fa8526c9e03604d11068bc3a22080c9b27c4e36196b242f602d8d82232a0b13bd8ff0971aa098120d23829a0d0100aff24dbe322f17cf67db6fb388d3230d6e369a00a9dc1e46878f9d2ff939620e9fe96c5f12f464fc30e6eda30141279c7ea71a04a970e2fc6b8def08a3f0a8297c6759d0aade899e7a62cd4aaeafabdf7bb0f35c0d944a0a693036d2ba13a6883f8184ba89979d6b2a7313e5b5d53931653cd5b9530543494c4843d73fcd39e61d291b21765dd5a538f2408b78df46a7c03b5dc|35a0a24469462574fc66645fcdb11dc1|6659de41005329a3e73ee311c6b2d492b70cf7e5781b35f7dfe4e1994e60eef721c5111df308bc684c0354409895daf36bbbf6a0f627f483bc82fe77d9688ba4|3",
+        "version": 2,
+        "resource_seq": 3,
+        "payload_bytes": 1892,
+        "created_at": 1793197155,
+        "updated_at": 1793197155,
+        "expires_at": 1793801955,
+        "metadata_mac": "YjY0OjB5Q1hLL1E2aE4xSWFIdXZsZlR6ZzQ2SkUrSWkxQytJWVl6Y1RoQk9lYmFweFQ0MTYvN3MrVmxzSlpNa0VnR3BCdlRuMzlwc2I5NGpab1I1VjFndjlRPT0="
+      },
+      "receipt": {
+        "action_id": "b89e13ce23215b1f4131646e33b1995e",
+        "version": 2,
+        "direction": "apply",
+        "outcome": "applied",
+        "reason": "",
+        "created_at": 1793197155,
+        "receipt_mac": "YjY0Om9GaGNEUThUZUFxQ3Z4YndRdEFWN2tNeGxKR2VibWNUM0VqQm1Wek9DaThoMUtHTTBSdUFNWjZvWUhtdHZYeFREd0hPTnI1dlpEYlMwRFpJcnlzOC9RPT0="
+      },
+      "payload": {
+        "forward": {
+          "content": "After paired upgrade.\n",
+          "filename": "paired.md",
+          "operation": "update"
+        },
+        "inverse": {
+          "content": "Before paired upgrade.\n",
+          "operation": "update"
+        },
+        "preconditions": {
+          "afterHash": "b187ba890e64a5317dfb49c5434be08d15e4a1b21e756be740860848f55a08bd",
+          "beforeHash": "1296b623c6a1202b9b038ab01e3564691940a36bcaab2fd8ab9cac66b7002a37",
+          "expectedEtag": "6bef47188b0b3db3a4191c0e970e9299",
+          "fileId": 86,
+          "parentId": 80,
+          "parentPath": "/Reader upgrade ff605f58"
+        },
+        "revision": "548c04d1da1f1c53eb4902fd4cbd502f",
+        "schema": 1
+      }
+    }
+  ]
+}

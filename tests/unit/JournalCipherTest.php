@@ -15,8 +15,11 @@ class JournalCipherTest extends TestCase {
 		$mac = static fn (string $message) => hash_hmac('sha512', $message, $key, true);
 		$crypto = $this->createMock(ICrypto::class);
 		$crypto->method('calculateHMAC')->willReturnCallback($mac);
-		return [new JournalCipher($crypto), $mac, ['action_id' => str_repeat('a', 32), 'version' => 2,
-			'direction' => 'apply', 'updated_at' => 42, 'payload' => 'synthetic-sealed-content']];
+		return [new JournalCipher($crypto), $mac, ['action_id' => str_repeat('a', 32), 'owner_hash' => str_repeat('b', 64),
+			'scope_hash' => str_repeat('c', 64), 'resource_hash' => str_repeat('d', 64), 'resource_json' => '{}',
+			'operation' => 'nc_update_text_file', 'state' => 'applied', 'version' => 2, 'resource_seq' => 1,
+			'direction' => 'apply', 'created_at' => 40, 'updated_at' => 42, 'expires_at' => 70,
+			'payload' => 'synthetic-sealed-content', 'payload_bytes' => 24, 'ticket_hash' => null, 'session_hash' => null]];
 	}
 
 	public function testNewHeaderAndReceiptSealsFitTextColumnsAndVerify(): void {
@@ -83,10 +86,76 @@ class JournalCipherTest extends TestCase {
 		$other->verify($cipher->sign($row));
 	}
 
+	public function testMalformedUtf8HeaderUsesTheIntegrityFailureContract(): void {
+		[$cipher, , $row] = $this->fixture();
+		$signed = $cipher->sign($row);
+		$signed['resource_json'] = "\x80";
+		$this->expectException(JournalException::class);
+		$cipher->verify($signed);
+	}
+
+	public function testMalformedUtf8ReceiptUsesTheIntegrityFailureContract(): void {
+		[$cipher, , $row] = $this->fixture();
+		$receipt = $cipher->receipt($row, 'applied');
+		$receipt['reason'] = "\x80";
+		$this->expectException(JournalException::class);
+		$cipher->verifyReceipt($receipt);
+	}
+
 	public function testReceiptSealCannotBeReusedAsAHeaderSeal(): void {
 		[$cipher, , $row] = $this->fixture();
 		$row['metadata_mac'] = $cipher->receipt($row, 'applied')['receipt_mac'];
 		$this->expectException(JournalException::class);
 		$cipher->verify($row);
+	}
+
+	public function testExtraColumnsAndExplicitV1FormatDoNotChangeReleasedSeals(): void {
+		[$cipher, , $row] = $this->fixture();
+		$signed = $cipher->sign($row);
+		$extended = [...$signed, 'format' => 'v1', 'future_column' => 'not part of v1'];
+		$cipher->verify($extended);
+		self::assertSame($signed['metadata_mac'], $cipher->sign($extended)['metadata_mac']);
+		$receipt = $cipher->receipt($row, 'applied');
+		$cipher->verifyReceipt([...$receipt, 'future_column' => 'ignored by released receipt contract']);
+		foreach (['version', 'resource_seq', 'payload_bytes', 'created_at', 'updated_at', 'expires_at'] as $field) {
+			$signed[$field] = (string)$signed[$field];
+		}
+		$cipher->verify($signed);
+	}
+
+	public static function headerFields(): array {
+		return array_map(static fn ($key) => [$key], ['action_id', 'owner_hash', 'scope_hash', 'resource_hash', 'resource_json',
+			'operation', 'state', 'direction', 'version', 'resource_seq', 'payload', 'payload_bytes',
+			'ticket_hash', 'session_hash', 'created_at', 'updated_at', 'expires_at']);
+	}
+
+	#[DataProvider('headerFields')]
+	public function testEveryReleasedHeaderFieldRemainsAuthenticated(string $field): void {
+		[$cipher, , $row] = $this->fixture();
+		$signed = $cipher->sign($row);
+		$signed[$field] = is_int($row[$field]) ? $row[$field] + 1 : 'changed';
+		$this->expectException(JournalException::class);
+		$cipher->verify($signed);
+	}
+
+	#[DataProvider('headerFields')]
+	public function testMissingReleasedHeaderFieldIsNeverTreatedAsNull(string $field): void {
+		[$cipher, , $row] = $this->fixture();
+		$signed = $cipher->sign($row);
+		unset($signed[$field]);
+		$this->expectException(JournalException::class);
+		$cipher->verify($signed);
+	}
+
+	public function testUnknownFormatRefusesHeaderAndPayloadBeforeUsingCrypto(): void {
+		[$cipher, , $row] = $this->fixture();
+		foreach (['verify', 'decrypt', 'sign'] as $operation) {
+			try {
+				$cipher->$operation([...$row, 'format' => 'v2']);
+				self::fail('Unknown format accepted');
+			} catch (JournalException $error) {
+				self::assertSame('unsupported_journal_format', $error->reason);
+			}
+		}
 	}
 }

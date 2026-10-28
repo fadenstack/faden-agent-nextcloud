@@ -47,6 +47,8 @@ final class JournalService {
 		$this->setPayload($row, $payload);
 		$this->store->ensureQuotaRows($identity->ownerHash, $row['resource_hash']);
 		$row = $this->store->atomic(function () use ($row, $resource): array {
+			$this->store->lockOwner($row['owner_hash']);
+			$this->assertWritable($row['owner_hash']);
 			$row['resource_seq'] = $this->store->reserve($row['owner_hash'], $row['resource_hash'], $row['action_id'], $row['payload_bytes'], $this->policy);
 			$entries = 0;
 			foreach ($this->coordinated($row['owner_hash'], $resource) as $other) {
@@ -117,6 +119,7 @@ final class JournalService {
 		$ticket = bin2hex(random_bytes(32));
 		return $this->store->atomic(function () use ($identity, $row, $direction, $ticket): array {
 			$this->store->lockOwner($row['owner_hash']);
+			$this->assertWritable($row['owner_hash']);
 			$this->store->lockResource($row);
 			$this->assertOrder($row, $direction);
 			$updated = $row;
@@ -130,17 +133,62 @@ final class JournalService {
 	}
 
 	public function markDispatched(JournalIdentity $identity, string $id, string $ticket): array {
-		$row = $this->authorized($identity, $id, 'dispatch');
-		$this->ticket($identity, $row, $ticket);
-		$this->requireSnapshot($row);
-		if (!in_array($row['state'], ['prepared', 'undo_prepared', 'redo_prepared'], true)) {
-			throw new JournalException('state_conflict');
+		$this->authorized($identity, $id, 'dispatch');
+		return $this->store->atomic(function () use ($identity, $id, $ticket): array {
+			$this->store->lockOwner($identity->ownerHash);
+			$this->assertWritable($identity->ownerHash);
+			$row = $this->authorized($identity, $id, 'dispatch');
+			$this->ticket($identity, $row, $ticket);
+			$this->requireSnapshot($row);
+			if (!in_array($row['state'], ['prepared', 'undo_prepared', 'redo_prepared'], true)) {
+				throw new JournalException('state_conflict');
+			}
+			$updated = $row;
+			$updated['state'] = match ($row['direction']) {
+				'apply' => 'dispatching', 'undo' => 'undoing', 'redo' => 'redoing'
+			};
+			return $this->summary($this->transition($row, $updated, 'dispatched'));
+		});
+	}
+
+	/** Read-only indication; authoritative checks run again under the dispatch mutex. */
+	public function writesPaused(JournalIdentity $identity): bool {
+		try {
+			$this->assertWritable($identity->ownerHash);
+			return false;
+		} catch (JournalException $error) {
+			if ($error->reason !== 'history_safety_pause') {
+				throw $error;
+			}
+			return true;
 		}
-		$updated = $row;
-		$updated['state'] = match ($row['direction']) {
-			'apply' => 'dispatching', 'undo' => 'undoing', 'redo' => 'redoing'
-		};
-		return $this->store->atomic(fn () => $this->summary($this->transition($row, $updated, 'dispatched')));
+	}
+
+	private function assertWritable(string $owner): void {
+		if ($this->store->blocked($owner)) {
+			throw new JournalException('history_safety_pause');
+		}
+		// Until the retention writer preserves invalidation independently, an
+		// unreadable settled record can still contain an outstanding Redo branch.
+		// Skipping it could revive that branch after the original key is restored.
+		foreach ($this->store->owned($owner) as $row) {
+			try {
+				$this->cipher->verify($row);
+			} catch (JournalException) {
+				throw new JournalException('history_safety_pause');
+			}
+		}
+		foreach ($this->store->activeClaims($owner) as $claim) {
+			$row = $this->store->get($claim['active_id']);
+			try {
+				if ($row === null || $row['owner_hash'] !== $owner || $row['resource_hash'] !== $claim['resource_hash'] || !in_array($row['state'], self::BUSY, true)) {
+					throw new JournalException('history_safety_pause');
+				}
+				$this->cipher->verify($row);
+			} catch (\Throwable) {
+				throw new JournalException('history_safety_pause');
+			}
+		}
 	}
 
 	/** A successful HTTP status alone is never a verified readback. */
@@ -221,13 +269,19 @@ final class JournalService {
 
 	/** Background maintenance deletes expired encrypted bytes without opening a native user's content. */
 	public function pruneExpired(int $limit = 100): int {
-		return $this->expireRows($this->store->expiryCandidates($this->now(), $this->now() - 2592000, $limit));
+		return $this->expireRows($this->store->maintenancePage($limit));
 	}
 
 	private function expireRows(array $rows): int {
 		$count = 0;
 		foreach ($rows as $row) {
-			$this->cipher->verify($row);
+			try {
+				$this->cipher->verify($row);
+			} catch (JournalException) {
+				// Reader prerequisite: preserve unreadable data until the separately
+				// released retention writer can leave a durable denial if necessary.
+				continue;
+			}
 			if ($row['payload'] !== null && $row['expires_at'] <= $this->now()) {
 				$changed = $this->store->atomic(function () use ($row): bool {
 					$row = $this->maintenanceRow($row);

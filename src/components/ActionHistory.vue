@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { t } from '@nextcloud/l10n'
+import { n, t } from '@nextcloud/l10n'
 import NcDialog from '@nextcloud/vue/components/NcDialog'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import { Icon } from '@fadenstack/ui-vue'
@@ -15,12 +15,15 @@ const loading = new AbortController()
 onMounted(() => props.host.refreshHistory(loading.signal))
 onBeforeUnmount(() => loading.abort())
 async function choose(item: HistoryItem) {
-	if (item.eligible === 'none' || props.host.chat.isBusy || !props.host.historyCommandsAvailable) return
+	if (item.eligible === 'none' || props.host.chat.isBusy || !props.host.historyCommandsAvailable || paused(item)) return
 	emit('close')
 	// NcDialog is teleported outside the pane. Let it unmount before the native
 	// dirty-editor guard inspects the page; no native dialog is ignored or bypassed.
 	await nextTick()
 	await props.host.invokeHistory(item.eligible, item.id, item.eligible === 'undo' ? t('fadenstack_agent', 'Undo file change') : item.eligible === 'redo' ? t('fadenstack_agent', 'Redo file change') : item.eligible === 'revalidate' ? t('fadenstack_agent', 'Verify file revision') : t('fadenstack_agent', 'Inspect outcome'))
+}
+function paused(item: HistoryItem): boolean {
+	return !!props.host.history.availability?.writesPaused && ['undo', 'redo'].includes(item.eligible)
 }
 function state(item: HistoryItem): string {
 	if (item.eligible === 'revalidate') return t('fadenstack_agent', 'File revision changed')
@@ -39,6 +42,15 @@ function state(item: HistoryItem): string {
 	<NcDialog :open="true" :name="t('fadenstack_agent', 'Agent actions')" @update:open="!$event && emit('close')">
 		<div class="fadenstack-action-history" :data-version="version">
 			<p>{{ t('fadenstack_agent', 'Review a private text-file change before restoring it. Protection settings and later edits can prevent restoration.') }}</p>
+			<p v-if="host.history.availability?.writesPaused" role="alert">
+				{{ t('fadenstack_agent', 'Agent file changes are paused because an earlier action could not be safely checked. Contact your administrator. You can still inspect available outcomes.') }}
+			</p>
+			<p v-if="host.history.availability?.unavailableCount" role="status">
+				{{ n('fadenstack_agent', '{count} earlier action could not be verified and cannot be restored. An earlier instance key or damaged history may be the cause.', '{count} earlier actions could not be verified and cannot be restored. An earlier instance key or damaged history may be the cause.', host.history.availability.unavailableCount, { count: host.history.availability.unavailableCount }) }}
+			</p>
+			<p v-if="host.history.availability?.earlierScopeCount" role="status">
+				{{ n('fadenstack_agent', '{count} earlier action uses another connection or previous app settings. Its saved content expires by {date}.', '{count} earlier actions use another connection or previous app settings. Their saved content expires by {date}.', host.history.availability.earlierScopeCount, { count: host.history.availability.earlierScopeCount, date: host.history.availability.earlierContentExpiresBy ? new Date(host.history.availability.earlierContentExpiresBy * 1000).toLocaleString() : '' }) }}
+			</p>
 			<p v-if="!host.historyCommandsAvailable" role="status">
 				{{ t('fadenstack_agent', 'Action controls are unavailable on this version. Contact your administrator.') }}
 			</p>
@@ -58,7 +70,7 @@ function state(item: HistoryItem): string {
 						<span v-if="item.target">{{ item.target }}</span>
 						<span>{{ state(item) }} · {{ new Date(item.createdAt * 1000).toLocaleString() }}</span>
 					</div>
-					<NcButton v-if="item.eligible !== 'none'" :disabled="host.chat.isBusy || !host.historyCommandsAvailable" @click="choose(item)">
+					<NcButton v-if="item.eligible !== 'none'" :disabled="host.chat.isBusy || !host.historyCommandsAvailable || paused(item)" @click="choose(item)">
 						<template #icon>
 							<Icon name="history" :size="20" />
 						</template>

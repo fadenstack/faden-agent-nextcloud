@@ -14,6 +14,11 @@ final class JournalIdentity {
 	public readonly string $ownerHash;
 	public readonly string $sessionHash;
 
+	/** Stable ownership namespace; current policy belongs in the session binding. */
+	public static function nativeScope(): string {
+		return hash('sha256', 'nextcloud-files-native-history-v2');
+	}
+
 	/** New pair-scoped namespace only. Does not migrate or expose legacy native-only entries. */
 	public static function forPrincipal(string $nativeUserId, string $nativeScopeHash, string $nativeSessionBinding, VerifiedCloudPrincipal $principal): self {
 		// Validate the native inputs before deriving opaque cloud-scoped bindings.

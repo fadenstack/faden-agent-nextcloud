@@ -42,8 +42,8 @@ class FileService {
 
 	private function journalIdentity(): JournalIdentity {
 		$state = $this->state();
-		$scope = hash('sha256', json_encode([$this->config->get(), $this->scope->configStamp(), 'files-history-v1'], JSON_THROW_ON_ERROR));
-		return $this->principal === null ? new JournalIdentity($this->uid(), $scope, $state['binding'])
+		$binding = hash('sha256', json_encode([$state['binding'], $this->config->get(), $this->scope->configStamp(), $this->config->historyEnabled()], JSON_THROW_ON_ERROR));
+		return $this->principal === null ? new JournalIdentity($this->uid(), JournalIdentity::nativeScope(), $binding)
 			: $this->pairedHistoryIdentity($this->principal);
 	}
 

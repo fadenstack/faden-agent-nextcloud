@@ -5,7 +5,7 @@ import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
-import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults, HistoryDirection, HistoryItem, HistoryPreview } from '../integrations/nextcloud/types.ts'
+import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults, HistoryDirection, HistoryItem, HistoryPreview, HistoryAvailability } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 import type { MutationBinding, WorkspaceCoordinator } from '../workspace/coordinator.ts'
 import { TurnScope, type ScopeIdentity } from '../platform/scope.ts'
@@ -26,7 +26,7 @@ export class NextcloudAgent {
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
 	readonly #historyPreviews = new Map<string, HistoryPreview>()
-	readonly history = shallowReactive({ items: [] as HistoryItem[], loading: false, error: '', active: false, target: '', inspecting: false, verifying: false })
+	readonly history = shallowReactive({ items: [] as HistoryItem[], availability: undefined as HistoryAvailability | undefined, loading: false, error: '', active: false, target: '', inspecting: false, verifying: false })
 	readonly #proposalViews = new Map<string, MutationBinding>()
 	readonly #proposalResources = new Map<string, unknown>()
 	readonly #proposalParents = new Map<string, number>()
@@ -163,6 +163,7 @@ export class NextcloudAgent {
 
 	async signIn(email: string, password: string): Promise<void> {
 		this.history.items = []
+		this.history.availability = undefined
 		const login = await loginWithPassword({ apiUrl: this.config.serverUrl, email, password, fetch: this.#fetch, signal: this.#stop.signal, allowInsecureHttp: this.#developmentHttp })
 		await this.tokens.signIn(login, 'Nextcloud Files', this.#stop.signal)
 		if (this.config.historyEnabled) this.files.setCloudIdentity?.(signal => this.tokens.getAccessToken(signal))
@@ -183,7 +184,12 @@ export class NextcloudAgent {
 		if (!this.historyAvailable || !this.files.history) return
 		this.history.loading = true
 		this.history.error = ''
-		try { this.history.items = await this.files.history.list(signal) } catch (error) { this.history.items = []; if (!signal.aborted) this.history.error = errorMessage(error) } finally { this.history.loading = false }
+		this.history.availability = undefined
+		try {
+			const [items, availability] = await Promise.all([this.files.history.list(signal), this.files.history.availability?.(signal)])
+			this.history.items = items
+			this.history.availability = availability
+		} catch (error) { this.history.items = []; if (!signal.aborted) this.history.error = errorMessage(error) } finally { this.history.loading = false }
 	}
 
 	async invokeHistory(direction: HistoryDirection, actionId: string, label = direction === 'undo' ? 'Undo file change' : direction === 'redo' ? 'Redo file change' : direction === 'revalidate' ? 'Verify file revision' : 'Inspect outcome'): Promise<void> {
@@ -475,6 +481,7 @@ export class NextcloudAgent {
 		this.#closed = true
 		this.files.setCloudIdentity?.()
 		this.history.items = []
+		this.history.availability = undefined
 		this.#stop.abort()
 		this.chat.stop()
 		this.chat.dispose()

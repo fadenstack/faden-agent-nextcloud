@@ -27,6 +27,11 @@ final class SqlJournalStore {
 		}
 		$this->db->beginTransaction();
 		try {
+			// A short app-metadata mutex also orders a future global denial against
+			// dispatch. Native I/O is never performed inside this transaction.
+			if ($this->db->executeStatement('UPDATE *PREFIX*fdn_jr_control SET generation = CASE WHEN generation = 2147483647 THEN 0 ELSE generation + 1 END WHERE control_name = ?', ['safety']) !== 1) {
+				throw new JournalException('journal_owner_unavailable', 503);
+			}
 			$result = $work();
 			$this->db->commit();
 			return $result;
@@ -98,6 +103,40 @@ final class SqlJournalStore {
 		return $this->one('SELECT * FROM *PREFIX*fdn_journal WHERE action_id = ?', [$id]);
 	}
 
+	/** Denial only; these operational records never authorize native content access. */
+	public function blocked(string $owner): bool {
+		return $this->one('SELECT owner_hash FROM *PREFIX*fdn_jr_barriers WHERE owner_hash = ? OR owner_hash = ?', [$owner, '*']) !== null;
+	}
+
+	public function activeClaims(string $owner): array {
+		return $this->all('SELECT resource_hash, owner_hash, active_id FROM *PREFIX*fdn_jr_resources WHERE owner_hash = ? AND active_id IS NOT NULL', [$owner]);
+	}
+
+	public function allocation(string $id): ?array {
+		return $this->one('SELECT * FROM *PREFIX*fdn_jr_alloc WHERE action_id = ?', [$id]);
+	}
+
+	/** Reserve a scan window before processing it; failures cannot pin the cursor. */
+	public function maintenancePage(int $limit): array {
+		return $this->atomic(function () use ($limit): array {
+			$limit = max(1, min(1000, $limit));
+			$control = $this->one('SELECT cursor_id FROM *PREFIX*fdn_jr_control WHERE control_name = ?', ['retention']);
+			if ($control === null) {
+				throw new JournalException('journal_owner_unavailable', 503);
+			}
+			$rows = $this->page($control['cursor_id'], $limit);
+			$after = count($rows) < $limit ? '' : $rows[array_key_last($rows)]['action_id'];
+			$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_control SET cursor_id = ? WHERE control_name = ?', [$after, 'retention']);
+			return $rows;
+		});
+	}
+
+	/** Read-only keyset scan; unhealthy rows cannot starve later diagnostic pages. */
+	public function page(string $after = '', int $limit = 100): array {
+		$limit = max(1, min(1000, $limit));
+		return $this->all('SELECT * FROM *PREFIX*fdn_journal WHERE action_id > ? ORDER BY action_id ASC LIMIT ' . $limit, [$after]);
+	}
+
 	/** Bounded by the per-user metadata quota. */
 	public function owned(string $owner, ?string $scope = null, ?string $resource = null): array {
 		$sql = 'SELECT * FROM *PREFIX*fdn_journal WHERE owner_hash = ?';
@@ -113,6 +152,7 @@ final class SqlJournalStore {
 
 	public function insertEntry(array $row): void {
 		$this->insert('fdn_journal', $row, self::ENTRY_COLUMNS);
+		$this->insert('fdn_jr_alloc', $row, ['action_id', 'owner_hash', 'resource_hash', 'created_at', 'expires_at', 'payload_bytes']);
 	}
 
 	/** Content-free maintenance query; bounded independently of inactive users signing in. */
@@ -131,6 +171,13 @@ final class SqlJournalStore {
 		$args[] = $expectedVersion;
 		if ($this->db->executeStatement($sql, $args) !== 1) {
 			throw new JournalException('state_conflict');
+		}
+		// A verified legacy row may have been unavailable during migration. Its
+		// first authenticated transition can establish accounting without resealing it.
+		if ($this->allocation($row['action_id']) === null) {
+			$this->insert('fdn_jr_alloc', $row, ['action_id', 'owner_hash', 'resource_hash', 'created_at', 'expires_at', 'payload_bytes']);
+		} else {
+			$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_alloc SET payload_bytes = ? WHERE action_id = ?', [$row['payload_bytes'], $row['action_id']]);
 		}
 	}
 
@@ -162,6 +209,7 @@ final class SqlJournalStore {
 			throw new JournalException('state_conflict');
 		}
 		$this->db->executeStatement('DELETE FROM *PREFIX*fdn_jr_attempts WHERE action_id = ?', [$row['action_id']]);
+		$this->db->executeStatement('DELETE FROM *PREFIX*fdn_jr_alloc WHERE action_id = ?', [$row['action_id']]);
 		$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_owners SET entries = entries - 1 WHERE owner_hash = ? AND entries > 0', [$row['owner_hash']]);
 	}
 

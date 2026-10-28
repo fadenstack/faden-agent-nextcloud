@@ -47,6 +47,12 @@ class HistoryController extends Controller {
 
 	#[NoAdminRequired]
 	#[UseSession]
+	public function availability(): DataResponse {
+		return $this->run(fn (#[\SensitiveParameter] string $token) => $this->history->availability($token));
+	}
+
+	#[NoAdminRequired]
+	#[UseSession]
 	public function prepare(string $actionId, string $direction): DataResponse {
 		return $this->run(fn (#[\SensitiveParameter] string $token) => $this->history->prepare($token, $actionId, $direction));
 	}

@@ -16,6 +16,7 @@ export class NextcloudFiles implements FileApi {
 	#cloudIdentity: ((signal?: AbortSignal) => Promise<string>) | undefined
 	setCloudIdentity(provider?: (signal?: AbortSignal) => Promise<string>): void { this.#cloudIdentity = provider }
 	readonly history: HistoryApi = {
+		availability: signal => this.authenticatedPost('/history/availability', {}, signal),
 		list: signal => this.authenticatedPost('/history/list', {}, signal),
 		prepare: (actionId, direction, signal) => this.authenticatedPost('/history/prepare', { actionId, direction }, signal),
 		approve: async (preview, signal) => { await this.authenticatedPost(this.historyPath(preview.id, preview.digest, 'approve'), { digest: preview.digest }, signal) },

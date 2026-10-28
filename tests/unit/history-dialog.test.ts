@@ -12,6 +12,37 @@ vi.mock('@nextcloud/vue/components/NcButton', () => ({ default: defineComponent(
 }) }))
 
 describe('native action-history dialog handoff', () => {
+	it('announces a safety pause, disables restoration and leaves inspection available', () => {
+		const host = { history: { items: [
+			{ id: 'a'.repeat(32), name: 'restore.md', state: 'applied', eligible: 'undo', createdAt: 1 },
+			{ id: 'b'.repeat(32), name: 'inspect.md', state: 'needs_reconciliation', eligible: 'reconcile', createdAt: 1 },
+		], loading: false, error: '', availability: { writesPaused: true } }, historyCommandsAvailable: true,
+		chat: { isBusy: false, version: 0, subscribe: () => () => {} }, refreshHistory: vi.fn() } as unknown as NextcloudAgent
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(ActionHistory, { host })
+		app.mount(root)
+		try {
+			expect(root.querySelector('[role="alert"]')?.textContent).toContain('Agent file changes are paused')
+			const buttons = Array.from(root.querySelectorAll('button'))
+			expect(buttons.find(button => button.textContent?.trim() === 'Undo')?.disabled).toBe(true)
+			expect(buttons.find(button => button.textContent?.trim() === 'Inspect outcome')?.disabled).toBe(false)
+		} finally { app.unmount(); root.remove() }
+	})
+	it('explains unverified history without attributing a hashed scope to a particular server', () => {
+		const host = { history: { items: [], loading: false, error: '', availability: { unavailableCount: 2, earlierScopeCount: 3, earlierContentExpiresBy: 1900000000 } }, historyCommandsAvailable: true,
+			chat: { isBusy: false, version: 0, subscribe: () => () => {} }, refreshHistory: vi.fn() } as unknown as NextcloudAgent
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(ActionHistory, { host })
+		app.mount(root)
+		try {
+			expect(root.textContent).toContain('2 earlier actions could not be verified and cannot be restored')
+			expect(root.textContent).toContain('3 earlier actions use another connection or previous app settings')
+			expect(root.textContent).not.toContain('protected by an earlier server key')
+			expect(root.querySelectorAll('button')).toHaveLength(1)
+		} finally { app.unmount(); root.remove() }
+	})
 	it.each([['undo', 'Undo', 'Undo file change'], ['reconcile', 'Inspect outcome', 'Inspect outcome'], ['revalidate', 'Verify file revision', 'Verify file revision']])('unmounts its dialog before the %s command and native editor guard', async (direction, text, label) => {
 		const invoked = vi.fn(async () => { expect(document.querySelector('[role="dialog"]')).toBeNull() })
 		const host = {

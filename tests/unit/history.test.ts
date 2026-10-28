@@ -36,6 +36,17 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('governed history integration', () => {
+	it('loads only coarse availability notices alongside the active history', async () => {
+		const { host, files } = fixture()
+		await host.signIn('alice', 'test')
+		const status = { unavailableCount: 2, earlierScopeCount: 3, earlierContentExpiresBy: 1900000000 }
+		files.history!.availability = vi.fn(async () => status)
+		await host.refreshHistory(new AbortController().signal)
+		expect(host.history.availability).toEqual(status)
+		expect(files.history!.availability).toHaveBeenCalledOnce()
+		await host.dispose()
+		expect(host.history.availability).toBeUndefined()
+	})
 	it('retains the legacy nine tools and requires individual approval for all history effects', () => {
 		expect(FILE_CAPABILITIES).toHaveLength(9)
 		expect(HISTORY_CAPABILITIES.map(value => [value.name, value.risk, value.individualApproval])).toEqual([
