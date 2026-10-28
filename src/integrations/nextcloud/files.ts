@@ -1,9 +1,10 @@
 import axios from '@nextcloud/axios'
 import { getRequestToken } from '@nextcloud/auth'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderListingEntry, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderListingEntry, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 import { sha256Hex } from './tables.ts'
+import { parseDavProperties, unescapeCalendarText } from './caldav.ts'
 
 function resolveRouteTableId(): number | undefined {
 	if (typeof location === 'undefined') return undefined
@@ -162,6 +163,263 @@ export class NextcloudFiles implements FileApi {
 				timeout: 15000,
 			})
 			return res.data
+		},
+	}
+
+	private davBase(): string {
+		return generateRemoteUrl('dav').replace(/\/?$/, '/')
+	}
+
+	readonly calendar: CalendarApi = {
+		listCalendars: async (signal?: AbortSignal): Promise<DavCalendar[]> => {
+			await this.assertIdentity(signal)
+			const base = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/`
+			const body = '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:a="http://apple.com/ns/ical/"><d:prop><d:displayname/><d:resourcetype/><d:current-user-privilege-set/><c:supported-calendar-component-set/><a:calendar-color/></d:prop></d:propfind>'
+			const res = await axios.request<string>({
+				url: base,
+				method: 'PROPFIND',
+				data: body,
+				headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+				responseType: 'text',
+				signal,
+				timeout: 15000,
+			})
+			return parseCalendarsXml(res.data)
+		},
+		readEvents: async (calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]> => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/`
+			const body = '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"/></c:comp-filter></c:filter></c:calendar-query>'
+			const res = await axios.request<string>({
+				url,
+				method: 'REPORT',
+				data: body,
+				headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+				responseType: 'text',
+				signal,
+				timeout: 15000,
+			})
+			return parseCalendarObjectsXml(res.data, 'VEVENT')
+		},
+		getEvent: async (calendarId: string, filename: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const res = await axios.get<string>(url, {
+				headers: { Accept: 'text/calendar' },
+				responseType: 'text',
+				signal,
+				timeout: 15000,
+			})
+			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '')
+			const raw = res.data
+			const values = parseDavProperties(raw, 'VEVENT').values
+			return { etag, raw, values }
+		},
+		createEvent: async (calendarId: string, filename: string, icsData: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const res = await axios.put<string>(url, icsData, {
+				headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'If-None-Match': '*' },
+				signal,
+				timeout: 15000,
+			})
+			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '')
+			return { etag, href: url }
+		},
+		updateEvent: async (calendarId: string, filename: string, icsData: string, expectedEtag: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			const res = await axios.put<string>(url, icsData, {
+				headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'If-Match': etagHeader },
+				signal,
+				timeout: 15000,
+			})
+			const etag = (res.headers.etag ?? expectedEtag).replace(/^"|"$/g, '')
+			return { etag, href: url }
+		},
+		deleteEvent: async (calendarId: string, filename: string, expectedEtag: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			await axios.delete(url, {
+				headers: { 'If-Match': etagHeader },
+				signal,
+				timeout: 15000,
+			})
+		},
+	}
+
+	readonly tasks: TasksApi = {
+		listTaskLists: async (signal?: AbortSignal): Promise<DavCalendar[]> => {
+			const cals = await this.calendar.listCalendars(signal)
+			return cals.filter(c => c.components.includes('VTODO'))
+		},
+		readTasks: async (calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]> => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/`
+			const body = '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VTODO"/></c:comp-filter></c:filter></c:calendar-query>'
+			const res = await axios.request<string>({
+				url,
+				method: 'REPORT',
+				data: body,
+				headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+				responseType: 'text',
+				signal,
+				timeout: 15000,
+			})
+			return parseCalendarObjectsXml(res.data, 'VTODO')
+		},
+		getTask: async (calendarId: string, filename: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const res = await axios.get<string>(url, {
+				headers: { Accept: 'text/calendar' },
+				responseType: 'text',
+				signal,
+				timeout: 15000,
+			})
+			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '')
+			const raw = res.data
+			const values = parseDavProperties(raw, 'VTODO').values
+			return { etag, raw, values }
+		},
+		createTask: async (calendarId: string, filename: string, icsData: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const res = await axios.put<string>(url, icsData, {
+				headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'If-None-Match': '*' },
+				signal,
+				timeout: 15000,
+			})
+			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '')
+			return { etag, href: url }
+		},
+		updateTask: async (calendarId: string, filename: string, icsData: string, expectedEtag: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			const res = await axios.put<string>(url, icsData, {
+				headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'If-Match': etagHeader },
+				signal,
+				timeout: 15000,
+			})
+			const etag = (res.headers.etag ?? expectedEtag).replace(/^"|"$/g, '')
+			return { etag, href: url }
+		},
+		deleteTask: async (calendarId: string, filename: string, expectedEtag: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			await axios.delete(url, {
+				headers: { 'If-Match': etagHeader },
+				signal,
+				timeout: 15000,
+			})
+		},
+	}
+
+	readonly contacts: ContactsApi = {
+		listAddressBooks: async (signal?: AbortSignal): Promise<DavAddressBook[]> => {
+			await this.assertIdentity(signal)
+			const base = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/`
+			const body = '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:displayname/><d:resourcetype/><d:current-user-privilege-set/></d:prop></d:propfind>'
+			const res = await axios.request<string>({
+				url: base,
+				method: 'PROPFIND',
+				data: body,
+				headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+				responseType: 'text',
+				signal,
+				timeout: 15000,
+			})
+			return parseAddressBooksXml(res.data)
+		},
+		findContacts: async (query: string, signal?: AbortSignal): Promise<{ contacts: DavContact[]; complete: boolean }> => {
+			await this.assertIdentity(signal)
+			const books = await this.contacts.listAddressBooks(signal)
+			const found: DavContact[] = []
+			for (const book of books.slice(0, 10)) {
+				const body = `<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop><c:filter><c:prop-filter name="FN"><c:text-match collation="i;unicode-casemap" match-type="contains">${escapeXml(query)}</c:text-match></c:prop-filter></c:filter></c:addressbook-query>`
+				const res = await axios.request<string>({
+					url: book.href.startsWith('http') ? book.href : `${location.origin}${book.href}`,
+					method: 'REPORT',
+					data: body,
+					headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+					responseType: 'text',
+					signal,
+					timeout: 15000,
+				})
+				const contacts = parseContactsXml(res.data, book.title)
+				for (const c of contacts) {
+					found.push(c)
+					if (found.length >= 20) return { contacts: found, complete: false }
+				}
+			}
+			return { contacts: found, complete: books.length <= 10 }
+		},
+		readContact: async (bookId: string, filename?: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			if (filename) {
+				const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/${encodeURIComponent(filename)}`
+				const res = await axios.get<string>(url, {
+					headers: { Accept: 'text/vcard' },
+					responseType: 'text',
+					signal,
+					timeout: 15000,
+				})
+				const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '')
+				const raw = res.data
+				const values = parseDavProperties(raw, 'VCARD').values
+				return { etag, raw, values }
+			}
+			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/`
+			const body = '<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop></c:addressbook-query>'
+			const res = await axios.request<string>({
+				url,
+				method: 'REPORT',
+				data: body,
+				headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+				responseType: 'text',
+				signal,
+				timeout: 15000,
+			})
+			const raw = res.data
+			const values = parseDavProperties(raw, 'VCARD').values
+			return { etag: '', raw, values }
+		},
+		createContact: async (bookId: string, filename: string, vcardData: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/${encodeURIComponent(filename)}`
+			const res = await axios.put<string>(url, vcardData, {
+				headers: { 'Content-Type': 'text/vcard; charset=utf-8', 'If-None-Match': '*' },
+				signal,
+				timeout: 15000,
+			})
+			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '')
+			return { etag, href: url }
+		},
+		updateContact: async (bookId: string, filename: string, vcardData: string, expectedEtag: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/${encodeURIComponent(filename)}`
+			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			const res = await axios.put<string>(url, vcardData, {
+				headers: { 'Content-Type': 'text/vcard; charset=utf-8', 'If-Match': etagHeader },
+				signal,
+				timeout: 15000,
+			})
+			const etag = (res.headers.etag ?? expectedEtag).replace(/^"|"$/g, '')
+			return { etag, href: url }
+		},
+		deleteContact: async (bookId: string, filename: string, expectedEtag: string, signal?: AbortSignal) => {
+			await this.assertIdentity(signal)
+			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/${encodeURIComponent(filename)}`
+			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			await axios.delete(url, {
+				headers: { 'If-Match': etagHeader },
+				signal,
+				timeout: 15000,
+			})
 		},
 	}
 
@@ -457,4 +715,144 @@ export function errorMessage(error: unknown): string {
 	return typeof response?.data?.message === 'string'
 		? response.data.message
 		: error instanceof Error ? error.message : 'The operation failed.'
+}
+
+function parseXmlDoc(raw: string): Document | null {
+	if (typeof DOMParser === 'undefined') return null
+	const doc = new DOMParser().parseFromString(raw, 'application/xml')
+	if (doc.querySelector('parsererror')) return null
+	return doc
+}
+
+function findElements(parent: Document | Element, ns: string, localName: string): Element[] {
+	const list = Array.from(parent.getElementsByTagNameNS(ns, localName))
+	if (list.length > 0) return list
+	return Array.from(parent.getElementsByTagName(localName)).concat(
+		Array.from(parent.getElementsByTagName(`d:${localName}`)),
+		Array.from(parent.getElementsByTagName(`c:${localName}`)),
+		Array.from(parent.getElementsByTagName(`cal:${localName}`)),
+		Array.from(parent.getElementsByTagName(`card:${localName}`)),
+	)
+}
+
+function getElemText(parent: Element, ns: string, localName: string): string {
+	const el = findElements(parent, ns, localName)[0]
+	return el?.textContent?.trim() ?? ''
+}
+
+function escapeXml(value: string): string {
+	return value.replace(/[&<>"']/g, ch => ({
+		'&': '&amp;',
+		'<': '&lt;',
+		'>': '&gt;',
+		'"': '&quot;',
+		"'": '&apos;',
+	}[ch]!))
+}
+
+function parseCalendarsXml(xmlText: string): DavCalendar[] {
+	const doc = parseXmlDoc(xmlText)
+	if (!doc) return []
+	const responses = findElements(doc, 'DAV:', 'response')
+	const result: DavCalendar[] = []
+	for (const r of responses) {
+		const isCalendar = findElements(r, 'urn:ietf:params:xml:ns:caldav', 'calendar').length > 0
+		if (!isCalendar) continue
+		const href = getElemText(r, 'DAV:', 'href')
+		const id = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
+		const title = getElemText(r, 'DAV:', 'displayname') || id
+		const comps = findElements(r, 'urn:ietf:params:xml:ns:caldav', 'comp')
+			.map(c => c.getAttribute('name') ?? '')
+			.filter(Boolean)
+		const canWrite = findElements(r, 'DAV:', 'write').length > 0
+		const color = getElemText(r, 'http://apple.com/ns/ical/', 'calendar-color')
+		result.push({
+			id,
+			title,
+			href,
+			components: comps.length ? comps : ['VEVENT', 'VTODO'],
+			canWrite,
+			color: color || undefined,
+		})
+	}
+	return result
+}
+
+function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO'): DavCalendarObject[] {
+	const doc = parseXmlDoc(xmlText)
+	if (!doc) return []
+	const responses = findElements(doc, 'DAV:', 'response')
+	const result: DavCalendarObject[] = []
+	for (const r of responses.slice(0, 50)) {
+		const href = getElemText(r, 'DAV:', 'href')
+		const filename = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
+		const etag = getElemText(r, 'DAV:', 'getetag').replace(/^"|"$/g, '')
+		const raw = getElemText(r, 'urn:ietf:params:xml:ns:caldav', 'calendar-data')
+		if (!raw) continue
+		const p = parseDavProperties(raw, component)
+		result.push({
+			href,
+			filename,
+			etag,
+			summary: p.values.SUMMARY ? unescapeCalendarText(p.values.SUMMARY) : undefined,
+			description: p.values.DESCRIPTION ? unescapeCalendarText(p.values.DESCRIPTION) : undefined,
+			location: p.values.LOCATION ? unescapeCalendarText(p.values.LOCATION) : undefined,
+			startUtc: p.values.DTSTART,
+			endUtc: p.values.DTEND,
+			dueDate: p.values.DUE,
+			status: p.values.STATUS,
+			percentComplete: p.values['PERCENT-COMPLETE'],
+			priority: p.values.PRIORITY,
+			uid: p.values.UID,
+			recurring: p.instances !== 1 || !!p.values.RRULE || !!p.values['RECURRENCE-ID'],
+			hasAttendees: /(?:^|\r?\n)ATTENDEE[;:]/i.test(raw),
+			propertyParameters: p.parameters,
+		})
+	}
+	return result
+}
+
+function parseAddressBooksXml(xmlText: string): DavAddressBook[] {
+	const doc = parseXmlDoc(xmlText)
+	if (!doc) return []
+	const responses = findElements(doc, 'DAV:', 'response')
+	const result: DavAddressBook[] = []
+	for (const r of responses) {
+		const isBook = findElements(r, 'urn:ietf:params:xml:ns:carddav', 'addressbook').length > 0
+		if (!isBook) continue
+		const href = getElemText(r, 'DAV:', 'href')
+		const id = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
+		const title = getElemText(r, 'DAV:', 'displayname') || id
+		const canWrite = findElements(r, 'DAV:', 'write').length > 0
+		result.push({ id, title, href, canWrite })
+	}
+	return result
+}
+
+function parseContactsXml(xmlText: string, bookTitle: string): DavContact[] {
+	const doc = parseXmlDoc(xmlText)
+	if (!doc) return []
+	const responses = findElements(doc, 'DAV:', 'response')
+	const result: DavContact[] = []
+	for (const r of responses) {
+		const href = getElemText(r, 'DAV:', 'href')
+		const filename = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
+		const etag = getElemText(r, 'DAV:', 'getetag').replace(/^"|"$/g, '')
+		const raw = getElemText(r, 'urn:ietf:params:xml:ns:carddav', 'address-data')
+		if (!raw) continue
+		const p = parseDavProperties(raw, 'VCARD')
+		result.push({
+			href,
+			filename,
+			book: bookTitle,
+			uid: p.values.UID,
+			name: p.values.FN ? unescapeCalendarText(p.values.FN) : undefined,
+			email: p.values.EMAIL ? unescapeCalendarText(p.values.EMAIL) : undefined,
+			tel: p.values.TEL ? unescapeCalendarText(p.values.TEL) : undefined,
+			note: p.values.NOTE ? unescapeCalendarText(p.values.NOTE) : undefined,
+			categories: p.values.CATEGORIES ? unescapeCalendarText(p.values.CATEGORIES) : undefined,
+			etag,
+		})
+	}
+	return result
 }

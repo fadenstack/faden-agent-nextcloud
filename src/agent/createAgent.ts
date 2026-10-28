@@ -8,6 +8,33 @@ import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOL
 import { filesExtendedTools, EXTENDED_FILES_MUTATIONS, validateFolderName, validateCopyMoveArgs, validateShareReadonlyArgs, type ExtendedProposal } from '../integrations/nextcloud/filesExtended.ts'
 import { tablesTools, TABLES_MUTATIONS, validateAddColumnArgs, validateAddRowArgs, validateUpdateRowArgs, validateDeleteRowArgs, sha256Hex, rowContent, type TablesProposal } from '../integrations/nextcloud/tables.ts'
 import { deckTools, DECK_MUTATIONS, validateDeckPatchArgs, validateDeckCreateArgs, validateDeckMoveArgs, validateDeckAssignArgs, validateDeckLabelArgs, cardContent, type DeckProposal } from '../integrations/nextcloud/deck.ts'
+import {
+	calendarTools,
+	tasksTools,
+	contactsTools,
+	CALENDAR_MUTATIONS,
+	TASKS_MUTATIONS,
+	CONTACTS_MUTATIONS,
+	validateCalendarCreateArgs,
+	validateCalendarPatchArgs,
+	validateCalendarDeleteArgs,
+	validateTasksCreateArgs,
+	validateTasksPatchArgs,
+	validateTasksDeleteArgs,
+	validateContactsCreateArgs,
+	validateContactsPatchArgs,
+	validateContactsDeleteArgs,
+	buildEventIcs,
+	buildTaskIcs,
+	buildContactVcard,
+	patchIcs,
+	patchVcard,
+	parseDavProperties,
+	type DavProposal,
+	type AgentWithCalendar,
+	type AgentWithTasks,
+	type AgentWithContacts,
+} from '../integrations/nextcloud/caldav.ts'
 import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults, HistoryDirection, HistoryItem, HistoryPreview, HistoryAvailability, TableSnapshot, TableReadResult, DeckCard } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 import type { MutationBinding, WorkspaceCoordinator } from '../workspace/coordinator.ts'
@@ -18,7 +45,7 @@ import { shallowReactive } from 'vue'
 import { commandChat } from './commands.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 
-export class NextcloudAgent {
+export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
 
 	readonly selection: SelectedContext
 	readonly discovery: NextcloudSearchService
@@ -31,6 +58,7 @@ export class NextcloudAgent {
 	readonly #extendedProposals = new Map<string, ExtendedProposal>()
 	readonly #tablesProposals = new Map<string, TablesProposal>()
 	readonly #deckProposals = new Map<string, DeckProposal>()
+	readonly #davProposals = new Map<string, DavProposal>()
 	readonly #historyPreviews = new Map<string, HistoryPreview>()
 	readonly history = shallowReactive({ items: [] as HistoryItem[], availability: undefined as HistoryAvailability | undefined, loading: false, error: '', active: false, target: '', inspecting: false, verifying: false })
 	readonly #proposalViews = new Map<string, MutationBinding>()
@@ -81,12 +109,18 @@ export class NextcloudAgent {
 		const extendedFiles = (config.extendedFilesEnabled || config.scopePolicy?.tools?.some(t => EXTENDED_FILES_MUTATIONS.has(t))) && !!files.createFolder
 		const tablesEnabled = (config.tablesEnabled || config.scopePolicy?.tools?.some(t => TABLES_MUTATIONS.has(t))) && !!files.tables
 		const deckEnabled = (config.deckEnabled || config.scopePolicy?.tools?.some(t => DECK_MUTATIONS.has(t))) && !!files.deck
+		const calendarEnabled = (config.calendarEnabled || config.scopePolicy?.tools?.some(t => CALENDAR_MUTATIONS.has(t))) && !!files.calendar
+		const tasksEnabled = (config.tasksEnabled || config.scopePolicy?.tools?.some(t => TASKS_MUTATIONS.has(t))) && !!files.tasks
+		const contactsEnabled = (config.contactsEnabled || config.scopePolicy?.tools?.some(t => CONTACTS_MUTATIONS.has(t))) && !!files.contacts
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
 			.addTools(...nextcloudTools(this))
 			.addTools(...(extendedFiles ? filesExtendedTools(this) : []))
 			.addTools(...(config.historyEnabled && files.history ? historyTools(this) : []))
 			.addTools(...(tablesEnabled ? tablesTools(this) : []))
 			.addTools(...(deckEnabled ? deckTools(this) : []))
+			.addTools(...(calendarEnabled ? calendarTools(this) : []))
+			.addTools(...(tasksEnabled ? tasksTools(this) : []))
+			.addTools(...(contactsEnabled ? contactsTools(this) : []))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
 					const available = this.#scope?.offeredTools
@@ -98,7 +132,7 @@ export class NextcloudAgent {
 					this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
 					const result = await next(invocation)
-					try { this.#scope?.budget.consumeResult(result, resultRecords(result)) } catch (error) { if (WRITE_TOOLS.has(invocation.tool.name) || HISTORY_TOOLS.has(invocation.tool.name) || EXTENDED_FILES_MUTATIONS.has(invocation.tool.name) || TABLES_MUTATIONS.has(invocation.tool.name) || DECK_MUTATIONS.has(invocation.tool.name)) this.#writeBlocked = true; throw error }
+					try { this.#scope?.budget.consumeResult(result, resultRecords(result)) } catch (error) { if (WRITE_TOOLS.has(invocation.tool.name) || HISTORY_TOOLS.has(invocation.tool.name) || EXTENDED_FILES_MUTATIONS.has(invocation.tool.name) || TABLES_MUTATIONS.has(invocation.tool.name) || DECK_MUTATIONS.has(invocation.tool.name) || CALENDAR_MUTATIONS.has(invocation.tool.name) || TASKS_MUTATIONS.has(invocation.tool.name) || CONTACTS_MUTATIONS.has(invocation.tool.name)) this.#writeBlocked = true; throw error }
 					return result
 				},
 			})
@@ -161,6 +195,27 @@ export class NextcloudAgent {
 							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after },
 						}
 					}
+					if ((CALENDAR_MUTATIONS.has(request.toolName) || TASKS_MUTATIONS.has(request.toolName) || CONTACTS_MUTATIONS.has(request.toolName)) && request.source === 'host') {
+						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+						const appName = CALENDAR_MUTATIONS.has(request.toolName) ? 'calendar' : TASKS_MUTATIONS.has(request.toolName) ? 'tasks' : 'contacts'
+						const binding = this.workspace?.prepare(appName as never)
+						let plan: DavProposal
+						if (CALENDAR_MUTATIONS.has(request.toolName)) {
+							plan = await this.planCalendarMutation(request.toolName, request.arguments, signal)
+						} else if (TASKS_MUTATIONS.has(request.toolName)) {
+							plan = await this.planTasksMutation(request.toolName, request.arguments, signal)
+						} else {
+							plan = await this.planContactsMutation(request.toolName, request.arguments, signal)
+						}
+						this.#davProposals.set(request.callId, plan)
+						if (binding) this.#proposalViews.set(request.callId, binding)
+						request = {
+							...request,
+							canAllowAlways: false,
+							canAllowForSession: false,
+							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after },
+						}
+					}
 					if (WRITE_TOOLS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const binding = this.workspace?.prepare('files')
@@ -189,11 +244,12 @@ export class NextcloudAgent {
 						this.#extendedProposals.delete(request.callId)
 						this.#tablesProposals.delete(request.callId)
 						this.#deckProposals.delete(request.callId)
+						this.#davProposals.delete(request.callId)
 						this.cancelHistory(request.callId)
 						this.#proposalViews.delete(request.callId)
 						this.#proposalResources.delete(request.callId)
 						this.#proposalParents.delete(request.callId)
-						if (WRITE_TOOLS.has(request.toolName) || HISTORY_TOOLS.has(request.toolName) || EXTENDED_FILES_MUTATIONS.has(request.toolName) || TABLES_MUTATIONS.has(request.toolName) || DECK_MUTATIONS.has(request.toolName)) this.#writeBlocked = true
+						if (WRITE_TOOLS.has(request.toolName) || HISTORY_TOOLS.has(request.toolName) || EXTENDED_FILES_MUTATIONS.has(request.toolName) || TABLES_MUTATIONS.has(request.toolName) || DECK_MUTATIONS.has(request.toolName) || CALENDAR_MUTATIONS.has(request.toolName) || TASKS_MUTATIONS.has(request.toolName) || CONTACTS_MUTATIONS.has(request.toolName)) this.#writeBlocked = true
 					}
 					return result
 				},
@@ -498,6 +554,11 @@ export class NextcloudAgent {
 		}
 		if (DECK_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
 			const proposal = this.#deckProposals.get(part.request.callId)
+			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+		}
+		if ((CALENDAR_MUTATIONS.has(part.toolName) || TASKS_MUTATIONS.has(part.toolName) || CONTACTS_MUTATIONS.has(part.toolName)) && part.request.source === 'host') {
+			const proposal = this.#davProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
 		}
@@ -856,6 +917,453 @@ export class NextcloudAgent {
 		}
 	}
 
+	async listCalendars(signal?: AbortSignal): Promise<unknown> {
+		if (!this.files.calendar) throw new Error('Calendar app is unavailable.')
+		await this.files.assertIdentity(signal)
+		const calendars = await this.files.calendar.listCalendars(signal)
+		return { calendars }
+	}
+
+	async readCalendar(calendarId: string, signal?: AbortSignal): Promise<unknown> {
+		if (!this.files.calendar) throw new Error('Calendar app is unavailable.')
+		await this.files.assertIdentity(signal)
+		const events = await this.files.calendar.readEvents(calendarId, signal)
+		return { calendarId, events }
+	}
+
+	async planCalendarMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DavProposal> {
+		if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+		if (!this.files.calendar) throw new Error('Calendar app is unavailable.')
+		await this.files.assertIdentity(signal)
+		if (name === 'nc_calendar_create') {
+			const v = validateCalendarCreateArgs(args)
+			const uid = v.filename.slice(0, -4)
+			const rawAfter = buildEventIcs({
+				uid,
+				summary: v.summary,
+				description: v.description,
+				location: v.location,
+				startUtc: v.startUtc,
+				endUtc: v.endUtc,
+			})
+			const after = parseDavProperties(rawAfter, 'VEVENT').values
+			return {
+				name,
+				args: { ...args },
+				target: `Calendar ${v.calendarId}, event ${v.filename}`,
+				before: null,
+				after,
+				rawAfter,
+				revision: await sha256Hex(rawAfter),
+				calendarId: v.calendarId,
+				filename: v.filename,
+				component: 'VEVENT',
+			}
+		} else if (name === 'nc_calendar_patch') {
+			const v = validateCalendarPatchArgs(args)
+			const current = await this.files.calendar.getEvent(v.calendarId, v.filename, signal)
+			if (current.etag !== v.expectedEtag) {
+				throw new Error('Calendar resource changed. Read it again before proposing a write.')
+			}
+			const p = parseDavProperties(current.raw, 'VEVENT')
+			if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
+				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
+			}
+			if (/(?:^|\r?\n)ATTENDEE[;:]/i.test(current.raw)) {
+				throw new Error('Attendee notifications require a separate explicitly approved operation. Attendee-bearing events are excluded from private event tools.')
+			}
+			const mappedChanges: Record<string, string | null> = {}
+			for (const [k, val] of Object.entries(v.changes)) {
+				mappedChanges[k.toUpperCase()] = val !== null && val !== undefined ? String(val) : null
+			}
+			const rawAfter = patchIcs(current.raw, 'VEVENT', mappedChanges)
+			const after = parseDavProperties(rawAfter, 'VEVENT').values
+			return {
+				name,
+				args: { ...args },
+				target: `Calendar ${v.calendarId}, event ${v.filename}`,
+				before: current.values,
+				after,
+				rawBefore: current.raw,
+				rawAfter,
+				etag: v.expectedEtag,
+				revision: v.expectedEtag,
+				calendarId: v.calendarId,
+				filename: v.filename,
+				component: 'VEVENT',
+			}
+		} else if (name === 'nc_calendar_delete') {
+			const v = validateCalendarDeleteArgs(args)
+			const current = await this.files.calendar.getEvent(v.calendarId, v.filename, signal)
+			if (current.etag !== v.expectedEtag) {
+				throw new Error('Calendar resource changed. Read it again before proposing a write.')
+			}
+			const p = parseDavProperties(current.raw, 'VEVENT')
+			if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
+				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
+			}
+			if (/(?:^|\r?\n)ATTENDEE[;:]/i.test(current.raw)) {
+				throw new Error('Attendee notifications require a separate explicitly approved operation. Attendee-bearing events are excluded from private event tools.')
+			}
+			return {
+				name,
+				args: { ...args },
+				target: `Delete event ${v.filename} from calendar ${v.calendarId}`,
+				before: current.values,
+				after: { deleted: true },
+				rawBefore: current.raw,
+				etag: v.expectedEtag,
+				revision: v.expectedEtag,
+				calendarId: v.calendarId,
+				filename: v.filename,
+				component: 'VEVENT',
+			}
+		}
+		throw new Error('Unsupported Calendar mutation.')
+	}
+
+	async commitCalendarMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		const proposal = this.#davProposals.get(call.callId)
+		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.#davProposals.delete(call.callId)
+		const binding = this.#proposalViews.get(call.callId)
+		this.#proposalViews.delete(call.callId)
+		if (!this.files.calendar) throw new Error('Calendar app is unavailable.')
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+		try {
+			let result: unknown
+			const calendarId = proposal.calendarId!
+			const filename = proposal.filename
+			if (name === 'nc_calendar_create') {
+				result = await this.files.calendar.createEvent(calendarId, filename, proposal.rawAfter!, call.signal)
+			} else if (name === 'nc_calendar_patch') {
+				result = await this.files.calendar.updateEvent(calendarId, filename, proposal.rawAfter!, proposal.etag!, call.signal)
+			} else if (name === 'nc_calendar_delete') {
+				await this.files.calendar.deleteEvent(calendarId, filename, proposal.etag!, call.signal)
+				result = { deleted: true }
+			}
+			const activity = binding && generation !== undefined
+				? await this.workspace!.committed(call.callId, generation, binding, {
+					operation: name,
+					file: { id: 0, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
+				}, call.signal)
+				: undefined
+			return {
+				status: name === 'nc_calendar_delete' ? 'deleted' : 'saved',
+				result,
+				target: proposal.target,
+				...(activity ? { view: activity.view } : {}),
+			}
+		} catch (error) {
+			this.#writeBlocked = true
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
+			throw error
+		}
+	}
+
+	async readTasks(calendarId: string, signal?: AbortSignal): Promise<unknown> {
+		if (!this.files.tasks) throw new Error('Tasks app is unavailable.')
+		await this.files.assertIdentity(signal)
+		const tasks = await this.files.tasks.readTasks(calendarId, signal)
+		return { calendarId, tasks }
+	}
+
+	async planTasksMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DavProposal> {
+		if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+		if (!this.files.tasks) throw new Error('Tasks app is unavailable.')
+		await this.files.assertIdentity(signal)
+		if (name === 'nc_tasks_create') {
+			const v = validateTasksCreateArgs(args)
+			const uid = v.filename.slice(0, -4)
+			const rawAfter = buildTaskIcs({
+				uid,
+				summary: v.summary,
+				description: v.description,
+				dueDate: v.dueDate,
+				priority: v.priority,
+			})
+			const after = parseDavProperties(rawAfter, 'VTODO').values
+			return {
+				name,
+				args: { ...args },
+				target: `Task list ${v.calendarId}, task ${v.filename}`,
+				before: null,
+				after,
+				rawAfter,
+				revision: await sha256Hex(rawAfter),
+				calendarId: v.calendarId,
+				filename: v.filename,
+				component: 'VTODO',
+			}
+		} else if (name === 'nc_tasks_patch') {
+			const v = validateTasksPatchArgs(args)
+			const current = await this.files.tasks.getTask(v.calendarId, v.filename, signal)
+			if (current.etag !== v.expectedEtag) {
+				throw new Error('Task resource changed. Read it again before proposing a write.')
+			}
+			const p = parseDavProperties(current.raw, 'VTODO')
+			if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
+				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
+			}
+			const mappedChanges: Record<string, string | null> = {}
+			for (const [k, val] of Object.entries(v.changes)) {
+				if (k === 'completed' && typeof val === 'boolean') {
+					mappedChanges.STATUS = val ? 'COMPLETED' : 'NEEDS-ACTION'
+					mappedChanges['PERCENT-COMPLETE'] = val ? '100' : '0'
+					mappedChanges.COMPLETED = val ? new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z') : null
+				} else if (k === 'dueDate' && typeof val === 'string') {
+					mappedChanges.DUE = val.replace(/-/g, '')
+				} else if (k === 'percentComplete') {
+					const pct = Number(val)
+					mappedChanges['PERCENT-COMPLETE'] = String(pct)
+					if (pct >= 100) {
+						mappedChanges.STATUS = 'COMPLETED'
+						mappedChanges.COMPLETED = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+					} else if (pct > 0) {
+						mappedChanges.STATUS = 'IN-PROCESS'
+					} else {
+						mappedChanges.STATUS = 'NEEDS-ACTION'
+					}
+				} else if (['summary', 'description', 'priority'].includes(k)) {
+					mappedChanges[k.toUpperCase()] = val !== null && val !== undefined ? String(val) : null
+				}
+			}
+			const rawAfter = patchIcs(current.raw, 'VTODO', mappedChanges)
+			const after = parseDavProperties(rawAfter, 'VTODO').values
+			return {
+				name,
+				args: { ...args },
+				target: `Task list ${v.calendarId}, task ${v.filename}`,
+				before: current.values,
+				after,
+				rawBefore: current.raw,
+				rawAfter,
+				etag: v.expectedEtag,
+				revision: v.expectedEtag,
+				calendarId: v.calendarId,
+				filename: v.filename,
+				component: 'VTODO',
+			}
+		} else if (name === 'nc_tasks_delete') {
+			const v = validateTasksDeleteArgs(args)
+			const current = await this.files.tasks.getTask(v.calendarId, v.filename, signal)
+			if (current.etag !== v.expectedEtag) {
+				throw new Error('Task resource changed. Read it again before proposing a write.')
+			}
+			const p = parseDavProperties(current.raw, 'VTODO')
+			if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
+				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
+			}
+			return {
+				name,
+				args: { ...args },
+				target: `Delete task ${v.filename} from list ${v.calendarId}`,
+				before: current.values,
+				after: { deleted: true },
+				rawBefore: current.raw,
+				etag: v.expectedEtag,
+				revision: v.expectedEtag,
+				calendarId: v.calendarId,
+				filename: v.filename,
+				component: 'VTODO',
+			}
+		}
+		throw new Error('Unsupported Tasks mutation.')
+	}
+
+	async commitTasksMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		const proposal = this.#davProposals.get(call.callId)
+		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.#davProposals.delete(call.callId)
+		const binding = this.#proposalViews.get(call.callId)
+		this.#proposalViews.delete(call.callId)
+		if (!this.files.tasks) throw new Error('Tasks app is unavailable.')
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+		try {
+			let result: unknown
+			const calendarId = proposal.calendarId!
+			const filename = proposal.filename
+			if (name === 'nc_tasks_create') {
+				result = await this.files.tasks.createTask(calendarId, filename, proposal.rawAfter!, call.signal)
+			} else if (name === 'nc_tasks_patch') {
+				result = await this.files.tasks.updateTask(calendarId, filename, proposal.rawAfter!, proposal.etag!, call.signal)
+			} else if (name === 'nc_tasks_delete') {
+				await this.files.tasks.deleteTask(calendarId, filename, proposal.etag!, call.signal)
+				result = { deleted: true }
+			}
+			const activity = binding && generation !== undefined
+				? await this.workspace!.committed(call.callId, generation, binding, {
+					operation: name,
+					file: { id: 0, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
+				}, call.signal)
+				: undefined
+			return {
+				status: name === 'nc_tasks_delete' ? 'deleted' : 'saved',
+				result,
+				target: proposal.target,
+				...(activity ? { view: activity.view } : {}),
+			}
+		} catch (error) {
+			this.#writeBlocked = true
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
+			throw error
+		}
+	}
+
+	async listContacts(signal?: AbortSignal): Promise<unknown> {
+		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		await this.files.assertIdentity(signal)
+		const addressBooks = await this.files.contacts.listAddressBooks(signal)
+		return { addressBooks }
+	}
+
+	async findContacts(query: string, signal?: AbortSignal): Promise<unknown> {
+		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		await this.files.assertIdentity(signal)
+		return await this.files.contacts.findContacts(query, signal)
+	}
+
+	async readContact(bookId: string, filename?: string, signal?: AbortSignal): Promise<unknown> {
+		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		await this.files.assertIdentity(signal)
+		const contact = await this.files.contacts.readContact(bookId, filename, signal)
+		return { bookId, filename, contact }
+	}
+
+	async planContactsMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DavProposal> {
+		if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		await this.files.assertIdentity(signal)
+		if (name === 'nc_contacts_create') {
+			const v = validateContactsCreateArgs(args)
+			const uid = v.filename.slice(0, -4)
+			const rawAfter = buildContactVcard({
+				uid,
+				fn: v.fn,
+				email: v.email,
+				tel: v.tel,
+				note: v.note,
+				categories: v.categories,
+			})
+			const after = parseDavProperties(rawAfter, 'VCARD').values
+			return {
+				name,
+				args: { ...args },
+				target: `Address book ${v.bookId}, contact ${v.filename}`,
+				before: null,
+				after,
+				rawAfter,
+				revision: await sha256Hex(rawAfter),
+				bookId: v.bookId,
+				filename: v.filename,
+				component: 'VCARD',
+			}
+		} else if (name === 'nc_contacts_patch') {
+			const v = validateContactsPatchArgs(args)
+			const current = await this.files.contacts.readContact(v.bookId, v.filename, signal)
+			if (current.etag !== v.expectedEtag) {
+				throw new Error('Contact resource changed. Read it again before proposing a write.')
+			}
+			const p = parseDavProperties(current.raw, 'VCARD')
+			if (p.instances !== 1) {
+				throw new Error('Multi-vCard streams are not supported for single-contact patch.')
+			}
+			const mappedChanges: Record<string, string | null> = {}
+			for (const [k, val] of Object.entries(v.changes)) {
+				if (k === 'fn') {
+					mappedChanges.FN = val !== null && val !== undefined ? String(val) : null
+					mappedChanges.N = val !== null && val !== undefined ? `${val};;;;` : null
+				} else if (['email', 'tel', 'note', 'categories'].includes(k)) {
+					mappedChanges[k.toUpperCase()] = val !== null && val !== undefined ? String(val) : null
+				}
+			}
+			const rawAfter = patchVcard(current.raw, mappedChanges)
+			const after = parseDavProperties(rawAfter, 'VCARD').values
+			return {
+				name,
+				args: { ...args },
+				target: `Address book ${v.bookId}, contact ${v.filename}`,
+				before: current.values,
+				after,
+				rawBefore: current.raw,
+				rawAfter,
+				etag: v.expectedEtag,
+				revision: v.expectedEtag,
+				bookId: v.bookId,
+				filename: v.filename,
+				component: 'VCARD',
+			}
+		} else if (name === 'nc_contacts_delete') {
+			const v = validateContactsDeleteArgs(args)
+			const current = await this.files.contacts.readContact(v.bookId, v.filename, signal)
+			if (current.etag !== v.expectedEtag) {
+				throw new Error('Contact resource changed. Read it again before proposing a write.')
+			}
+			return {
+				name,
+				args: { ...args },
+				target: `Delete contact ${v.filename} from address book ${v.bookId}`,
+				before: current.values,
+				after: { deleted: true },
+				rawBefore: current.raw,
+				etag: v.expectedEtag,
+				revision: v.expectedEtag,
+				bookId: v.bookId,
+				filename: v.filename,
+				component: 'VCARD',
+			}
+		}
+		throw new Error('Unsupported Contacts mutation.')
+	}
+
+	async commitContactsMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		const proposal = this.#davProposals.get(call.callId)
+		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.#davProposals.delete(call.callId)
+		const binding = this.#proposalViews.get(call.callId)
+		this.#proposalViews.delete(call.callId)
+		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+		try {
+			let result: unknown
+			const bookId = proposal.bookId!
+			const filename = proposal.filename
+			if (name === 'nc_contacts_create') {
+				result = await this.files.contacts.createContact(bookId, filename, proposal.rawAfter!, call.signal)
+			} else if (name === 'nc_contacts_patch') {
+				result = await this.files.contacts.updateContact(bookId, filename, proposal.rawAfter!, proposal.etag!, call.signal)
+			} else if (name === 'nc_contacts_delete') {
+				await this.files.contacts.deleteContact(bookId, filename, proposal.etag!, call.signal)
+				result = { deleted: true }
+			}
+			const activity = binding && generation !== undefined
+				? await this.workspace!.committed(call.callId, generation, binding, {
+					operation: name,
+					file: { id: 0, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
+				}, call.signal)
+				: undefined
+			return {
+				status: name === 'nc_contacts_delete' ? 'deleted' : 'saved',
+				result,
+				target: proposal.target,
+				...(activity ? { view: activity.view } : {}),
+			}
+		} catch (error) {
+			this.#writeBlocked = true
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
+			throw error
+		}
+	}
+
 	offerSelection(context?: FileContext): void {
 		if (this.#attachment) this.chat.removeAttachment(this.#attachment)
 		this.#attachment = undefined
@@ -957,6 +1465,10 @@ export class NextcloudAgent {
 		this.#scope = undefined
 		this.#active = undefined
 		this.#proposals.clear()
+		this.#extendedProposals.clear()
+		this.#tablesProposals.clear()
+		this.#deckProposals.clear()
+		this.#davProposals.clear()
 		this.#proposalViews.clear()
 		this.#proposalResources.clear()
 		this.#proposalParents.clear()
@@ -981,6 +1493,10 @@ export class NextcloudAgent {
 		this.#scope?.invalidate()
 		this.#active = undefined
 		this.#proposals.clear()
+		this.#extendedProposals.clear()
+		this.#tablesProposals.clear()
+		this.#deckProposals.clear()
+		this.#davProposals.clear()
 		this.#proposalViews.clear()
 		this.#proposalResources.clear()
 		this.#proposalParents.clear()

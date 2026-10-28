@@ -276,10 +276,90 @@ export interface DeckApi {
 	labelCard(boardId: number, stackId: number, cardId: number, labelId: number, signal?: AbortSignal): Promise<unknown>
 }
 
+export interface DavCalendar {
+	id: string
+	title: string
+	href: string
+	components: string[]
+	canWrite: boolean
+	color?: string
+}
+
+export interface DavCalendarObject {
+	href: string
+	filename: string
+	etag: string
+	summary?: string
+	description?: string
+	location?: string
+	startUtc?: string
+	endUtc?: string
+	dueDate?: string
+	status?: string
+	percentComplete?: string
+	priority?: string
+	uid?: string
+	recurring?: boolean
+	hasAttendees?: boolean
+	propertyParameters?: Record<string, string>
+	[key: string]: unknown
+}
+
+export interface DavAddressBook {
+	id: string
+	title: string
+	href: string
+	canWrite?: boolean
+}
+
+export interface DavContact {
+	href: string
+	book: string
+	filename?: string
+	uid?: string
+	name?: string
+	email?: string
+	tel?: string
+	note?: string
+	categories?: string
+	etag?: string
+	[key: string]: unknown
+}
+
+export interface CalendarApi {
+	listCalendars(signal?: AbortSignal): Promise<DavCalendar[]>
+	readEvents(calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]>
+	getEvent(calendarId: string, filename: string, signal?: AbortSignal): Promise<{ etag: string; raw: string; values: Record<string, string> }>
+	createEvent(calendarId: string, filename: string, icsData: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
+	updateEvent(calendarId: string, filename: string, icsData: string, expectedEtag: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
+	deleteEvent(calendarId: string, filename: string, expectedEtag: string, signal?: AbortSignal): Promise<void>
+}
+
+export interface TasksApi {
+	listTaskLists(signal?: AbortSignal): Promise<DavCalendar[]>
+	readTasks(calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]>
+	getTask(calendarId: string, filename: string, signal?: AbortSignal): Promise<{ etag: string; raw: string; values: Record<string, string> }>
+	createTask(calendarId: string, filename: string, icsData: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
+	updateTask(calendarId: string, filename: string, icsData: string, expectedEtag: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
+	deleteTask(calendarId: string, filename: string, expectedEtag: string, signal?: AbortSignal): Promise<void>
+}
+
+export interface ContactsApi {
+	listAddressBooks(signal?: AbortSignal): Promise<DavAddressBook[]>
+	findContacts(query: string, signal?: AbortSignal): Promise<{ contacts: DavContact[]; complete: boolean }>
+	readContact(bookId: string, filename?: string, signal?: AbortSignal): Promise<{ etag: string; raw: string; values: Record<string, string> }>
+	createContact(bookId: string, filename: string, vcardData: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
+	updateContact(bookId: string, filename: string, vcardData: string, expectedEtag: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
+	deleteContact(bookId: string, filename: string, expectedEtag: string, signal?: AbortSignal): Promise<void>
+}
+
 export interface FileApi {
 	history?: HistoryApi
 	tables?: TablesApi
 	deck?: DeckApi
+	calendar?: CalendarApi
+	tasks?: TasksApi
+	contacts?: ContactsApi
 	setCloudIdentity?(provider?: (signal?: AbortSignal) => Promise<string>): void
 	searchTransport?: SearchTransport
 	identity(signal?: AbortSignal): Promise<Identity>

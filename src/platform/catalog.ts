@@ -34,11 +34,39 @@ export type DeckToolName =
 	| 'nc_deck_assign'
 	| 'nc_deck_label'
 
-export type NextcloudToolName = FileToolName | ExtendedFileToolName | TablesToolName | DeckToolName
+export type CalendarToolName =
+	| 'nc_calendar_list'
+	| 'nc_calendar_read'
+	| 'nc_calendar_create'
+	| 'nc_calendar_patch'
+	| 'nc_calendar_delete'
+
+export type TasksToolName =
+	| 'nc_tasks_read'
+	| 'nc_tasks_create'
+	| 'nc_tasks_patch'
+	| 'nc_tasks_delete'
+
+export type ContactsToolName =
+	| 'nc_contacts_list'
+	| 'nc_contacts_find'
+	| 'nc_contacts_read'
+	| 'nc_contacts_create'
+	| 'nc_contacts_patch'
+	| 'nc_contacts_delete'
+
+export type NextcloudToolName =
+	| FileToolName
+	| ExtendedFileToolName
+	| TablesToolName
+	| DeckToolName
+	| CalendarToolName
+	| TasksToolName
+	| ContactsToolName
 
 export interface FileToolCapability {
 	readonly name: NextcloudToolName
-	readonly subsystem: 'files' | 'tables' | 'deck'
+	readonly subsystem: 'files' | 'tables' | 'deck' | 'calendar' | 'tasks' | 'contacts'
 	readonly risk: ToolRisk
 	readonly effect: FileEffect
 	readonly individualApproval: boolean
@@ -46,7 +74,7 @@ export interface FileToolCapability {
 	readonly reversal: 'not-applicable' | 'not-integrated' | 'supported' | 'compensating-only'
 }
 
-function capability(name: NextcloudToolName, effect: FileEffect, source: FileToolCapability['source'], reversal?: FileToolCapability['reversal'], subsystem: 'files' | 'tables' | 'deck' = 'files'): FileToolCapability {
+function capability(name: NextcloudToolName, effect: FileEffect, source: FileToolCapability['source'], reversal?: FileToolCapability['reversal'], subsystem: 'files' | 'tables' | 'deck' | 'calendar' | 'tasks' | 'contacts' = 'files'): FileToolCapability {
 	const mutation = effect === 'create-file' || effect === 'replace-file' || effect === 'reconcile-history' || effect === 'revalidate-history'
 		|| effect === 'create-folder' || effect === 'copy-file' || effect === 'move-file' || effect === 'share-file'
 	return Object.freeze({
@@ -110,8 +138,44 @@ export const DECK_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
 	capability('nc_deck_label', 'replace-file', 'known-or-included', 'compensating-only', 'deck'),
 ])
 
+// NC10: Calendar tools slice (private events)
+export const CALENDAR_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
+	capability('nc_calendar_list', 'read-content', 'known-or-included', 'not-applicable', 'calendar'),
+	capability('nc_calendar_read', 'read-content', 'known-or-included', 'not-applicable', 'calendar'),
+	capability('nc_calendar_create', 'create-file', 'known-or-included', 'supported', 'calendar'),
+	capability('nc_calendar_patch', 'replace-file', 'known-or-included', 'supported', 'calendar'),
+	capability('nc_calendar_delete', 'replace-file', 'known-or-included', 'supported', 'calendar'),
+])
+
+// NC10: Tasks tools slice
+export const TASKS_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
+	capability('nc_tasks_read', 'read-content', 'known-or-included', 'not-applicable', 'tasks'),
+	capability('nc_tasks_create', 'create-file', 'known-or-included', 'supported', 'tasks'),
+	capability('nc_tasks_patch', 'replace-file', 'known-or-included', 'supported', 'tasks'),
+	capability('nc_tasks_delete', 'replace-file', 'known-or-included', 'supported', 'tasks'),
+])
+
+// NC10: Contacts tools slice
+export const CONTACTS_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
+	capability('nc_contacts_list', 'read-content', 'known-or-included', 'not-applicable', 'contacts'),
+	capability('nc_contacts_find', 'read-content', 'known-or-included', 'not-applicable', 'contacts'),
+	capability('nc_contacts_read', 'read-content', 'known-or-included', 'not-applicable', 'contacts'),
+	capability('nc_contacts_create', 'create-file', 'known-or-included', 'supported', 'contacts'),
+	capability('nc_contacts_patch', 'replace-file', 'known-or-included', 'supported', 'contacts'),
+	capability('nc_contacts_delete', 'replace-file', 'known-or-included', 'supported', 'contacts'),
+])
+
 export function fileCapability(name: string): FileToolCapability | undefined {
-	return [...FILE_CAPABILITIES, ...HISTORY_CAPABILITIES, ...EXTENDED_FILE_CAPABILITIES, ...TABLES_CAPABILITIES, ...DECK_CAPABILITIES].find(tool => tool.name === name)
+	return [
+		...FILE_CAPABILITIES,
+		...HISTORY_CAPABILITIES,
+		...EXTENDED_FILE_CAPABILITIES,
+		...TABLES_CAPABILITIES,
+		...DECK_CAPABILITIES,
+		...CALENDAR_CAPABILITIES,
+		...TASKS_CAPABILITIES,
+		...CONTACTS_CAPABILITIES,
+	].find(tool => tool.name === name)
 }
 
 export function stricterRisk(host: ToolRisk, published: ToolRisk): ToolRisk {
