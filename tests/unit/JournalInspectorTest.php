@@ -44,15 +44,23 @@ class JournalInspectorTest extends TestCase {
 		$db = $this->getMockBuilder(InspectorConnection::class)->disableAutoReturnValueGeneration()->getMock();
 		$db->expects(self::never())->method('executeStatement');
 		$db->expects(self::never())->method('beginTransaction');
+		$db->method('getDatabaseProvider')->willReturn(IDBConnection::PLATFORM_SQLITE);
 		$db->method('executeQuery')->willReturnCallback(function ($sql, $args) use ($rows): IResult {
-			if (str_contains($sql, 'action_id >')) {
+			if (str_contains($sql, 'fdn_jr_barriers')) {
+				$data = [str_contains($sql, 'AS owners') ? ['owners' => 0] : ['total' => 0]];
+			} elseif (str_contains($sql, 'LEFT JOIN')) {
+				$data = [['entries' => 0, 'used_bytes' => 0]];
+			} elseif (str_contains($sql, 'FROM *PREFIX*fdn_jr_alloc')) {
+				$data = [];
+			} elseif (str_contains($sql, 'ORDER BY action_id')) {
 				preg_match('/LIMIT ([0-9]+)$/D', $sql, $limit);
-				$data = array_slice(array_values(array_filter($rows, static fn ($row) => $row['action_id'] > $args[0])), 0, (int)$limit[1]);
+				$data = array_slice(array_values(array_filter($rows, static fn ($row) => !isset($args[0]) || $row['action_id'] > $args[0])), 0, (int)$limit[1]);
 			} else {
 				$data = array_values(array_filter($rows, static fn ($row) => $row['owner_hash'] === $args[0]));
 			}
 			$result = $this->createMock(IResult::class);
 			$result->method('fetchAll')->willReturn($data);
+			$result->method('fetch')->willReturn($data[0] ?? false);
 			$result->method('closeCursor')->willReturn(true);
 			return $result;
 		});
@@ -99,5 +107,16 @@ class JournalInspectorTest extends TestCase {
 		$rows[3]['metadata_mac'] = 'damaged';
 		$crypto->expects(self::never())->method('decrypt');
 		self::assertSame(['unavailableCount' => 1, 'earlierScopeCount' => 1, 'earlierContentExpiresBy' => 1300], $this->inspector($rows, $crypto)->availability($identity));
+	}
+
+	public function testEmptyPrimaryIdCannotHideDamagedHistoryFromDiagnostics(): void {
+		$crypto = $this->crypto();
+		$cipher = new JournalCipher($crypto);
+		$bad = $this->row($cipher, 1, str_repeat('c', 64));
+		$bad['action_id'] = '';
+		$result = $this->inspector([$bad, $this->row($cipher, 2, str_repeat('c', 64))], $crypto)->check();
+		self::assertSame(2, $result['rows']);
+		self::assertSame(1, $result['readable']);
+		self::assertSame(['journal_integrity' => 1], $result['unavailable']);
 	}
 }

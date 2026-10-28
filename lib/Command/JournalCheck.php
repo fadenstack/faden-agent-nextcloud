@@ -34,12 +34,12 @@ final class JournalCheck extends Command {
 		} else {
 			$output->writeln('Action history check (read-only; counts only)');
 			$output->writeln('Rows: ' . $result['rows'] . '; readable: ' . $result['readable'] . '; unavailable: ' . array_sum($result['unavailable']));
-			foreach (['formats', 'states', 'unavailable', 'due'] as $group) {
+			foreach (['formats', 'states', 'unavailable', 'due', 'retention'] as $group) {
 				foreach ($result[$group] as $label => $count) {
 					$output->writeln($group . '.' . $label . ': ' . $count);
 				}
 			}
 		}
-		return $result['unavailable'] === [] ? self::SUCCESS : self::FAILURE;
+		return $result['unavailable'] === [] && $result['retention']['ownerPauses'] === 0 && $result['retention']['globalPauses'] === 0 && $result['retention']['unattributedEntries'] === 0 ? self::SUCCESS : self::FAILURE;
 	}
 }

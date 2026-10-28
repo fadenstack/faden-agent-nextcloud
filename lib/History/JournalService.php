@@ -168,10 +168,13 @@ final class JournalService {
 		if ($this->store->blocked($owner)) {
 			throw new JournalException('history_safety_pause');
 		}
+		if ($this->store->hasOrphanAllocation($owner)) {
+			throw new JournalException('history_safety_pause');
+		}
 		// Until the retention writer preserves invalidation independently, an
 		// unreadable settled record can still contain an outstanding Redo branch.
 		// Skipping it could revive that branch after the original key is restored.
-		foreach ($this->store->owned($owner) as $row) {
+		foreach ($this->store->ownerSafetyRows($owner) as $row) {
 			try {
 				$this->cipher->verify($row);
 			} catch (JournalException) {
@@ -269,45 +272,53 @@ final class JournalService {
 
 	/** Background maintenance deletes expired encrypted bytes without opening a native user's content. */
 	public function pruneExpired(int $limit = 100): int {
-		return $this->expireRows($this->store->maintenancePage($limit));
+		$count = $this->expireRows($this->store->maintenancePage($limit));
+		return $count + (new JournalRetention($this->store, $this->cipher))->pruneOrphans($this->now(), $limit);
 	}
 
 	private function expireRows(array $rows): int {
 		$count = 0;
 		foreach ($rows as $row) {
 			try {
-				$this->cipher->verify($row);
-			} catch (JournalException) {
-				// Reader prerequisite: preserve unreadable data until the separately
-				// released retention writer can leave a durable denial if necessary.
-				continue;
-			}
-			if ($row['payload'] !== null && $row['expires_at'] <= $this->now()) {
-				$changed = $this->store->atomic(function () use ($row): bool {
-					$row = $this->maintenanceRow($row);
-					if ($row === null) {
-						return false;
-					}
-					$updated = $row;
-					$this->purgePayload($row, $updated);
-					$updated['state'] = in_array($row['state'], self::DISPATCHED, true) ? 'needs_reconciliation' : 'expired';
-					$updated['ticket_hash'] = null;
-					$updated['session_hash'] = null;
-					$this->transition($row, $updated, 'expired');
-					if (in_array($row['state'], ['prepared', 'undo_prepared', 'redo_prepared'], true)) {
-						$this->store->releaseResource($row);
-					}
-					return true;
-				});
-				$count += $changed ? 1 : 0;
-			} elseif ($row['payload'] === null && $row['updated_at'] < $this->now() - 2592000
-				&& in_array($row['state'], ['expired', 'failed', 'cancelled', 'redo_invalidated'], true)) {
-				$this->store->atomic(function () use ($row): void {
-					$current = $this->maintenanceRow($row);
-					if ($current !== null) {
-						$this->store->purgeTerminal($current);
-					}
-				});
+				try {
+					$this->cipher->verify($row);
+				} catch (JournalException) {
+					$count += (new JournalRetention($this->store, $this->cipher))->expireUnreadable($row, $this->now()) ? 1 : 0;
+					continue;
+				}
+				if ($row['payload'] !== null && $row['expires_at'] <= $this->now()) {
+					$changed = $this->store->atomic(function () use ($row): bool {
+						$row = $this->maintenanceRow($row);
+						if ($row === null) {
+							return false;
+						}
+						$updated = $row;
+						(new JournalRetention($this->store, $this->cipher))->repairAccounting($row['owner_hash'], $this->now());
+						$this->purgePayload($row, $updated);
+						$updated['state'] = in_array($row['state'], self::DISPATCHED, true) ? 'needs_reconciliation' : 'expired';
+						$updated['ticket_hash'] = null;
+						$updated['session_hash'] = null;
+						$this->transition($row, $updated, 'expired');
+						if (in_array($row['state'], ['prepared', 'undo_prepared', 'redo_prepared'], true)) {
+							$this->store->releaseResource($row);
+						}
+						return true;
+					});
+					$count += $changed ? 1 : 0;
+				} elseif ($row['payload'] === null && $row['updated_at'] < $this->now() - 2592000
+					&& in_array($row['state'], ['expired', 'failed', 'cancelled', 'redo_invalidated'], true)) {
+					$this->store->atomic(function () use ($row): void {
+						$current = $this->maintenanceRow($row);
+						if ($current !== null) {
+							$this->store->purgeTerminal($current);
+						}
+					});
+				}
+			} catch (JournalException $error) {
+				if (!in_array($error->reason, ['journal_integrity', 'unsupported_journal_format', 'state_conflict'], true)) {
+					throw $error;
+				}
+				// A stale observation or mid-run key change must not starve the page.
 			}
 		}
 		return $count;
@@ -362,10 +373,11 @@ final class JournalService {
 				$updated['resource_json'] = JournalCipher::json($readback->resource->toArray());
 			}
 			$payload['revision'] = $readback->revision;
-			$this->setPayload($updated, $payload);
-			$this->store->resizePayload($row, $updated['payload_bytes'], $this->policy);
 			if ($updated['state'] === 'failed') {
-				$this->purgePayload($updated, $updated);
+				$this->purgePayload($row, $updated);
+			} else {
+				$this->setPayload($updated, $payload);
+				$this->store->resizePayload($row, $updated['payload_bytes'], $this->policy);
 			}
 			$updated = $this->transition($row, $updated, $inspected ? 'reconciled' : ($outcome === 'verified' ? $updated['state'] : 'failed'), $inspected ? $outcome : '');
 			if ($outcome === 'verified' && $row['direction'] === 'apply') {
@@ -408,7 +420,7 @@ final class JournalService {
 	/** Internal coordination only: no other scope's payload is decrypted or returned. */
 	private function coordinated(string $owner, JournalResource $resource): array {
 		$matching = [];
-		foreach ($this->store->owned($owner) as $row) {
+		foreach ($this->store->ownerSafetyRows($owner) as $row) {
 			$this->cipher->verify($row);
 			$other = JournalResource::fromArray(json_decode($row['resource_json'], true, 8, JSON_THROW_ON_ERROR));
 			if ($resource->conflictsWith($other)) {

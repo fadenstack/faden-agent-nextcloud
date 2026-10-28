@@ -25,6 +25,9 @@ final class SqlJournalStore {
 		if ($this->db->inTransaction()) {
 			throw new JournalException('nested_transaction', 503);
 		}
+		// Nextcloud's fresh-install fast path can create migration schemas without
+		// postSchemaChange seed data. Duplicate recovery stays outside a PG tx.
+		$this->ensureSafetyControl();
 		$this->db->beginTransaction();
 		try {
 			// A short app-metadata mutex also orders a future global denial against
@@ -38,6 +41,19 @@ final class SqlJournalStore {
 		} catch (\Throwable $error) {
 			$this->db->rollBack();
 			throw $error;
+		}
+	}
+
+	private function ensureSafetyControl(): void {
+		if ($this->one('SELECT control_name FROM *PREFIX*fdn_jr_control WHERE control_name = ?', ['safety']) !== null) {
+			return;
+		}
+		try {
+			$this->insert('fdn_jr_control', ['control_name' => 'safety', 'cursor_id' => '', 'generation' => 0], ['control_name', 'cursor_id', 'generation']);
+		} catch (\Throwable $error) {
+			if ($this->one('SELECT control_name FROM *PREFIX*fdn_jr_control WHERE control_name = ?', ['safety']) === null) {
+				throw $error;
+			}
 		}
 	}
 
@@ -116,25 +132,116 @@ final class SqlJournalStore {
 		return $this->one('SELECT * FROM *PREFIX*fdn_jr_alloc WHERE action_id = ?', [$id]);
 	}
 
+	/** Call only after header verification, or from an authenticated producer. */
+	public function captureAllocation(array $row): void {
+		if ($this->allocation($row['action_id']) === null) {
+			$this->insert('fdn_jr_alloc', $row, ['action_id', 'owner_hash', 'resource_hash', 'created_at', 'expires_at', 'payload_bytes']);
+		}
+	}
+
+	/** Under the metadata mutex: denial is monotonic and contains no target or ticket. */
+	public function deny(string $owner, string $reason, int $now): void {
+		if ($this->one('SELECT owner_hash FROM *PREFIX*fdn_jr_barriers WHERE owner_hash = ?', [$owner]) === null) {
+			$this->insert('fdn_jr_barriers', ['owner_hash' => $owner, 'reason' => $reason, 'created_at' => $now], ['owner_hash', 'reason', 'created_at']);
+		}
+	}
+
+	public function claimsFor(string $id): array {
+		return $this->all('SELECT resource_hash, owner_hash, active_id FROM *PREFIX*fdn_jr_resources WHERE active_id = ?', [$id]);
+	}
+
+	public function retireClaim(array $claim): void {
+		$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_resources SET active_id = NULL WHERE resource_hash = ? AND owner_hash = ? AND active_id = ?',
+			[$claim['resource_hash'], $claim['owner_hash'], $claim['active_id']]);
+	}
+
+	/** Caller reloads/classifies under atomic(); no failed header field selects a quota owner. */
+	public function eraseUnreadable(string $id): void {
+		$this->db->executeStatement('DELETE FROM *PREFIX*fdn_journal WHERE action_id = ?', [$id]);
+		$this->db->executeStatement('DELETE FROM *PREFIX*fdn_jr_attempts WHERE action_id = ?', [$id]);
+		$this->db->executeStatement('DELETE FROM *PREFIX*fdn_jr_alloc WHERE action_id = ?', [$id]);
+	}
+
+	/** Expired accounting facts with no journal do not retain content or authority. */
+	public function eraseOrphanAllocation(string $id): void {
+		$this->db->executeStatement('DELETE FROM *PREFIX*fdn_jr_attempts WHERE action_id = ?', [$id]);
+		$this->db->executeStatement('DELETE FROM *PREFIX*fdn_jr_alloc WHERE action_id = ?', [$id]);
+	}
+
+	public function unallocatedPage(?string $after = null, int $limit = 25): array {
+		$limit = max(1, min(1000, $limit));
+		return $this->all('SELECT j.* FROM *PREFIX*fdn_journal j LEFT JOIN *PREFIX*fdn_jr_alloc a ON a.action_id = j.action_id WHERE a.action_id IS NULL'
+			. ($after === null ? '' : ' AND j.action_id > ?') . ' ORDER BY j.action_id ASC LIMIT ' . $limit, $after === null ? [] : [$after]);
+	}
+
+	/** Actual byte length, including corrupt multibyte text; never the failed declared charge. */
+	private function payloadLength(string $column): string {
+		return match ($this->db->getDatabaseProvider()) {
+			IDBConnection::PLATFORM_SQLITE => 'LENGTH(CAST(' . $column . ' AS BLOB))',
+			IDBConnection::PLATFORM_POSTGRES, IDBConnection::PLATFORM_MYSQL, IDBConnection::PLATFORM_MARIADB => 'OCTET_LENGTH(' . $column . ')',
+			default => throw new JournalException('database_unavailable', 503),
+		};
+	}
+
+	/** Known attribution only. The unattributed pool is calculated, never assigned to a guessed user. */
+	public function recount(?string $owner = null): void {
+		$bytes = $this->payloadLength('j.payload');
+		$owners = ' FROM *PREFIX*fdn_jr_alloc a JOIN *PREFIX*fdn_journal j ON j.action_id = a.action_id WHERE a.owner_hash = *PREFIX*fdn_jr_owners.owner_hash';
+		$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_owners SET used_bytes = (SELECT COALESCE(SUM(' . $bytes . '), 0)' . $owners . '), entries = (SELECT COUNT(*)' . $owners . ')'
+			. ($owner === null ? '' : ' WHERE owner_hash = ?'), $owner === null ? [] : [$owner]);
+		$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_resources SET entries = (SELECT COUNT(*) FROM *PREFIX*fdn_jr_alloc a JOIN *PREFIX*fdn_journal j ON j.action_id = a.action_id WHERE a.resource_hash = *PREFIX*fdn_jr_resources.resource_hash AND j.payload IS NOT NULL)'
+			. ($owner === null ? '' : ' WHERE owner_hash = ?'), $owner === null ? [] : [$owner]);
+	}
+
+	/** Read-only aggregate; no owner, action or target identifiers leave this boundary. */
+	public function retentionStats(): array {
+		$barriers = $this->one('SELECT COUNT(*) AS owners FROM *PREFIX*fdn_jr_barriers WHERE owner_hash <> ?', ['*']);
+		$global = $this->one('SELECT COUNT(*) AS total FROM *PREFIX*fdn_jr_barriers WHERE owner_hash = ?', ['*']);
+		$pool = $this->one('SELECT COUNT(*) AS entries, COALESCE(SUM(' . $this->payloadLength('j.payload') . '), 0) AS used_bytes FROM *PREFIX*fdn_journal j LEFT JOIN *PREFIX*fdn_jr_alloc a ON a.action_id = j.action_id WHERE a.action_id IS NULL', []);
+		return ['ownerPauses' => (int)$barriers['owners'], 'globalPauses' => (int)$global['total'],
+			'unattributedEntries' => (int)$pool['entries'], 'unattributedBytes' => (int)$pool['used_bytes']];
+	}
+
 	/** Reserve a scan window before processing it; failures cannot pin the cursor. */
 	public function maintenancePage(int $limit): array {
 		return $this->atomic(function () use ($limit): array {
 			$limit = max(1, min(1000, $limit));
-			$control = $this->one('SELECT cursor_id FROM *PREFIX*fdn_jr_control WHERE control_name = ?', ['retention']);
+			$control = $this->one('SELECT cursor_id, generation FROM *PREFIX*fdn_jr_control WHERE control_name = ?', ['retention']);
 			if ($control === null) {
-				throw new JournalException('journal_owner_unavailable', 503);
+				$this->insert('fdn_jr_control', ['control_name' => 'retention', 'cursor_id' => '', 'generation' => 0], ['control_name', 'cursor_id', 'generation']);
+				$control = ['cursor_id' => '', 'generation' => 0];
 			}
-			$rows = $this->page($control['cursor_id'], $limit);
+			$rows = $this->page((int)$control['generation'] === 0 ? null : $control['cursor_id'], $limit);
 			$after = count($rows) < $limit ? '' : $rows[array_key_last($rows)]['action_id'];
-			$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_control SET cursor_id = ? WHERE control_name = ?', [$after, 'retention']);
+			$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_control SET cursor_id = ?, generation = ? WHERE control_name = ?', [$after, count($rows) < $limit ? 0 : 1, 'retention']);
+			return $rows;
+		});
+	}
+
+	/** Separate persisted windows also reach claims/allocations whose journal row vanished. */
+	public function auxiliaryPage(string $kind, int $limit): array {
+		return $this->atomic(function () use ($kind, $limit): array {
+			[$table, $key, $where] = match ($kind) {
+				'claims' => ['fdn_jr_resources', 'resource_hash', 'active_id IS NOT NULL AND '],
+				'allocations' => ['fdn_jr_alloc', 'action_id', ''],
+				default => throw new JournalException('invalid_maintenance', 400),
+			};
+			$limit = max(1, min(1000, $limit));
+			$control = $this->one('SELECT cursor_id FROM *PREFIX*fdn_jr_control WHERE control_name = ?', [$kind]);
+			if ($control === null) {
+				$this->insert('fdn_jr_control', ['control_name' => $kind, 'cursor_id' => '', 'generation' => 0], ['control_name', 'cursor_id', 'generation']);
+			}
+			$rows = $this->all('SELECT * FROM *PREFIX*' . $table . ' WHERE ' . $where . $key . ' > ? ORDER BY ' . $key . ' ASC LIMIT ' . $limit, [$control['cursor_id'] ?? '']);
+			$after = count($rows) < $limit ? '' : $rows[array_key_last($rows)][$key];
+			$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_control SET cursor_id = ? WHERE control_name = ?', [$after, $kind]);
 			return $rows;
 		});
 	}
 
 	/** Read-only keyset scan; unhealthy rows cannot starve later diagnostic pages. */
-	public function page(string $after = '', int $limit = 100): array {
+	public function page(?string $after = null, int $limit = 100): array {
 		$limit = max(1, min(1000, $limit));
-		return $this->all('SELECT * FROM *PREFIX*fdn_journal WHERE action_id > ? ORDER BY action_id ASC LIMIT ' . $limit, [$after]);
+		return $this->all('SELECT * FROM *PREFIX*fdn_journal' . ($after === null ? '' : ' WHERE action_id > ?') . ' ORDER BY action_id ASC LIMIT ' . $limit, $after === null ? [] : [$after]);
 	}
 
 	/** Bounded by the per-user metadata quota. */
@@ -148,6 +255,15 @@ final class SqlJournalStore {
 			}
 		}
 		return $this->all($sql . ' ORDER BY resource_seq DESC, created_at DESC, action_id DESC', $args);
+	}
+
+	/** Denial/ordering lookup includes original allocation ownership if a raw header moves. */
+	public function ownerSafetyRows(string $owner): array {
+		return $this->all('SELECT j.* FROM *PREFIX*fdn_journal j JOIN (SELECT action_id FROM *PREFIX*fdn_journal WHERE owner_hash = ? UNION SELECT action_id FROM *PREFIX*fdn_jr_alloc WHERE owner_hash = ?) owned_ids ON owned_ids.action_id = j.action_id', [$owner, $owner]);
+	}
+
+	public function hasOrphanAllocation(string $owner): bool {
+		return $this->one('SELECT a.action_id FROM *PREFIX*fdn_jr_alloc a LEFT JOIN *PREFIX*fdn_journal j ON j.action_id = a.action_id WHERE a.owner_hash = ? AND j.action_id IS NULL LIMIT 1', [$owner]) !== null;
 	}
 
 	public function insertEntry(array $row): void {
@@ -191,8 +307,11 @@ final class SqlJournalStore {
 
 	public function resizePayload(array $row, int $newBytes, JournalPolicy $policy): void {
 		$delta = $newBytes - (int)$row['payload_bytes'];
-		if ($delta !== 0 && $this->db->executeStatement('UPDATE *PREFIX*fdn_jr_owners SET used_bytes = used_bytes + ? WHERE owner_hash = ? AND used_bytes >= ? AND used_bytes <= ?',
-			[$delta, $row['owner_hash'], max(0, -$delta), $policy->maxUserBytes - max(0, $delta)]) !== 1) {
+		$arguments = [$delta, $row['owner_hash'], max(0, -$delta)];
+		if ($delta > 0) {
+			$arguments[] = $policy->maxUserBytes - $delta;
+		}
+		if ($delta !== 0 && $this->db->executeStatement('UPDATE *PREFIX*fdn_jr_owners SET used_bytes = used_bytes + ? WHERE owner_hash = ? AND used_bytes >= ?' . ($delta > 0 ? ' AND used_bytes <= ?' : ''), $arguments) !== 1) {
 			throw new JournalException('user_quota', 507);
 		}
 		if ($newBytes === 0 && (int)$row['payload_bytes'] > 0) {

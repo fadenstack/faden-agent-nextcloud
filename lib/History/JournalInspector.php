@@ -23,7 +23,7 @@ final class JournalInspector {
 	public function check(): array {
 		$result = ['rows' => 0, 'formats' => ['v1' => 0, 'unsupported' => 0], 'states' => [], 'readable' => 0,
 			'unavailable' => [], 'due' => ['authenticated' => 0, 'unverified' => 0]];
-		$after = '';
+		$after = null;
 		do {
 			$rows = $this->store->page($after, self::PAGE_SIZE);
 			foreach ($rows as $row) {
@@ -48,13 +48,15 @@ final class JournalInspector {
 					$reason = $error instanceof JournalException && in_array($error->reason, ['unsupported_journal_format', 'snapshot_unavailable', 'journal_integrity'], true) ? $error->reason : 'could_not_check';
 					$result['unavailable'][$reason] = ($result['unavailable'][$reason] ?? 0) + 1;
 				}
-				if ($this->due($row)) {
+				$due = $authenticated ? $this->due($row) : JournalRetention::due($row, $this->store->allocation($row['action_id']), $this->clock->getTime());
+				if ($due) {
 					$result['due'][$authenticated ? 'authenticated' : 'unverified']++;
 				}
 			}
 		} while (count($rows) === self::PAGE_SIZE);
 		ksort($result['states']);
 		ksort($result['unavailable']);
+		$result['retention'] = $this->store->retentionStats();
 		return $result;
 	}
 
