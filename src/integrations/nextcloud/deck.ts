@@ -2,6 +2,7 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
 import type { DeckCard, DeckBoardSnapshot, DeckStack } from './types.ts'
+import { optionalPositiveInteger } from './adapterGuards.ts'
 
 export const DECK_MUTATIONS = new Set([
 	'nc_deck_patch',
@@ -26,7 +27,7 @@ export interface DeckProposal {
 
 export function cardContent(card: DeckCard): Record<string, unknown> {
 	return Object.fromEntries(
-		['id', 'title', 'description', 'type', 'order', 'stackId', 'duedate', 'startdate', 'color', 'archived', 'done', 'assignedUsers', 'labels']
+		['id', 'title', 'description', 'type', 'owner', 'order', 'stackId', 'duedate', 'startdate', 'color', 'archived', 'done', 'assignedUsers', 'labels']
 			.map(k => [k, card[k]]),
 	)
 }
@@ -37,7 +38,7 @@ export function validateDeckPatchArgs(args: Readonly<Record<string, unknown>>): 
 	expectedRevision: string
 	changes: { title?: string; description?: string; duedate?: string | null; done?: string | null }
 } {
-	if (typeof args.cardId !== 'number' || args.cardId < 1) {
+	if (typeof args.cardId !== 'number' || !Number.isSafeInteger(args.cardId) || args.cardId < 1) {
 		throw new Error('A positive integer cardId is required.')
 	}
 	if (typeof args.expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedRevision)) {
@@ -87,7 +88,7 @@ export function validateDeckPatchArgs(args: Readonly<Record<string, unknown>>): 
 			throw new Error('done must be a string or null.')
 		}
 	}
-	const boardId = typeof args.boardId === 'number' && args.boardId >= 1 ? args.boardId : undefined
+	const boardId = optionalPositiveInteger(args.boardId, 'boardId')
 	return { boardId, cardId: args.cardId, expectedRevision: args.expectedRevision, changes }
 }
 
@@ -98,7 +99,7 @@ export function validateDeckCreateArgs(args: Readonly<Record<string, unknown>>):
 	description?: string
 	duedate?: string | null
 } {
-	if (typeof args.stackId !== 'number' || args.stackId < 1) {
+	if (typeof args.stackId !== 'number' || !Number.isSafeInteger(args.stackId) || args.stackId < 1) {
 		throw new Error('A positive integer stackId is required.')
 	}
 	if (typeof args.title !== 'string' || !args.title.trim() || args.title.length > 255) {
@@ -123,7 +124,7 @@ export function validateDeckCreateArgs(args: Readonly<Record<string, unknown>>):
 			throw new Error('duedate must be an ISO date string or null.')
 		}
 	}
-	const boardId = typeof args.boardId === 'number' && args.boardId >= 1 ? args.boardId : undefined
+	const boardId = optionalPositiveInteger(args.boardId, 'boardId')
 	return { boardId, stackId: args.stackId, title: args.title.trim(), description, duedate }
 }
 
@@ -134,17 +135,17 @@ export function validateDeckMoveArgs(args: Readonly<Record<string, unknown>>): {
 	expectedRevision: string
 	order: number
 } {
-	if (typeof args.cardId !== 'number' || args.cardId < 1) {
+	if (typeof args.cardId !== 'number' || !Number.isSafeInteger(args.cardId) || args.cardId < 1) {
 		throw new Error('A positive integer cardId is required.')
 	}
-	if (typeof args.stackId !== 'number' || args.stackId < 1) {
+	if (typeof args.stackId !== 'number' || !Number.isSafeInteger(args.stackId) || args.stackId < 1) {
 		throw new Error('A positive integer destination stackId is required.')
 	}
 	if (typeof args.expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedRevision)) {
 		throw new Error('A 64-character hex expectedRevision is required.')
 	}
 	const order = typeof args.order === 'number' && args.order >= 0 ? args.order : 0
-	const boardId = typeof args.boardId === 'number' && args.boardId >= 1 ? args.boardId : undefined
+	const boardId = optionalPositiveInteger(args.boardId, 'boardId')
 	return { boardId, cardId: args.cardId, stackId: args.stackId, expectedRevision: args.expectedRevision, order }
 }
 
@@ -154,7 +155,7 @@ export function validateDeckAssignArgs(args: Readonly<Record<string, unknown>>):
 	userId: string
 	expectedRevision: string
 } {
-	if (typeof args.cardId !== 'number' || args.cardId < 1) {
+	if (typeof args.cardId !== 'number' || !Number.isSafeInteger(args.cardId) || args.cardId < 1) {
 		throw new Error('A positive integer cardId is required.')
 	}
 	if (typeof args.userId !== 'string' || !args.userId.trim() || args.userId.length > 80) {
@@ -163,7 +164,7 @@ export function validateDeckAssignArgs(args: Readonly<Record<string, unknown>>):
 	if (typeof args.expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedRevision)) {
 		throw new Error('A 64-character hex expectedRevision is required.')
 	}
-	const boardId = typeof args.boardId === 'number' && args.boardId >= 1 ? args.boardId : undefined
+	const boardId = optionalPositiveInteger(args.boardId, 'boardId')
 	return { boardId, cardId: args.cardId, userId: args.userId.trim(), expectedRevision: args.expectedRevision }
 }
 
@@ -173,16 +174,16 @@ export function validateDeckLabelArgs(args: Readonly<Record<string, unknown>>): 
 	labelId: number
 	expectedRevision: string
 } {
-	if (typeof args.cardId !== 'number' || args.cardId < 1) {
+	if (typeof args.cardId !== 'number' || !Number.isSafeInteger(args.cardId) || args.cardId < 1) {
 		throw new Error('A positive integer cardId is required.')
 	}
-	if (typeof args.labelId !== 'number' || args.labelId < 1) {
+	if (typeof args.labelId !== 'number' || !Number.isSafeInteger(args.labelId) || args.labelId < 1) {
 		throw new Error('A positive integer labelId is required.')
 	}
 	if (typeof args.expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedRevision)) {
 		throw new Error('A 64-character hex expectedRevision is required.')
 	}
-	const boardId = typeof args.boardId === 'number' && args.boardId >= 1 ? args.boardId : undefined
+	const boardId = optionalPositiveInteger(args.boardId, 'boardId')
 	return { boardId, cardId: args.cardId, labelId: args.labelId, expectedRevision: args.expectedRevision }
 }
 

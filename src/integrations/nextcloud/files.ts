@@ -4,6 +4,7 @@ import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
 import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderListingEntry, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 import { sha256Hex } from './tables.ts'
+import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './adapterGuards.ts'
 import { parseDavProperties, unescapeCalendarText } from './caldav.ts'
 
 function resolveRouteTableId(): number | undefined {
@@ -41,7 +42,7 @@ export class NextcloudFiles implements FileApi {
 	readonly tables: TablesApi = {
 		readTable: async (tableId?: number, signal?: AbortSignal): Promise<TableSnapshot> => {
 			await this.assertIdentity(signal)
-			const id = tableId ?? resolveRouteTableId()
+			const id = positiveInteger(tableId ?? resolveRouteTableId(), 'tableId')
 			if (!id) throw new Error('A valid tableId or open native Tables route is required.')
 			const tableUrl = generateUrl(`/apps/tables/api/1/tables/${id}`)
 			const colsUrl = generateUrl(`/apps/tables/api/1/tables/${id}/columns`)
@@ -102,7 +103,7 @@ export class NextcloudFiles implements FileApi {
 	readonly deck: DeckApi = {
 		readBoard: async (boardId?: number, signal?: AbortSignal): Promise<DeckBoardSnapshot> => {
 			await this.assertIdentity(signal)
-			const id = boardId ?? resolveRouteBoardId()
+			const id = positiveInteger(boardId ?? resolveRouteBoardId(), 'boardId')
 			if (!id) throw new Error('A valid boardId or open native Deck board route is required.')
 			const boardUrl = generateUrl(`/apps/deck/api/v1.0/boards/${id}`)
 			const stacksUrl = generateUrl(`/apps/deck/api/v1.0/boards/${id}/stacks`)
@@ -188,7 +189,7 @@ export class NextcloudFiles implements FileApi {
 		},
 		readEvents: async (calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]> => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/`
 			const body = '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"/></c:comp-filter></c:filter></c:calendar-query>'
 			const res = await axios.request<string>({
 				url,
@@ -203,7 +204,7 @@ export class NextcloudFiles implements FileApi {
 		},
 		getEvent: async (calendarId: string, filename: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/${davSegment(filename)}`
 			const res = await axios.get<string>(url, {
 				headers: { Accept: 'text/calendar' },
 				responseType: 'text',
@@ -217,7 +218,7 @@ export class NextcloudFiles implements FileApi {
 		},
 		createEvent: async (calendarId: string, filename: string, icsData: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/${davSegment(filename)}`
 			const res = await axios.put<string>(url, icsData, {
 				headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'If-None-Match': '*' },
 				signal,
@@ -228,8 +229,8 @@ export class NextcloudFiles implements FileApi {
 		},
 		updateEvent: async (calendarId: string, filename: string, icsData: string, expectedEtag: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
-			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/${davSegment(filename)}`
+			const etagHeader = strongEtagHeader(expectedEtag)
 			const res = await axios.put<string>(url, icsData, {
 				headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'If-Match': etagHeader },
 				signal,
@@ -240,8 +241,8 @@ export class NextcloudFiles implements FileApi {
 		},
 		deleteEvent: async (calendarId: string, filename: string, expectedEtag: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
-			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/${davSegment(filename)}`
+			const etagHeader = strongEtagHeader(expectedEtag)
 			await axios.delete(url, {
 				headers: { 'If-Match': etagHeader },
 				signal,
@@ -257,7 +258,7 @@ export class NextcloudFiles implements FileApi {
 		},
 		readTasks: async (calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]> => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/`
 			const body = '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VTODO"/></c:comp-filter></c:filter></c:calendar-query>'
 			const res = await axios.request<string>({
 				url,
@@ -272,7 +273,7 @@ export class NextcloudFiles implements FileApi {
 		},
 		getTask: async (calendarId: string, filename: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/${davSegment(filename)}`
 			const res = await axios.get<string>(url, {
 				headers: { Accept: 'text/calendar' },
 				responseType: 'text',
@@ -286,7 +287,7 @@ export class NextcloudFiles implements FileApi {
 		},
 		createTask: async (calendarId: string, filename: string, icsData: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/${davSegment(filename)}`
 			const res = await axios.put<string>(url, icsData, {
 				headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'If-None-Match': '*' },
 				signal,
@@ -297,8 +298,8 @@ export class NextcloudFiles implements FileApi {
 		},
 		updateTask: async (calendarId: string, filename: string, icsData: string, expectedEtag: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
-			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/${davSegment(filename)}`
+			const etagHeader = strongEtagHeader(expectedEtag)
 			const res = await axios.put<string>(url, icsData, {
 				headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'If-Match': etagHeader },
 				signal,
@@ -309,8 +310,8 @@ export class NextcloudFiles implements FileApi {
 		},
 		deleteTask: async (calendarId: string, filename: string, expectedEtag: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(calendarId)}/${encodeURIComponent(filename)}`
-			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			const url = `${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/${davSegment(filename)}`
+			const etagHeader = strongEtagHeader(expectedEtag)
 			await axios.delete(url, {
 				headers: { 'If-Match': etagHeader },
 				signal,
@@ -342,7 +343,7 @@ export class NextcloudFiles implements FileApi {
 			for (const book of books.slice(0, 10)) {
 				const body = `<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop><c:filter><c:prop-filter name="FN"><c:text-match collation="i;unicode-casemap" match-type="contains">${escapeXml(query)}</c:text-match></c:prop-filter></c:filter></c:addressbook-query>`
 				const res = await axios.request<string>({
-					url: book.href.startsWith('http') ? book.href : `${location.origin}${book.href}`,
+					url: this.addressBookHref(book.href),
 					method: 'REPORT',
 					data: body,
 					headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
@@ -361,7 +362,7 @@ export class NextcloudFiles implements FileApi {
 		readContact: async (bookId: string, filename?: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
 			if (filename) {
-				const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/${encodeURIComponent(filename)}`
+				const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${davSegment(bookId)}/${davSegment(filename)}`
 				const res = await axios.get<string>(url, {
 					headers: { Accept: 'text/vcard' },
 					responseType: 'text',
@@ -373,7 +374,7 @@ export class NextcloudFiles implements FileApi {
 				const values = parseDavProperties(raw, 'VCARD').values
 				return { etag, raw, values }
 			}
-			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/`
+			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${davSegment(bookId)}/`
 			const body = '<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop></c:addressbook-query>'
 			const res = await axios.request<string>({
 				url,
@@ -384,13 +385,12 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			const raw = res.data
-			const values = parseDavProperties(raw, 'VCARD').values
-			return { etag: '', raw, values }
+			const contacts = parseContactsXml(res.data, bookId)
+			return { etag: '', raw: '', values: {}, contacts: contacts.slice(0, 50), complete: contacts.length <= 50 }
 		},
 		createContact: async (bookId: string, filename: string, vcardData: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/${encodeURIComponent(filename)}`
+			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${davSegment(bookId)}/${davSegment(filename)}`
 			const res = await axios.put<string>(url, vcardData, {
 				headers: { 'Content-Type': 'text/vcard; charset=utf-8', 'If-None-Match': '*' },
 				signal,
@@ -401,8 +401,8 @@ export class NextcloudFiles implements FileApi {
 		},
 		updateContact: async (bookId: string, filename: string, vcardData: string, expectedEtag: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/${encodeURIComponent(filename)}`
-			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${davSegment(bookId)}/${davSegment(filename)}`
+			const etagHeader = strongEtagHeader(expectedEtag)
 			const res = await axios.put<string>(url, vcardData, {
 				headers: { 'Content-Type': 'text/vcard; charset=utf-8', 'If-Match': etagHeader },
 				signal,
@@ -413,14 +413,21 @@ export class NextcloudFiles implements FileApi {
 		},
 		deleteContact: async (bookId: string, filename: string, expectedEtag: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
-			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${encodeURIComponent(bookId)}/${encodeURIComponent(filename)}`
-			const etagHeader = expectedEtag.startsWith('"') ? expectedEtag : `"${expectedEtag}"`
+			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${davSegment(bookId)}/${davSegment(filename)}`
+			const etagHeader = strongEtagHeader(expectedEtag)
 			await axios.delete(url, {
 				headers: { 'If-Match': etagHeader },
 				signal,
 				timeout: 15000,
 			})
 		},
+	}
+
+	private addressBookHref(href: string): string {
+		const base = new URL(`${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/`, location.href)
+		const target = new URL(href, location.href)
+		if (target.origin !== base.origin || target.username || target.password || target.search || target.hash || !target.pathname.startsWith(base.pathname)) throw new Error('The native address-book path is unavailable.')
+		return target.href
 	}
 
 	private historyPath(id: string, digest: string, operation: 'approve' | 'execute' | 'cancel'): string {
@@ -484,6 +491,8 @@ export class NextcloudFiles implements FileApi {
 		const now = await this.identity(signal)
 		if (now.userId !== this.initial.userId || now.binding !== this.initial.binding
 			|| now.historyEnabled !== this.initial.historyEnabled
+			|| now.development !== this.initial.development
+			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled'] as const).some(key => now[key] !== this.initial[key])
 			|| now.scopePolicy?.version !== this.initial.scopePolicy?.version
 			|| now.serverUrl !== this.initial.serverUrl || now.agent !== this.initial.agent || !now.enabled) {
 			throw new Error('The Nextcloud session or agent configuration changed. Reload and sign in again.')
@@ -543,7 +552,7 @@ export class NextcloudFiles implements FileApi {
 		if (typeof name !== 'string' || !name.trim() || name.length > 100 || /[\x00-\x1f\x7f/\\:<>"|?*]/.test(name) || name === '.' || name === '..') {
 			throw new Error('A valid folder name up to 100 characters without path separators is required.')
 		}
-		const cleanFolder = folderPath.replace(/^\/+|\/+$/g, '')
+		const cleanFolder = davFilePath(folderPath)
 		const targetRel = cleanFolder ? `${cleanFolder}/${encodeURIComponent(name)}` : encodeURIComponent(name)
 		const davUrl = `${generateRemoteUrl('dav')}files/${encodeURIComponent(this.initial.userId)}/${targetRel}`
 
@@ -554,7 +563,7 @@ export class NextcloudFiles implements FileApi {
 			}
 		} catch (error) {
 			const status = (error as { response?: { status?: number } })?.response?.status
-			if (status && status !== 404) throw error
+			if (status !== 404) throw error
 		}
 
 		const response = await axios.request({
@@ -578,8 +587,11 @@ export class NextcloudFiles implements FileApi {
 	private async copyOrMove(method: 'COPY' | 'MOVE', sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult> {
 		await this.assertIdentity(signal)
 		if (!expectedEtag) throw new Error('The expected source ETag is required.')
-		const cleanSource = sourcePath.replace(/^\/+/, '')
-		const cleanDest = destinationPath.replace(/^\/+/, '')
+		const cleanSource = davFilePath(sourcePath)
+		const destination = !destinationPath.startsWith('/') && !destinationPath.includes('/')
+			? `${sourcePath.slice(0, sourcePath.lastIndexOf('/') + 1)}${destinationPath}`
+			: destinationPath
+		const cleanDest = davFilePath(destination)
 		if (!cleanSource || !cleanDest) throw new Error('Valid source and destination paths are required.')
 		if (cleanSource === cleanDest) throw new Error('Choose a different destination.')
 
@@ -594,7 +606,7 @@ export class NextcloudFiles implements FileApi {
 			}
 		} catch (error) {
 			const status = (error as { response?: { status?: number } })?.response?.status
-			if (status && status !== 404) throw error
+			if (status !== 404) throw error
 		}
 
 		const fullDest = destUrl.startsWith('http') ? destUrl : (typeof location !== 'undefined' ? `${location.origin}${destUrl}` : destUrl)
@@ -604,7 +616,7 @@ export class NextcloudFiles implements FileApi {
 			headers: {
 				Destination: fullDest,
 				Overwrite: 'F',
-				'If-Match': expectedEtag,
+				'If-Match': strongEtagHeader(expectedEtag),
 			},
 			signal,
 			timeout: 20000,
@@ -640,6 +652,12 @@ export class NextcloudFiles implements FileApi {
 
 	async shareReadonly(path: string, recipientUserId: string, expectedEtag: string, signal?: AbortSignal): Promise<ShareEntry> {
 		await this.assertIdentity(signal)
+		const revision = strongEtagHeader(expectedEtag)
+		const targetUrl = `${generateRemoteUrl('dav')}files/${encodeURIComponent(this.initial.userId)}/${davFilePath(path)}`
+		const current = await axios.request<string>({ url: targetUrl, method: 'PROPFIND', data: '<d:propfind xmlns:d="DAV:"><d:prop><d:getetag/></d:prop></d:propfind>', headers: { Depth: '0', 'Content-Type': 'application/xml' }, responseType: 'text', signal, timeout: 10000 })
+		const doc = parseXmlDoc(current.data)
+		const observed = doc ? findElements(doc, 'DAV:', 'getetag')[0]?.textContent?.trim() : undefined
+		if (current.status !== 207 || !observed || strongEtagHeader(observed) !== revision) throw new Error('The share target revision changed. No share was sent.')
 		if (!recipientUserId || typeof recipientUserId !== 'string' || recipientUserId.length > 80) {
 			throw new Error('A valid recipient Nextcloud user ID is required.')
 		}
@@ -680,7 +698,7 @@ export class NextcloudFiles implements FileApi {
 
 	async organizeRead(folderPath?: string, signal?: AbortSignal): Promise<FolderListing> {
 		await this.assertIdentity(signal)
-		const cleanFolder = (folderPath ?? '').replace(/^\/+|\/+$/g, '')
+		const cleanFolder = davFilePath(folderPath ?? '')
 		const davUrl = `${generateRemoteUrl('dav')}files/${encodeURIComponent(this.initial.userId)}/${cleanFolder ? cleanFolder + '/' : ''}`
 		const propfindXml = '<d:propfind xmlns:d="DAV:"><d:prop><d:displayname/><d:getetag/><d:resourcetype/></d:prop></d:propfind>'
 		const response = await axios.request<string>({

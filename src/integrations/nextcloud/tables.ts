@@ -2,6 +2,7 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
 import type { TableColumn, TableRow, TableSnapshot } from './types.ts'
+import { optionalPositiveInteger } from './adapterGuards.ts'
 
 export const TABLES_MUTATIONS = new Set([
 	'nc_tables_add_column',
@@ -59,7 +60,7 @@ export function validateAddColumnArgs(args: Readonly<Record<string, unknown>>): 
 	if (typeof args.expectedSchemaRevision !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSchemaRevision)) {
 		throw new Error('A 64-character hex expectedSchemaRevision is required.')
 	}
-	const tableId = typeof args.tableId === 'number' && args.tableId >= 1 ? args.tableId : undefined
+	const tableId = optionalPositiveInteger(args.tableId, 'tableId')
 	return {
 		tableId,
 		title: args.title.trim(),
@@ -120,7 +121,7 @@ export function validateAddRowArgs(args: Readonly<Record<string, unknown>>, colu
 		throw new Error('A 64-character hex expectedSchemaRevision is required.')
 	}
 	const cells = validateCells(args.cells, columns)
-	const tableId = typeof args.tableId === 'number' && args.tableId >= 1 ? args.tableId : undefined
+	const tableId = optionalPositiveInteger(args.tableId, 'tableId')
 	return { tableId, cells, expectedSchemaRevision: args.expectedSchemaRevision }
 }
 
@@ -131,7 +132,7 @@ export function validateUpdateRowArgs(args: Readonly<Record<string, unknown>>, c
 	expectedSchemaRevision: string
 	expectedRowRevision: string
 } {
-	if (typeof args.rowId !== 'number' || args.rowId < 1) {
+	if (typeof args.rowId !== 'number' || !Number.isSafeInteger(args.rowId) || args.rowId < 1) {
 		throw new Error('A positive integer rowId is required.')
 	}
 	if (typeof args.expectedSchemaRevision !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSchemaRevision)) {
@@ -141,7 +142,7 @@ export function validateUpdateRowArgs(args: Readonly<Record<string, unknown>>, c
 		throw new Error('A 64-character hex expectedRowRevision is required.')
 	}
 	const cells = validateCells(args.cells, columns)
-	const tableId = typeof args.tableId === 'number' && args.tableId >= 1 ? args.tableId : undefined
+	const tableId = optionalPositiveInteger(args.tableId, 'tableId')
 	return {
 		tableId,
 		rowId: args.rowId,
@@ -157,7 +158,7 @@ export function validateDeleteRowArgs(args: Readonly<Record<string, unknown>>): 
 	expectedSchemaRevision: string
 	expectedRowRevision: string
 } {
-	if (typeof args.rowId !== 'number' || args.rowId < 1) {
+	if (typeof args.rowId !== 'number' || !Number.isSafeInteger(args.rowId) || args.rowId < 1) {
 		throw new Error('A positive integer rowId is required.')
 	}
 	if (typeof args.expectedSchemaRevision !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedSchemaRevision)) {
@@ -166,7 +167,7 @@ export function validateDeleteRowArgs(args: Readonly<Record<string, unknown>>): 
 	if (typeof args.expectedRowRevision !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedRowRevision)) {
 		throw new Error('A 64-character hex expectedRowRevision is required.')
 	}
-	const tableId = typeof args.tableId === 'number' && args.tableId >= 1 ? args.tableId : undefined
+	const tableId = optionalPositiveInteger(args.tableId, 'tableId')
 	return {
 		tableId,
 		rowId: args.rowId,

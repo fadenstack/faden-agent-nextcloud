@@ -67,19 +67,16 @@ export function escapeCalendarText(value: unknown): string {
 	}
 	const str = value as string
 	if (str.length > 2000) throw new Error('Use text up to 2000 characters.')
+	if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(str)) throw new Error('Control characters are unavailable in calendar/contact text.')
 	return str
 		.replace(/\\/g, '\\\\')
-		.replace(/\r?\n/g, '\\n')
+		.replace(/\r\n|\r|\n/g, '\\n')
 		.replace(/;/g, '\\;')
 		.replace(/,/g, '\\,')
 }
 
 export function unescapeCalendarText(value: string): string {
-	return value
-		.replace(/\\n/gi, '\n')
-		.replace(/\\,/g, ',')
-		.replace(/\\;/g, ';')
-		.replace(/\\\\/g, '\\')
+	return value.replace(/\\([nN,;\\])/g, (_match, character: string) => /n/i.test(character) ? '\n' : character)
 }
 
 export interface ParsedComponent {
@@ -87,6 +84,29 @@ export interface ParsedComponent {
 	parameters: Record<string, string>
 	instances: number
 	allLines: string[]
+	counts: Record<string, number>
+}
+
+/** The value separator can follow quoted parameters containing colons. */
+function contentProperty(line: string): { key: string; header: string; value: string } | undefined {
+	let quoted = false
+	for (let i = 0; i < line.length; i++) {
+		if (line[i] === '"') quoted = !quoted
+		if (line[i] !== ':' || quoted) continue
+		const header = line.slice(0, i)
+		const key = header.split(';')[0].split('.').pop()!.toUpperCase()
+		return { key, header, value: line.slice(i + 1) }
+	}
+	return undefined
+}
+
+export function validateAllDayDate(value: unknown): asserts value is string {
+	if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) throw new Error('Use a valid all-day YYYY-MM-DD date.')
+}
+
+function validUtc(value: string): boolean {
+	if (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?Z$/.test(value)) return false
+	try { validateAllDayDate(value.slice(0, 10)); return true } catch { return false }
 }
 
 /** Parse top-level properties and parameters of a specified component (e.g. VEVENT, VTODO, VCARD). */
@@ -95,35 +115,51 @@ export function parseDavProperties(raw: string, component: string): ParsedCompon
 	let depth = 0
 	const values: Record<string, string> = {}
 	const parameters: Record<string, string> = {}
+	const counts: Record<string, number> = {}
 	let instances = 0
 	const componentLines: string[] = []
 
 	for (const line of lines) {
-		if (line === `BEGIN:${component}`) {
+		const upper = line.toUpperCase()
+		if (upper === `BEGIN:${component}`) {
 			depth = 1
 			instances++
 			continue
 		}
 		if (!depth) continue
-		if (line.startsWith('BEGIN:')) {
+		if (upper.startsWith('BEGIN:')) {
 			depth++
 			continue
 		}
-		if (line.startsWith('END:')) {
+		if (upper.startsWith('END:')) {
 			depth--
 			continue
 		}
 		if (depth !== 1) continue
 		componentLines.push(line)
-		const colon = line.indexOf(':')
-		if (colon > 0) {
-			const rawKey = line.slice(0, colon)
-			const key = rawKey.split(';')[0].toUpperCase()
-			values[key] = line.slice(colon + 1)
-			parameters[key] = rawKey
+		const property = contentProperty(line)
+		if (property) {
+			values[property.key] = property.value
+			parameters[property.key] = property.header
+			counts[property.key] = (counts[property.key] ?? 0) + 1
 		}
 	}
-	return { values, parameters, instances, allLines: componentLines }
+	return { values, parameters, instances, allLines: componentLines, counts }
+}
+
+/** Bounded private editor only; a maintained full RFC parser remains a release dependency. */
+export function assertPrivateComponent(raw: string, component: string): ParsedComponent {
+	const p = parseDavProperties(raw, component)
+	const stack: string[] = []
+	let roots = 0
+	for (const line of unfold(raw).split(/\r?\n/).filter(Boolean)) {
+		const upper = line.toUpperCase()
+		if (upper.startsWith('BEGIN:')) { if (!stack.length) roots++; stack.push(upper.slice(6)) } else if (upper.startsWith('END:') && stack.pop() !== upper.slice(4)) throw new Error('Malformed component nesting; no write sent.')
+	}
+	if (stack.length || roots !== 1) throw new Error('Malformed component nesting; no write sent.')
+	if (p.instances !== 1 || ['RRULE', 'RECURRENCE-ID', 'RDATE', 'EXDATE'].some(key => Object.hasOwn(p.values, key))) throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
+	if (['ATTENDEE', 'ORGANIZER'].some(key => Object.hasOwn(p.values, key)) || /(?:^|\r?\n)METHOD[;:]/i.test(unfold(raw))) throw new Error('Attendee notifications and scheduling require a separate explicitly approved operation.')
+	return p
 }
 
 /**
@@ -131,43 +167,44 @@ export function parseDavProperties(raw: string, component: string): ParsedCompon
  * unknown properties, parameters, timezones and alarms.
  */
 export function patchIcs(raw: string, component: string, changes: Record<string, string | null>): string {
-	const p = parseDavProperties(raw, component)
-	if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
-		throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
-	}
-	if (component === 'VEVENT' && /(?:^|\r?\n)ATTENDEE[;:]/i.test(raw)) {
-		throw new Error('Attendee notifications require a separate explicitly approved operation. Attendee-bearing events are excluded from private event tools.')
-	}
+	const p = assertPrivateComponent(raw, component)
+	for (const key of Object.keys(changes)) if ((p.counts[key] ?? 0) > 1) throw new Error('Repeated properties are ambiguous; choose a specialized editor.')
 	const remaining = { ...changes }
+	const edited = (key: string, value: string, header = key): string => {
+		if (key === 'DUE' && /^\d{8}$/.test(value)) return `DUE;VALUE=DATE:${value}`
+		return `${header}:${['SUMMARY', 'DESCRIPTION', 'LOCATION'].includes(key) ? escapeCalendarText(value) : value}`
+	}
 	let depth = 0
 	const lines = unfold(raw).split(/\r?\n/).filter(Boolean).map(line => {
-		if (line === `BEGIN:${component}`) {
+		const upper = line.toUpperCase()
+		if (upper === `BEGIN:${component}`) {
 			depth = 1
 			return line
 		}
-		if (line === `END:${component}` && depth === 1) {
+		if (upper === `END:${component}` && depth === 1) {
 			depth = 0
 			const additions = Object.entries(remaining)
 				.filter(([, v]) => v !== null)
-				.map(([k, v]) => `${k}:${v}`)
+				.map(([k, v]) => edited(k, v!))
 			return [...additions, line].join('\n')
 		}
 		if (!depth) return line
-		if (line.startsWith('BEGIN:')) {
+		if (upper.startsWith('BEGIN:')) {
 			depth++
 			return line
 		}
-		if (line.startsWith('END:')) {
+		if (upper.startsWith('END:')) {
 			depth--
 			return line
 		}
 		if (depth !== 1) return line
-		const colon = line.indexOf(':')
-		const key = line.slice(0, colon).split(';')[0].toUpperCase()
+		const property = contentProperty(line)
+		if (!property) return line
+		const { key } = property
 		if (Object.hasOwn(remaining, key)) {
 			const value = remaining[key]
 			delete remaining[key]
-			return value === null ? '' : `${line.slice(0, colon + 1)}${value}`
+			return value === null ? '' : edited(key, value, property.header)
 		}
 		return line
 	}).join('\n').split('\n').filter(Boolean)
@@ -184,28 +221,29 @@ export function patchVcard(raw: string, changes: Record<string, string | null>):
 	if (p.instances !== 1) {
 		throw new Error('Multi-vCard streams are not supported for single-contact patch.')
 	}
+	for (const key of Object.keys(changes)) if ((p.counts[key] ?? 0) > 1) throw new Error('Repeated contact properties are ambiguous; choose one in the native editor.')
 	const remaining = { ...changes }
 	let inVcard = false
 	const lines = unfold(raw).split(/\r?\n/).filter(Boolean).map(line => {
-		if (line === 'BEGIN:VCARD') {
+		if (line.toUpperCase() === 'BEGIN:VCARD') {
 			inVcard = true
 			return line
 		}
-		if (line === 'END:VCARD' && inVcard) {
+		if (line.toUpperCase() === 'END:VCARD' && inVcard) {
 			inVcard = false
 			const additions = Object.entries(remaining)
 				.filter(([, v]) => v !== null)
-				.map(([k, v]) => `${k}:${v}`)
+				.map(([k, v]) => `${k}:${escapeCalendarText(v!)}`)
 			return [...additions, line].join('\n')
 		}
 		if (!inVcard) return line
-		const colon = line.indexOf(':')
-		if (colon <= 0) return line
-		const key = line.slice(0, colon).split(';')[0].toUpperCase()
+		const property = contentProperty(line)
+		if (!property) return line
+		const { key } = property
 		if (Object.hasOwn(remaining, key)) {
 			const value = remaining[key]
 			delete remaining[key]
-			return value === null ? '' : `${line.slice(0, colon + 1)}${value}`
+			return value === null ? '' : `${property.header}:${escapeCalendarText(value)}`
 		}
 		return line
 	}).join('\n').split('\n').filter(Boolean)
@@ -224,7 +262,7 @@ export function buildEventIcs(params: {
 	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
 	const start = Date.parse(params.startUtc)
 	const end = Date.parse(params.endUtc)
-	if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end || !params.startUtc.endsWith('Z') || !params.endUtc.endsWith('Z')) {
+	if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end || !validUtc(params.startUtc) || !validUtc(params.endUtc)) {
 		throw new Error('Explicit UTC start/end timestamps ending in Z are required.')
 	}
 	const formatDate = (n: number) => new Date(n).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
@@ -255,6 +293,7 @@ export function buildTaskIcs(params: {
 	dueDate: string
 	priority?: number
 }): string {
+	validateAllDayDate(params.dueDate)
 	if (!/^\d{4}-\d{2}-\d{2}$/.test(params.dueDate)) {
 		throw new Error('Use an all-day YYYY-MM-DD due date.')
 	}
@@ -363,6 +402,8 @@ export function validateCalendarPatchArgs(args: Readonly<Record<string, unknown>
 		if (!['summary', 'description', 'location'].includes(key)) {
 			throw new Error(`Unsupported event field: ${key}.`)
 		}
+		const value = changes[key]
+		if (typeof value !== 'string' || value.length > (key === 'description' ? 2000 : 120) || (key === 'summary' && !value.trim())) throw new Error(`Invalid calendar ${key}.`)
 	}
 	return {
 		calendarId: args.calendarId,
@@ -390,6 +431,7 @@ export function validateCalendarDeleteArgs(args: Readonly<Record<string, unknown
 }
 
 export function validateTasksCreateArgs(args: Readonly<Record<string, unknown>>) {
+	validateAllDayDate(args.dueDate)
 	if (typeof args.calendarId !== 'string' || !/^[A-Za-z0-9_.@-]{1,180}$/.test(args.calendarId)) {
 		throw new Error('A valid calendarId (task list) is required.')
 	}
@@ -405,7 +447,7 @@ export function validateTasksCreateArgs(args: Readonly<Record<string, unknown>>)
 	if (typeof args.dueDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(args.dueDate)) {
 		throw new Error('Use an all-day YYYY-MM-DD dueDate.')
 	}
-	if (args.priority !== undefined && (typeof args.priority !== 'number' || args.priority < 0 || args.priority > 9)) {
+	if (args.priority !== undefined && (typeof args.priority !== 'number' || !Number.isSafeInteger(args.priority) || args.priority < 0 || args.priority > 9)) {
 		throw new Error('Priority must be an integer between 0 and 9.')
 	}
 	return {
@@ -436,7 +478,17 @@ export function validateTasksPatchArgs(args: Readonly<Record<string, unknown>>) 
 		if (!['summary', 'description', 'dueDate', 'priority', 'completed', 'percentComplete'].includes(key)) {
 			throw new Error(`Unsupported task field: ${key}.`)
 		}
+		const value = changes[key]
+		if (key === 'dueDate') validateAllDayDate(value)
+		if (key === 'completed' && typeof value !== 'boolean') throw new Error('Task completed must be a boolean.')
+		if (key === 'priority' || key === 'percentComplete') {
+			if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > (key === 'priority' ? 9 : 100)) throw new Error(`Invalid task ${key}.`)
+		}
+		if (key === 'summary' || key === 'description') {
+			if (typeof value !== 'string' || value.length > (key === 'summary' ? 120 : 2000) || (key === 'summary' && !value.trim())) throw new Error(`Invalid task ${key}.`)
+		}
 	}
+	if (Object.hasOwn(changes, 'completed') && Object.hasOwn(changes, 'percentComplete') && changes.percentComplete !== (changes.completed ? 100 : 0)) throw new Error('Task completion fields conflict.')
 	return {
 		calendarId: args.calendarId,
 		filename: args.filename,
@@ -513,6 +565,9 @@ export function validateContactsPatchArgs(args: Readonly<Record<string, unknown>
 		if (!['fn', 'email', 'tel', 'note', 'categories'].includes(key)) {
 			throw new Error(`Unsupported contact field: ${key}.`)
 		}
+		const value = changes[key]
+		const limit = key === 'note' ? 2000 : key === 'tel' ? 50 : 120
+		if (typeof value !== 'string' || value.length > limit || (key === 'fn' && !value.trim())) throw new Error(`Invalid contact ${key}.`)
 	}
 	return {
 		bookId: args.bookId,

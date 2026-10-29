@@ -43,7 +43,7 @@ const hostIdentity: Identity = {
 	enabled: true,
 	serverUrl: 'https://faden.test',
 	agent: 'nc-tools',
-	development: false,
+	development: true,
 	tablesEnabled: true,
 	deckEnabled: true,
 }
@@ -180,7 +180,7 @@ function createGateway(options: ConstructorParameters<typeof FakeGateway>[0] = {
 }
 
 describe('NC09: Tables and Deck capabilities and governance', () => {
-	it('preserves base 9 FILE_CAPABILITIES while registering Tables and Deck tools with compensating-only reversal', () => {
+	it('preserves base 9 FILE_CAPABILITIES while registering Tables and Deck tools with reversal held until integration', () => {
 		expect(FILE_CAPABILITIES).toHaveLength(9)
 		expect(TABLES_CAPABILITIES).toHaveLength(5)
 		expect(DECK_CAPABILITIES).toHaveLength(6)
@@ -196,7 +196,7 @@ describe('NC09: Tables and Deck capabilities and governance', () => {
 				subsystem: 'tables',
 				risk: 'destructive',
 				individualApproval: true,
-				reversal: 'compensating-only',
+				reversal: 'not-integrated',
 			})
 		}
 
@@ -211,7 +211,7 @@ describe('NC09: Tables and Deck capabilities and governance', () => {
 				subsystem: 'deck',
 				risk: 'destructive',
 				individualApproval: true,
-				reversal: 'compensating-only',
+				reversal: 'not-integrated',
 			})
 		}
 	})

@@ -12,6 +12,7 @@ export interface Identity extends AppConfig {
 	locale?: string
 	scopePolicy?: ScopePolicy | null
 	historyEnabled?: boolean
+	/** Development fixtures only until native provider scope/history acceptance. */
 	extendedFilesEnabled?: boolean
 	tablesEnabled?: boolean
 	deckEnabled?: boolean
@@ -347,7 +348,7 @@ export interface TasksApi {
 export interface ContactsApi {
 	listAddressBooks(signal?: AbortSignal): Promise<DavAddressBook[]>
 	findContacts(query: string, signal?: AbortSignal): Promise<{ contacts: DavContact[]; complete: boolean }>
-	readContact(bookId: string, filename?: string, signal?: AbortSignal): Promise<{ etag: string; raw: string; values: Record<string, string> }>
+	readContact(bookId: string, filename?: string, signal?: AbortSignal): Promise<{ etag: string; raw: string; values: Record<string, string>; contacts?: DavContact[]; complete?: boolean }>
 	createContact(bookId: string, filename: string, vcardData: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
 	updateContact(bookId: string, filename: string, vcardData: string, expectedEtag: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
 	deleteContact(bookId: string, filename: string, expectedEtag: string, signal?: AbortSignal): Promise<void>

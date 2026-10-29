@@ -111,48 +111,48 @@ export const HISTORY_CAPABILITIES: readonly FileToolCapability[] = Object.freeze
 
 // NC08: Extended Files folder, copy/move and read-only sharing slice
 export const EXTENDED_FILE_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
-	capability('nc_files_create_folder', 'create-folder', 'known-or-included', 'supported'),
-	capability('nc_files_copy', 'copy-file', 'known-or-included', 'supported'),
-	capability('nc_files_move', 'move-file', 'known-or-included', 'supported'),
+	capability('nc_files_create_folder', 'create-folder', 'known-or-included', 'not-integrated'),
+	capability('nc_files_copy', 'copy-file', 'known-or-included', 'not-integrated'),
+	capability('nc_files_move', 'move-file', 'known-or-included', 'not-integrated'),
 	capability('nc_files_shares_read', 'metadata', 'known-or-included', 'not-applicable'),
-	capability('nc_files_share_readonly', 'share-file', 'known-or-included', 'supported'),
+	capability('nc_files_share_readonly', 'share-file', 'known-or-included', 'not-integrated'),
 	capability('nc_files_organize_read', 'metadata', 'included', 'not-applicable'),
 ])
 
 // NC09: Tables tools slice (five tested tools)
 export const TABLES_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
 	capability('nc_tables_read', 'read-content', 'known-or-included', 'not-applicable', 'tables'),
-	capability('nc_tables_add_column', 'create-file', 'known-or-included', 'compensating-only', 'tables'),
-	capability('nc_tables_add_row', 'create-file', 'known-or-included', 'compensating-only', 'tables'),
-	capability('nc_tables_update_row', 'replace-file', 'known-or-included', 'compensating-only', 'tables'),
-	capability('nc_tables_delete_row', 'replace-file', 'known-or-included', 'compensating-only', 'tables'),
+	capability('nc_tables_add_column', 'create-file', 'known-or-included', 'not-integrated', 'tables'),
+	capability('nc_tables_add_row', 'create-file', 'known-or-included', 'not-integrated', 'tables'),
+	capability('nc_tables_update_row', 'replace-file', 'known-or-included', 'not-integrated', 'tables'),
+	capability('nc_tables_delete_row', 'replace-file', 'known-or-included', 'not-integrated', 'tables'),
 ])
 
 // NC09: Deck focused card tools slice
 export const DECK_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
 	capability('nc_deck_read', 'read-content', 'known-or-included', 'not-applicable', 'deck'),
-	capability('nc_deck_patch', 'replace-file', 'known-or-included', 'compensating-only', 'deck'),
-	capability('nc_deck_create', 'create-file', 'known-or-included', 'compensating-only', 'deck'),
-	capability('nc_deck_move', 'move-file', 'known-or-included', 'compensating-only', 'deck'),
-	capability('nc_deck_assign', 'share-file', 'known-or-included', 'compensating-only', 'deck'),
-	capability('nc_deck_label', 'replace-file', 'known-or-included', 'compensating-only', 'deck'),
+	capability('nc_deck_patch', 'replace-file', 'known-or-included', 'not-integrated', 'deck'),
+	capability('nc_deck_create', 'create-file', 'known-or-included', 'not-integrated', 'deck'),
+	capability('nc_deck_move', 'move-file', 'known-or-included', 'not-integrated', 'deck'),
+	capability('nc_deck_assign', 'share-file', 'known-or-included', 'not-integrated', 'deck'),
+	capability('nc_deck_label', 'replace-file', 'known-or-included', 'not-integrated', 'deck'),
 ])
 
 // NC10: Calendar tools slice (private events)
 export const CALENDAR_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
 	capability('nc_calendar_list', 'read-content', 'known-or-included', 'not-applicable', 'calendar'),
 	capability('nc_calendar_read', 'read-content', 'known-or-included', 'not-applicable', 'calendar'),
-	capability('nc_calendar_create', 'create-file', 'known-or-included', 'supported', 'calendar'),
-	capability('nc_calendar_patch', 'replace-file', 'known-or-included', 'supported', 'calendar'),
-	capability('nc_calendar_delete', 'replace-file', 'known-or-included', 'supported', 'calendar'),
+	capability('nc_calendar_create', 'create-file', 'known-or-included', 'not-integrated', 'calendar'),
+	capability('nc_calendar_patch', 'replace-file', 'known-or-included', 'not-integrated', 'calendar'),
+	capability('nc_calendar_delete', 'replace-file', 'known-or-included', 'not-integrated', 'calendar'),
 ])
 
 // NC10: Tasks tools slice
 export const TASKS_CAPABILITIES: readonly FileToolCapability[] = Object.freeze([
 	capability('nc_tasks_read', 'read-content', 'known-or-included', 'not-applicable', 'tasks'),
-	capability('nc_tasks_create', 'create-file', 'known-or-included', 'supported', 'tasks'),
-	capability('nc_tasks_patch', 'replace-file', 'known-or-included', 'supported', 'tasks'),
-	capability('nc_tasks_delete', 'replace-file', 'known-or-included', 'supported', 'tasks'),
+	capability('nc_tasks_create', 'create-file', 'known-or-included', 'not-integrated', 'tasks'),
+	capability('nc_tasks_patch', 'replace-file', 'known-or-included', 'not-integrated', 'tasks'),
+	capability('nc_tasks_delete', 'replace-file', 'known-or-included', 'not-integrated', 'tasks'),
 ])
 
 // NC10: Contacts tools slice
@@ -160,9 +160,9 @@ export const CONTACTS_CAPABILITIES: readonly FileToolCapability[] = Object.freez
 	capability('nc_contacts_list', 'read-content', 'known-or-included', 'not-applicable', 'contacts'),
 	capability('nc_contacts_find', 'read-content', 'known-or-included', 'not-applicable', 'contacts'),
 	capability('nc_contacts_read', 'read-content', 'known-or-included', 'not-applicable', 'contacts'),
-	capability('nc_contacts_create', 'create-file', 'known-or-included', 'supported', 'contacts'),
-	capability('nc_contacts_patch', 'replace-file', 'known-or-included', 'supported', 'contacts'),
-	capability('nc_contacts_delete', 'replace-file', 'known-or-included', 'supported', 'contacts'),
+	capability('nc_contacts_create', 'create-file', 'known-or-included', 'not-integrated', 'contacts'),
+	capability('nc_contacts_patch', 'replace-file', 'known-or-included', 'not-integrated', 'contacts'),
+	capability('nc_contacts_delete', 'replace-file', 'known-or-included', 'not-integrated', 'contacts'),
 ])
 
 export function fileCapability(name: string): FileToolCapability | undefined {

@@ -6,7 +6,8 @@ import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
 import { filesExtendedTools, EXTENDED_FILES_MUTATIONS, validateFolderName, validateCopyMoveArgs, validateShareReadonlyArgs, type ExtendedProposal } from '../integrations/nextcloud/filesExtended.ts'
-import { tablesTools, TABLES_MUTATIONS, validateAddColumnArgs, validateAddRowArgs, validateUpdateRowArgs, validateDeleteRowArgs, sha256Hex, rowContent, type TablesProposal } from '../integrations/nextcloud/tables.ts'
+import { tablesTools, TABLES_MUTATIONS, validateAddColumnArgs, validateAddRowArgs, validateUpdateRowArgs, validateDeleteRowArgs, sha256Hex, canonical, rowContent, type TablesProposal } from '../integrations/nextcloud/tables.ts'
+import { experimentalAdaptersAllowed, optionalPositiveInteger } from '../integrations/nextcloud/adapterGuards.ts'
 import { deckTools, DECK_MUTATIONS, validateDeckPatchArgs, validateDeckCreateArgs, validateDeckMoveArgs, validateDeckAssignArgs, validateDeckLabelArgs, cardContent, type DeckProposal } from '../integrations/nextcloud/deck.ts'
 import {
 	calendarTools,
@@ -30,6 +31,7 @@ import {
 	patchIcs,
 	patchVcard,
 	parseDavProperties,
+	assertPrivateComponent,
 	type DavProposal,
 	type AgentWithCalendar,
 	type AgentWithTasks,
@@ -59,6 +61,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #tablesProposals = new Map<string, TablesProposal>()
 	readonly #deckProposals = new Map<string, DeckProposal>()
 	readonly #davProposals = new Map<string, DavProposal>()
+	readonly #expandedInputs = new Map<string, string>()
+	readonly #expandedPreviews = new Map<string, string>()
+	readonly #expandedApproved = new Set<string>()
 	readonly #historyPreviews = new Map<string, HistoryPreview>()
 	readonly history = shallowReactive({ items: [] as HistoryItem[], availability: undefined as HistoryAvailability | undefined, loading: false, error: '', active: false, target: '', inspecting: false, verifying: false })
 	readonly #proposalViews = new Map<string, MutationBinding>()
@@ -106,12 +111,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		}
 		this.tokens = new AgentTokenProvider({ apiUrl: config.serverUrl, agent: config.agent, store: new MemoryTokenStore(), fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
-		const extendedFiles = (config.extendedFilesEnabled || config.scopePolicy?.tools?.some(t => EXTENDED_FILES_MUTATIONS.has(t))) && !!files.createFolder
-		const tablesEnabled = (config.tablesEnabled || config.scopePolicy?.tools?.some(t => TABLES_MUTATIONS.has(t))) && !!files.tables
-		const deckEnabled = (config.deckEnabled || config.scopePolicy?.tools?.some(t => DECK_MUTATIONS.has(t))) && !!files.deck
-		const calendarEnabled = (config.calendarEnabled || config.scopePolicy?.tools?.some(t => CALENDAR_MUTATIONS.has(t))) && !!files.calendar
-		const tasksEnabled = (config.tasksEnabled || config.scopePolicy?.tools?.some(t => TASKS_MUTATIONS.has(t))) && !!files.tasks
-		const contactsEnabled = (config.contactsEnabled || config.scopePolicy?.tools?.some(t => CONTACTS_MUTATIONS.has(t))) && !!files.contacts
+		const experimental = experimentalAdaptersAllowed(config)
+		const extendedFiles = experimental && config.extendedFilesEnabled === true && !!files.createFolder
+		const tablesEnabled = experimental && config.tablesEnabled === true && !!files.tables
+		const deckEnabled = experimental && config.deckEnabled === true && !!files.deck
+		const calendarEnabled = experimental && config.calendarEnabled === true && !!files.calendar
+		const tasksEnabled = experimental && config.tasksEnabled === true && !!files.tasks
+		const contactsEnabled = experimental && config.contactsEnabled === true && !!files.contacts
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
 			.addTools(...nextcloudTools(this))
 			.addTools(...(extendedFiles ? filesExtendedTools(this) : []))
@@ -139,6 +145,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.useSessionStore(new MemorySessionStore()).useApprovalStore(new MemoryApprovalStore())
 			.useApprovals({
 				request: async (request, signal) => {
+					const expanded = [EXTENDED_FILES_MUTATIONS, TABLES_MUTATIONS, DECK_MUTATIONS, CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS].some(names => names.has(request.toolName)) && request.source === 'host'
+					if (expanded) {
+						if (!experimentalAdaptersAllowed(this.config)) throw new Error('Expanded adapters require isolated development acceptance.')
+						this.#expandedInputs.set(request.callId, canonical(request.arguments))
+						request = { ...request, arguments: structuredClone(request.arguments) }
+					}
 					if (HISTORY_TOOLS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked || !files.history || typeof request.arguments.action_id !== 'string' || !/^[a-f0-9]{32}$/.test(request.arguments.action_id)) throw new Error('A valid, available history action is required.')
 						const binding = this.workspace?.prepare('files')
@@ -160,7 +172,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const binding = this.workspace?.prepare('files')
 						const plan = await this.planExtendedMutation(request.toolName, request.arguments, signal)
-						this.#extendedProposals.set(request.callId, plan)
+						this.#extendedProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
 						request = {
 							...request,
@@ -173,7 +185,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const binding = this.workspace?.prepare('tables')
 						const plan = await this.planTablesMutation(request.toolName, request.arguments, signal)
-						this.#tablesProposals.set(request.callId, plan)
+						this.#tablesProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
 						request = {
 							...request,
@@ -186,7 +198,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const binding = this.workspace?.prepare('deck')
 						const plan = await this.planDeckMutation(request.toolName, request.arguments, signal)
-						this.#deckProposals.set(request.callId, plan)
+						this.#deckProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
 						request = {
 							...request,
@@ -207,7 +219,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						} else {
 							plan = await this.planContactsMutation(request.toolName, request.arguments, signal)
 						}
-						this.#davProposals.set(request.callId, plan)
+						this.#davProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
 						request = {
 							...request,
@@ -238,8 +250,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							arguments: { ...request.arguments, proposalId: proposal.id, target: proposal.target, before: proposal.before, content: proposal.content },
 						}
 					}
+					if (expanded) this.#expandedPreviews.set(request.callId, canonical(request.arguments))
 					const result = await this.approvals.request(request, signal)
 					if (!result.approved) {
+						this.#expandedInputs.delete(request.callId)
+						this.#expandedPreviews.delete(request.callId)
+						this.#expandedApproved.delete(request.callId)
 						this.#proposals.delete(request.callId)
 						this.#extendedProposals.delete(request.callId)
 						this.#tablesProposals.delete(request.callId)
@@ -493,6 +509,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#extendedProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
 		this.#extendedProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
@@ -535,6 +552,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	async approve(part: ApprovalPart): Promise<void> {
+		const expanded = this.#expandedInputs.has(part.request.callId)
+		if (expanded && (!part.isPending || this.#expandedPreviews.get(part.request.callId) !== canonical(part.request.arguments))) {
+			this.#writeBlocked = true
+			throw new Error('The proposal changed after review. Start a new request.')
+		}
 		if (HISTORY_TOOLS.has(part.toolName) && part.request.source === 'host') {
 			const preview = this.#historyPreviews.get(part.request.callId)
 			if (!this.files.history || !preview || preview.id !== part.request.arguments.historyPreviewId || preview.digest !== part.request.arguments.digest || !part.isPending) throw new Error('This history preview is no longer pending.')
@@ -568,7 +590,20 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			await this.files.assertIdentity(this.#stop.signal)
 			await this.files.approve(proposal.id, this.#stop.signal)
 		}
+		if (expanded) this.#expandedApproved.add(part.request.callId)
 		part.allow()
+	}
+
+	/** One exact, explicitly approved development action. Native production permits remain a release gate. */
+	private consumeExpandedApproval(callId: string, args: Readonly<Record<string, unknown>>): void {
+		const expected = this.#expandedInputs.get(callId)
+		const approved = this.#expandedApproved.delete(callId)
+		this.#expandedInputs.delete(callId)
+		this.#expandedPreviews.delete(callId)
+		if (!experimentalAdaptersAllowed(this.config) || !approved || expected === undefined || expected !== canonical(args)) {
+			this.#writeBlocked = true
+			throw new Error('The arguments changed or no individual approval exists. Review a new proposal.')
+		}
 	}
 
 	async readTable(tableId?: number, signal?: AbortSignal): Promise<TableReadResult> {
@@ -610,7 +645,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				snapshot: s,
 			}
 		} else if (name === 'nc_tables_add_row') {
-			const tableId = typeof args.tableId === 'number' && args.tableId >= 1 ? args.tableId : undefined
+			const tableId = optionalPositiveInteger(args.tableId, 'tableId')
 			s = await this.files.tables.readTable(tableId, signal)
 			const v = validateAddRowArgs(args, s.columns)
 			if (s.schemaRevision !== v.expectedSchemaRevision) throw new Error('The table schema changed. Read the table again.')
@@ -624,7 +659,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				snapshot: s,
 			}
 		} else if (name === 'nc_tables_update_row') {
-			const tableId = typeof args.tableId === 'number' && args.tableId >= 1 ? args.tableId : undefined
+			const tableId = optionalPositiveInteger(args.tableId, 'tableId')
 			s = await this.files.tables.readTable(tableId, signal)
 			const v = validateUpdateRowArgs(args, s.columns)
 			if (s.schemaRevision !== v.expectedSchemaRevision) throw new Error('The table schema changed. Read the table again.')
@@ -671,6 +706,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#tablesProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
 		this.#tablesProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
@@ -753,7 +789,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	async planDeckMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DeckProposal> {
 		if (!this.files.deck) throw new Error('Deck app is unavailable.')
 		await this.files.assertIdentity(signal)
-		const boardId = typeof args.boardId === 'number' && args.boardId >= 1 ? args.boardId : undefined
+		const boardId = optionalPositiveInteger(args.boardId, 'boardId')
 		const b = await this.files.deck.readBoard(boardId, signal)
 		const findCardAndStack = (cardId: number) => {
 			for (const stack of b.stacks) {
@@ -858,6 +894,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#deckProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
 		this.#deckProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
@@ -868,6 +905,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		try {
 			const boardId = proposal.args.boardId as number
 			const now = await this.files.deck.readBoard(boardId, call.signal)
+			if (!proposal.card && await sha256Hex(now.stacks.map(s => ({ id: s.id, title: s.title }))) !== proposal.revision) throw new Error('Conflict: board stacks changed during approval. No write was sent.')
 			if (proposal.card) {
 				let currentCard: DeckCard | undefined
 				for (const stack of now.stacks) {
@@ -965,7 +1003,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Calendar resource changed. Read it again before proposing a write.')
 			}
-			const p = parseDavProperties(current.raw, 'VEVENT')
+			const p = assertPrivateComponent(current.raw, 'VEVENT')
 			if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
 				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
 			}
@@ -998,7 +1036,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Calendar resource changed. Read it again before proposing a write.')
 			}
-			const p = parseDavProperties(current.raw, 'VEVENT')
+			const p = assertPrivateComponent(current.raw, 'VEVENT')
 			if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
 				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
 			}
@@ -1026,6 +1064,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#davProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
 		this.#davProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
@@ -1104,7 +1143,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Task resource changed. Read it again before proposing a write.')
 			}
-			const p = parseDavProperties(current.raw, 'VTODO')
+			const p = assertPrivateComponent(current.raw, 'VTODO')
 			if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
 				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
 			}
@@ -1118,6 +1157,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					mappedChanges.DUE = val.replace(/-/g, '')
 				} else if (k === 'percentComplete') {
 					const pct = Number(val)
+					mappedChanges.COMPLETED = null
 					mappedChanges['PERCENT-COMPLETE'] = String(pct)
 					if (pct >= 100) {
 						mappedChanges.STATUS = 'COMPLETED'
@@ -1153,7 +1193,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Task resource changed. Read it again before proposing a write.')
 			}
-			const p = parseDavProperties(current.raw, 'VTODO')
+			const p = assertPrivateComponent(current.raw, 'VTODO')
 			if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
 				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
 			}
@@ -1178,6 +1218,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#davProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
 		this.#davProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
@@ -1326,6 +1367,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#davProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
 		this.#davProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
@@ -1469,6 +1511,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#tablesProposals.clear()
 		this.#deckProposals.clear()
 		this.#davProposals.clear()
+		this.#expandedInputs.clear()
+		this.#expandedPreviews.clear()
+		this.#expandedApproved.clear()
 		this.#proposalViews.clear()
 		this.#proposalResources.clear()
 		this.#proposalParents.clear()
@@ -1497,6 +1542,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#tablesProposals.clear()
 		this.#deckProposals.clear()
 		this.#davProposals.clear()
+		this.#expandedInputs.clear()
+		this.#expandedPreviews.clear()
+		this.#expandedApproved.clear()
 		this.#proposalViews.clear()
 		this.#proposalResources.clear()
 		this.#proposalParents.clear()

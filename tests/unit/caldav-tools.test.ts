@@ -55,7 +55,7 @@ const hostIdentity: Identity = {
 	enabled: true,
 	serverUrl: 'https://faden.test',
 	agent: 'nc-tools',
-	development: false,
+	development: true,
 	calendarEnabled: true,
 	tasksEnabled: true,
 	contactsEnabled: true,
@@ -312,7 +312,7 @@ describe('NC10: Calendar, Tasks, and Contacts Tools', () => {
 			expect(cap).toBeDefined()
 			expect(cap?.risk).toBe('destructive')
 			expect(cap?.individualApproval).toBe(true)
-			expect(cap?.reversal).toBe('supported')
+			expect(cap?.reversal).toBe('not-integrated')
 		}
 	})
 
@@ -382,7 +382,7 @@ describe('NC10: Calendar, Tasks, and Contacts Tools', () => {
 	describe('Rejection of attendees and recurring items', () => {
 		it('rejects attendee-bearing calendar events in patchIcs', () => {
 			const attendeeIcs = sampleEventIcs.replace('END:VEVENT', 'ATTENDEE;CN=Bob:mailto:bob@example.invalid\r\nEND:VEVENT')
-			expect(() => patchIcs(attendeeIcs, 'VEVENT', { SUMMARY: 'New Summary' })).toThrow(/Attendee notifications require a separate explicitly approved operation/)
+			expect(() => patchIcs(attendeeIcs, 'VEVENT', { SUMMARY: 'New Summary' })).toThrow(/Attendee notifications.*separate explicitly approved operation/)
 		})
 
 		it('rejects recurring calendar events and exceptions in patchIcs', () => {
@@ -427,7 +427,7 @@ describe('NC10: Calendar, Tasks, and Contacts Tools', () => {
 				filename: 'task-1.ics',
 				summary: 'Task 1',
 				dueDate: '30-10-2026', // invalid date format
-			})).toThrow(/all-day YYYY-MM-DD dueDate/)
+			})).toThrow(/all-day YYYY-MM-DD (dueDate|date)/)
 
 			expect(() => validateTasksCreateArgs({
 				calendarId: 'personal',

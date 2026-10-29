@@ -150,7 +150,7 @@ export function filesExtendedTools(host: ExtendedFilesHost) {
 			},
 			run: async (args, c) => {
 				const validated = validateCopyMoveArgs(args)
-				if (host.commitMutation) return host.commitMutation('nc_files_copy', validated, c)
+				if (host.commitMutation) return host.commitMutation('nc_files_copy', args, c)
 				if (!host.files.copyFile) throw new Error('File copying is unavailable.')
 				return host.files.copyFile(validated.source, validated.destination, validated.expectedEtag, c.signal)
 			},
@@ -173,7 +173,7 @@ export function filesExtendedTools(host: ExtendedFilesHost) {
 			},
 			run: async (args, c) => {
 				const validated = validateCopyMoveArgs(args)
-				if (host.commitMutation) return host.commitMutation('nc_files_move', validated, c)
+				if (host.commitMutation) return host.commitMutation('nc_files_move', args, c)
 				if (!host.files.moveFile) throw new Error('File moving is unavailable.')
 				return host.files.moveFile(validated.source, validated.destination, validated.expectedEtag, c.signal)
 			},
@@ -197,7 +197,7 @@ export function filesExtendedTools(host: ExtendedFilesHost) {
 			},
 			run: async (args, c) => {
 				const validated = validateShareReadonlyArgs(args)
-				if (host.commitMutation) return host.commitMutation('nc_files_share_readonly', validated, c)
+				if (host.commitMutation) return host.commitMutation('nc_files_share_readonly', args, c)
 				if (!host.files.shareReadonly) throw new Error('Read-only sharing is unavailable.')
 				return host.files.shareReadonly(validated.path, validated.recipientUserId, validated.expectedEtag, c.signal)
 			},

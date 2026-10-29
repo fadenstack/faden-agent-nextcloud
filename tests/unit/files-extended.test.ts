@@ -18,7 +18,7 @@ const hostIdentity: Identity = {
 	enabled: true,
 	serverUrl: 'https://faden.test',
 	agent: 'nc-extended',
-	development: false,
+	development: true,
 	extendedFilesEnabled: true,
 }
 
@@ -137,7 +137,7 @@ describe('NC08: Capabilities and Catalog review', () => {
 			subsystem: 'files',
 			risk: 'destructive',
 			individualApproval: true,
-			reversal: 'supported',
+			reversal: 'not-integrated',
 		})
 
 		const copy = fileCapability('nc_files_copy')
@@ -145,7 +145,7 @@ describe('NC08: Capabilities and Catalog review', () => {
 			subsystem: 'files',
 			risk: 'destructive',
 			individualApproval: true,
-			reversal: 'supported',
+			reversal: 'not-integrated',
 		})
 
 		const move = fileCapability('nc_files_move')
@@ -153,7 +153,7 @@ describe('NC08: Capabilities and Catalog review', () => {
 			subsystem: 'files',
 			risk: 'destructive',
 			individualApproval: true,
-			reversal: 'supported',
+			reversal: 'not-integrated',
 		})
 
 		const sharesRead = fileCapability('nc_files_shares_read')
@@ -169,7 +169,7 @@ describe('NC08: Capabilities and Catalog review', () => {
 			subsystem: 'files',
 			risk: 'destructive',
 			individualApproval: true,
-			reversal: 'supported',
+			reversal: 'not-integrated',
 		})
 
 		const organizeRead = fileCapability('nc_files_organize_read')
