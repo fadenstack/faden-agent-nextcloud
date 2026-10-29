@@ -656,6 +656,7 @@ export class NextcloudFiles implements FileApi {
 				method: 'MKCOL',
 				headers: {
 					'If-None-Match': '*',
+					'X-Fadenstack-Folder-Ticket': plan.receiptId,
 				},
 				signal,
 				timeout: 20000,

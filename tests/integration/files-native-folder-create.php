@@ -138,7 +138,7 @@ try {
 	$assert('proposal binds folderId', $proposal['folderId'] === $fixtureFolder->getId());
 	$assert('proposal binds name', $proposal['name'] === $unicodeName);
 	$assert('proposal approved is false', $proposal['approved'] === false);
-	$assert('proposal announces execution gate before approval', $proposal['executionReady'] === false);
+	$assert('proposal announces execution readiness when native guard is active', $proposal['executionReady'] === true);
 	$assert('proposal has future expiration', $proposal['expires'] > time());
 	$assert('proposal target has full path', str_ends_with($proposal['target'], '/' . $unicodeName));
 
@@ -173,12 +173,78 @@ try {
 	$assert('cancelFolder returns cancelled true', ($cancelled['cancelled'] ?? false) === true);
 	$denied('cancelled proposal cannot be approved', fn () => $broker->approveFolder($cancelProp['id']), 410);
 
-	// 13c. Conditional DAV remains gated because path substitution can write elsewhere.
+	// 13c. Conditional DAV is supported via ticketed native DAV effect guard holding LOCK_SHARED.
 	$condProp = $broker->proposeFolder($folderRef, 'CondFolder');
 	$broker->approveFolder($condProp['id']);
-	$blocked = $broker->commitFolder($condProp['id'], 1);
-	$assert('protocol 1 cannot bypass the native dispatch release gate', $blocked['outcome'] === 'not-dispatched' && !isset($blocked['kind']));
-	$assert('gated conditional protocol creates no directory', !$fixtureFolder->nodeExists('CondFolder'));
+	$plan = $broker->commitFolder($condProp['id'], 1);
+	$assert('protocol 1 returns dav-create-folder plan with ticketed native guard', is_array($plan) && ($plan['kind'] ?? '') === 'dav-create-folder');
+	$assert('plan binds receiptId', $plan['receiptId'] === $condProp['id']);
+	$assert('plan binds parent resource ID', $plan['parent_resource_id'] === $folderRef);
+	$assert('plan binds name CondFolder', $plan['name'] === 'CondFolder');
+
+	// Dispatch ticketed MKCOL through native DAV guard
+	$davReq = new \Sabre\HTTP\Request('MKCOL', $plan['dav_path'], [
+		'If-None-Match' => '*',
+		'X-Fadenstack-Folder-Ticket' => $plan['receiptId'],
+	]);
+	$davResp = new \Sabre\HTTP\Response();
+	$guardPlugin = Server::get(\OCA\FadenstackAgent\DAV\FolderCreateGuardPlugin::class);
+	$guardPlugin->beforeMkcol($davReq, $davResp);
+	$childCond = $fixtureFolder->newFolder('CondFolder');
+	$davResp->setStatus(201);
+	$guardPlugin->afterMkcol($davReq, $davResp);
+
+	// Finalize folder creation via finishFolder
+	$createdFileId = \OCP\Files\DavUtil::getDavFileId($childCond->getId());
+	$verifiedCond = $broker->finishFolder($plan['receiptId'], $createdFileId);
+	$assert('finishFolder verifies created conditional folder', $verifiedCond['outcome'] === 'verified');
+	$assert('verified conditional folder binds exact created ID', $verifiedCond['resourceId'] === 'nextcloud:files:' . $childCond->getId());
+	$assert('created folder exists on fixture', $fixtureFolder->nodeExists('CondFolder'));
+
+	// 13d. Decisive acceptance check: parent substitution race is BLOCKED by native DAV guard
+	$subProp = $broker->proposeFolder($folderRef, 'SubRaceFolder');
+	$broker->approveFolder($subProp['id']);
+	$subPlan = $broker->commitFolder($subProp['id'], 1);
+
+	// Concurrent adversary moves fixture folder and recreates an empty one with the same name
+	$oldFolderName = $fixtureFolder->getName();
+	$fixtureFolder->move($homeA->getPath() . '/' . $oldFolderName . '-moved');
+	$replacementFolder = $homeA->newFolder($oldFolderName);
+	$assert('replacement folder has different ID', $replacementFolder->getId() !== $fixtureFolder->getId());
+
+	// Agent MKCOL arrives at original path with ticket for original folder ID
+	$raceReq = new \Sabre\HTTP\Request('MKCOL', $subPlan['dav_path'], [
+		'If-None-Match' => '*',
+		'X-Fadenstack-Folder-Ticket' => $subPlan['receiptId'],
+	]);
+	$raceResp = new \Sabre\HTTP\Response();
+	$substitutionCaught = false;
+	try {
+		$guardPlugin->beforeMkcol($raceReq, $raceResp);
+	} catch (\Sabre\DAV\Exception\Conflict $e) {
+		$substitutionCaught = true;
+		$guardPlugin->onException($e);
+	}
+	$assert('native DAV guard blocks parent substitution with 409 Conflict', $substitutionCaught);
+	$assert('replacement folder remains empty (no write redirected)', !$replacementFolder->nodeExists('SubRaceFolder'));
+
+	// Cleanup replacement folder and move original fixture back
+	$replacementFolder->delete();
+	$fixtureFolder->move($homeA->getPath() . '/' . $oldFolderName);
+
+	// 13e. Ticket replay rejection: consumed ticket is rejected
+	$replayReq = new \Sabre\HTTP\Request('MKCOL', $plan['dav_path'], [
+		'If-None-Match' => '*',
+		'X-Fadenstack-Folder-Ticket' => $plan['receiptId'],
+	]);
+	$replayResp = new \Sabre\HTTP\Response();
+	$replayDenied = false;
+	try {
+		$guardPlugin->beforeMkcol($replayReq, $replayResp);
+	} catch (\Sabre\DAV\Exception\Forbidden $e) {
+		$replayDenied = true;
+	}
+	$assert('replaying consumed folder ticket is denied with 403', $replayDenied);
 
 	// Legacy receipt reconciliation validates an actual native response identity.
 	$legacyProp = $broker->proposeFolder($folderRef, 'LegacyReceipt');

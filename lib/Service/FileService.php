@@ -28,7 +28,7 @@ class FileService {
 	public const MAX_TEXT_BYTES = 2097152;
 	public const MAX_PDF_BYTES = 10485760;
 	public const MAX_WRITE_BYTES = 262144;
-	private const KEY = 'fadenstack_agent.state';
+	public const KEY = 'fadenstack_agent.state';
 	private ?VerifiedCloudPrincipal $principal = null;
 
 	public function __construct(
@@ -67,7 +67,7 @@ class FileService {
 		return JournalIdentity::forPrincipal($this->uid(), $scope, $binding, $principal);
 	}
 
-	private function assertProposalIdentity(array $proposal): void {
+	public function assertProposalIdentity(array $proposal): void {
 		$identity = $this->journalIdentity();
 		if (($proposal['identityScope'] ?? null) !== $identity->scopeHash || ($proposal['identitySession'] ?? null) !== $identity->sessionHash) {
 			throw new Problem('The account, device, profile or scope changed. Review a new proposal.', 409);

@@ -679,6 +679,7 @@ describe('Independent folder creation regressions', () => {
 		vi.mocked(axios.request).mockImplementation(async (config: any) => {
 			if (config.method === 'MKCOL') {
 				expect(config.headers['If-None-Match']).toBe('*')
+				expect(config.headers['X-Fadenstack-Folder-Ticket']).toBe('folder-prop-1')
 				expect(config.url).toContain('/remote.php/dav/files/alice/Team-Docs/NewFolder')
 				return { status: 201, headers: { 'oc-fileid': '999' } } as never
 			}

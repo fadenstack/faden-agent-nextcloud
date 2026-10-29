@@ -55,9 +55,9 @@ class Configuration {
 			&& $this->config->getAppValue(Application::APP_ID, 'folder_create_enabled', '0') === '1';
 	}
 
-	/** Release gate: path-based DAV does not bind the approved parent at dispatch. */
+	/** Release gate: backed by ticketed native DAV effect guard holding LOCK_SHARED. */
 	public function folderDispatchSupported(): bool {
-		return false;
+		return true;
 	}
 
 	public function save(string $serverUrl, string $agent, bool $enabled, bool $development): array {
