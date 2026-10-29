@@ -11,6 +11,8 @@ use OCA\FadenstackAgent\History\JournalResource;
 use OCA\FadenstackAgent\History\JournalService;
 use OCA\FadenstackAgent\History\VerifiedReadback;
 use OCA\FadenstackAgent\Identity\VerifiedCloudPrincipal;
+use OCP\App\IAppManager;
+use OCP\Constants;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
@@ -19,6 +21,8 @@ use OCP\Files\Node;
 use OCP\ISession;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
+use OCP\Share\IManager;
+use OCP\Share\IShare;
 
 class FileService {
 	public const MAX_TEXT_BYTES = 2097152;
@@ -37,6 +41,8 @@ class FileService {
 		private JournalService $journal,
 		private ScopePolicy $scope,
 		private FilesHistoryPlanner $history,
+		private IAppManager $apps,
+		private IManager $shares,
 	) {
 	}
 
@@ -116,7 +122,7 @@ class FileService {
 		$s = $this->state();
 		$config = $this->config->get();
 		$policy = $config['enabled'] && $config['agent'] && $config['serverUrl'] ? $this->scope->getPolicy($s['user'], $config['serverUrl']) : null;
-		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled()];
+		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled(), 'filesReadsEnabled' => $this->config->filesReadsEnabled()];
 	}
 
 	public function check(string $binding): void {
@@ -309,6 +315,124 @@ class FileService {
 			$files[] = $this->metadata($n);
 		}
 		return ['folder' => $this->metadata($folder), 'files' => $files, 'partial' => $partial];
+	}
+
+	public function organizeRead(string $resourceId = '', ?string $expectedRevision = null): array {
+		if ($resourceId !== '') {
+			if (!preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $resourceId, $match)) {
+				throw new Problem('Use a Nextcloud file resource ID, not a path or URL.');
+			}
+			$node = $this->node((int)$match[1]);
+		} else {
+			$node = $this->root->getUserFolder($this->uid());
+		}
+		if (!$node instanceof Folder) {
+			throw new Problem('Folder organization read requires a folder, not a file.', 415);
+		}
+		$this->scope->describeNode($node, 'read');
+		if ($expectedRevision !== null && $expectedRevision !== '' && $node->getEtag() !== $expectedRevision) {
+			throw new Problem('The folder revision changed. Inspect the folder before continuing.', 409);
+		}
+		$home = $this->root->getUserFolder($this->uid());
+		$entries = [];
+		$partial = false;
+		foreach ($node->getDirectoryListing() as $child) {
+			if (!$child->isReadable()) {
+				continue;
+			}
+			if (count($entries) >= 200) {
+				$partial = true;
+				break;
+			}
+			$entries[] = [
+				'resourceId' => 'nextcloud:files:' . $child->getId(),
+				'filename' => $child->getName(),
+				'etag' => $child->getEtag(),
+				'folder' => $child instanceof Folder,
+				'size' => $child->getSize(),
+				'modified' => $child->getMtime(),
+				'permissions' => $child->getPermissions(),
+				'href' => $this->urls->linkToRouteAbsolute('files.viewcontroller.showFile', ['fileid' => $child->getId()]),
+			];
+		}
+		$relPath = $home->getRelativePath($node->getPath());
+		return [
+			'directory' => '/' . ltrim($relPath, '/'),
+			'resourceId' => 'nextcloud:files:' . $node->getId(),
+			'etag' => $node->getEtag(),
+			'entries' => $entries,
+			'partial' => $partial,
+		];
+	}
+
+	public function sharesRead(string $resourceId, ?string $expectedRevision = null): array {
+		if (!preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $resourceId, $match)) {
+			throw new Problem('Use a Nextcloud file resource ID, not a path or URL.');
+		}
+		$node = $this->node((int)$match[1]);
+		$this->scope->describeNode($node, 'read');
+		if ($expectedRevision !== null && $expectedRevision !== '' && $node->getEtag() !== $expectedRevision) {
+			throw new Problem('The resource revision changed. Inspect the resource before continuing.', 409);
+		}
+		if (!$this->apps->isEnabledForUser('files_sharing')) {
+			throw new Problem('The Nextcloud sharing app is unavailable.', 503);
+		}
+		$isOwner = $node->getOwner()?->getUID() === $this->uid();
+		$canShare = ($node->getPermissions() & Constants::PERMISSION_SHARE) !== 0;
+		if (!$isOwner && !$canShare) {
+			throw new Problem('Permission denied to inspect shares for this resource.', 403);
+		}
+		$home = $this->root->getUserFolder($this->uid());
+		$rawShares = [];
+		foreach ($this->shares->getSharesByNode($node) as $s) {
+			$rawShares[] = ['share' => $s, 'inherited' => false];
+		}
+		$current = $node;
+		while ($current->getId() !== $home->getId()) {
+			$parent = $current->getParent();
+			if ($parent === null || $parent->getId() === $home->getId()) {
+				break;
+			}
+			foreach ($this->shares->getSharesByNode($parent) as $s) {
+				$rawShares[] = ['share' => $s, 'inherited' => true];
+			}
+			$current = $parent;
+		}
+		$sanitized = [];
+		$seenIds = [];
+		foreach ($rawShares as $item) {
+			/** @var IShare $s */
+			$s = $item['share'];
+			$shareId = (int)$s->getId();
+			if (isset($seenIds[$shareId])) {
+				continue;
+			}
+			$seenIds[$shareId] = true;
+			$shareType = $s->getShareType();
+			$shareWith = $s->getSharedWith();
+			$shareWithDisplayName = $s->getSharedWithDisplayName();
+			if ($shareType === IShare::TYPE_LINK) {
+				$shareWith = 'public-link';
+				$shareWithDisplayName = 'Public link';
+			}
+			$expiration = $s->getExpirationDate();
+			$sanitized[] = [
+				'id' => $shareId,
+				'shareType' => $shareType,
+				'shareWith' => $shareWith,
+				'shareWithDisplayName' => $shareWithDisplayName,
+				'permissions' => (int)$s->getPermissions(),
+				'path' => '/' . ltrim($home->getRelativePath($node->getPath()), '/'),
+				'fileTarget' => $s->getTarget() ?: $node->getName(),
+				'expiration' => $expiration instanceof \DateTimeInterface ? $expiration->format(\DateTimeInterface::ATOM) : null,
+				'mailSend' => (bool)$s->getMailSend(),
+				'inherited' => $item['inherited'],
+			];
+			if (count($sanitized) >= 50) {
+				break;
+			}
+		}
+		return $sanitized;
 	}
 
 	public static function filename(string $name): void {

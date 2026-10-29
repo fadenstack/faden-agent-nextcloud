@@ -1,6 +1,6 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
-import type { FileApi, FileContext } from './types.ts'
+import type { FileApi, FileContext, ShareEntry } from './types.ts'
 
 export interface ExtendedProposal {
 	name: string
@@ -18,6 +18,8 @@ export interface ExtendedFilesHost {
 	resolvePath?(pathOrId: unknown, signal?: AbortSignal): Promise<{ path: string; etag: string; folder: boolean }>
 	proposeMutation?(name: string, args: Readonly<Record<string, unknown>>, callId: string, signal: AbortSignal): Promise<ExtendedProposal>
 	commitMutation?(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown>
+	authorizeSource?(reference: string, signal: AbortSignal, purpose?: 'read' | 'metadata'): Promise<void>
+	rememberSource?(reference: string, signal: AbortSignal): Promise<void>
 }
 
 export function validateFolderName(name: unknown): string {
@@ -58,11 +60,7 @@ export const EXTENDED_FILES_MUTATIONS = new Set([
 	'nc_files_share_readonly',
 ])
 
-export function filesExtendedTools(host: ExtendedFilesHost) {
-	const textSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 200 }
-	const nameSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 100, pattern: '^[^/\\\\?#:<>"|*]+$' }
-	const etagSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 150 }
-
+export function filesReadTools(host: ExtendedFilesHost) {
 	return [
 		defineTool({
 			name: 'nc_files_organize_read',
@@ -72,13 +70,41 @@ export function filesExtendedTools(host: ExtendedFilesHost) {
 				type: 'object',
 				properties: {
 					resource_id: { type: 'string', description: 'Optional folder path or nextcloud:files:ID. If omitted, uses active folder.' },
+					expectedRevision: { type: 'string', description: 'Optional expected folder ETag for optimistic concurrency.' },
 				},
 				additionalProperties: false,
 			},
 			run: async (args, c) => {
-				const folderPath = String(args.resource_id ?? (host.context ? host.context().file.path : '')).replace(/^\/+/, '')
+				let targetId: string | undefined
+				if (args.resource_id !== undefined && args.resource_id !== null && String(args.resource_id).trim() !== '') {
+					const raw = String(args.resource_id).trim()
+					if (!/^nextcloud:files:[1-9][0-9]{0,14}$/.test(raw)) {
+						throw new Error('Use a Nextcloud file resource ID, not a path or URL.')
+					}
+					targetId = raw
+				} else if (host.context) {
+					const ctx = host.context()
+					if (!ctx.file.folder) {
+						throw new Error('Folder organization read requires a folder context or folder resource_id, not a selected file.')
+					}
+					targetId = `nextcloud:files:${ctx.file.id}`
+				}
 				if (!host.files.organizeRead) throw new Error('Folder organization read is unavailable.')
-				return host.files.organizeRead(folderPath, c.signal)
+				if (targetId && host.authorizeSource) {
+					await host.authorizeSource(targetId, c.signal, 'read')
+				}
+				const expectedRevision = typeof args.expectedRevision === 'string' ? args.expectedRevision : undefined
+				const listing = expectedRevision !== undefined
+					? await host.files.organizeRead(targetId, expectedRevision, c.signal)
+					: await host.files.organizeRead(targetId, c.signal)
+				if (listing?.entries && host.rememberSource) {
+					for (const entry of listing.entries) {
+						if (entry.resourceId) {
+							await host.rememberSource(entry.resourceId, c.signal)
+						}
+					}
+				}
+				return listing
 			},
 		}),
 		defineTool({
@@ -90,27 +116,59 @@ export function filesExtendedTools(host: ExtendedFilesHost) {
 				properties: {
 					resource_id: { type: 'string', description: 'The file or folder path or nextcloud:files:ID to inspect.' },
 					filename: { type: 'string', description: 'Alternative simple filename in the current directory.' },
+					expectedRevision: { type: 'string', description: 'Optional expected resource ETag for optimistic concurrency.' },
 				},
 				additionalProperties: false,
 			},
 			run: async (args, c) => {
-				const target = String(args.resource_id ?? args.filename ?? (host.context ? host.context().file.path : '')).trim()
+				let target = String(args.resource_id ?? args.filename ?? '').trim()
+				if (!target && host.context) {
+					target = `nextcloud:files:${host.context().file.id}`
+				}
 				if (!target) throw new Error('A target file or folder is required.')
+				if (target.startsWith('nextcloud:files:')) {
+					if (!/^nextcloud:files:[1-9][0-9]{0,14}$/.test(target)) {
+						throw new Error('Use a Nextcloud file resource ID, not a path or URL.')
+					}
+					if (host.authorizeSource) {
+						await host.authorizeSource(target, c.signal, 'read')
+					}
+				} else if (/^[a-zA-Z0-9_.-]+$/.test(target)) {
+					// legacy/test simple filename support
+				} else {
+					throw new Error('Use a Nextcloud file resource ID, not a path or URL.')
+				}
 				if (!host.files.sharesRead) throw new Error('Share inspection is unavailable.')
-				const shares = await host.files.sharesRead(target, c.signal)
-				return shares.map(s => ({
-					id: s.id,
-					shareType: s.shareType,
-					shareWith: s.shareWith,
-					shareWithDisplayName: s.shareWithDisplayName,
-					permissions: s.permissions,
-					path: s.path,
-					fileTarget: s.fileTarget,
-					expiration: s.expiration,
-					mailSend: s.mailSend,
-				}))
+				const expectedRevision = typeof args.expectedRevision === 'string' ? args.expectedRevision : undefined
+				const shares = expectedRevision !== undefined
+					? await host.files.sharesRead(target, expectedRevision, c.signal)
+					: await host.files.sharesRead(target, c.signal)
+				return shares.map(s => {
+					const sanitized: ShareEntry = {
+						id: Number(s.id),
+						shareType: Number(s.shareType),
+						permissions: Number(s.permissions),
+						path: s.path,
+						mailSend: s.mailSend === true,
+					}
+					if (s.shareWith !== undefined) sanitized.shareWith = String(s.shareWith)
+					if (s.shareWithDisplayName !== undefined) sanitized.shareWithDisplayName = String(s.shareWithDisplayName)
+					if (s.fileTarget !== undefined) sanitized.fileTarget = String(s.fileTarget)
+					if (s.expiration !== undefined) sanitized.expiration = s.expiration
+					if (s.inherited !== undefined) sanitized.inherited = s.inherited
+					return sanitized
+				})
 			},
 		}),
+	]
+}
+
+export function filesMutationTools(host: ExtendedFilesHost) {
+	const textSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 200 }
+	const nameSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 100, pattern: '^[^/\\\\?#:<>"|*]+$' }
+	const etagSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 150 }
+
+	return [
 		defineTool({
 			name: 'nc_files_create_folder',
 			toolClass: 'destructive',
@@ -203,4 +261,8 @@ export function filesExtendedTools(host: ExtendedFilesHost) {
 			},
 		}),
 	]
+}
+
+export function filesExtendedTools(host: ExtendedFilesHost) {
+	return [...filesReadTools(host), ...filesMutationTools(host)]
 }

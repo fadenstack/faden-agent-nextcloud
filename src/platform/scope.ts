@@ -157,6 +157,7 @@ export class TurnScope {
 		return Object.freeze([...this.#tools.keys()].filter(name => name !== 'nc_search_content' || this.policy.sources.some(source => source.kind === 'user-files'))
 			.filter(name => name !== 'nc_search_files' || this.policy.sources.some(source => source.kind !== 'file'))
 			.filter(name => name !== 'nc_list_folder' || this.policy.sources.some(source => source.kind !== 'file'))
+			.filter(name => name !== 'nc_files_organize_read' || this.policy.sources.some(source => source.kind !== 'file'))
 			.filter(name => fileCapability(name)!.risk === 'read' || this.policy.destinations.length > 0) as NextcloudToolName[])
 	}
 

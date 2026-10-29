@@ -1,7 +1,7 @@
 import axios from '@nextcloud/axios'
 import { getRequestToken } from '@nextcloud/auth'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderListingEntry, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact, DavCollection } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact, DavCollection } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 import { sha256Hex } from './tables.ts'
 import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './adapterGuards.ts'
@@ -555,7 +555,7 @@ export class NextcloudFiles implements FileApi {
 		if (now.userId !== this.initial.userId || now.binding !== this.initial.binding
 			|| now.historyEnabled !== this.initial.historyEnabled
 			|| now.development !== this.initial.development
-			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled'] as const).some(key => now[key] !== this.initial[key])
+			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled', 'filesReadsEnabled'] as const).some(key => now[key] !== this.initial[key])
 			|| now.scopePolicy?.version !== this.initial.scopePolicy?.version
 			|| now.serverUrl !== this.initial.serverUrl || now.agent !== this.initial.agent || !now.enabled) {
 			throw new Error('The Nextcloud session or agent configuration changed. Reload and sign in again.')
@@ -690,27 +690,11 @@ export class NextcloudFiles implements FileApi {
 		return { operation: method === 'COPY' ? 'copy' : 'move', source: `/${cleanSource}`, destination: `/${cleanDest}` }
 	}
 
-	async sharesRead(path: string, signal?: AbortSignal): Promise<ShareEntry[]> {
-		await this.assertIdentity(signal)
-		const clean = '/' + path.replace(/^\/+/, '')
-		const url = generateUrl(`/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json&path=${encodeURIComponent(clean)}`)
-		const response = await axios.get<{ ocs: { data: unknown[] } }>(url, {
-			headers: { 'OCS-APIRequest': 'true' },
-			signal,
-			timeout: 15000,
-		})
-		const raw = (Array.isArray(response.data?.ocs?.data) ? response.data.ocs.data : []) as Record<string, unknown>[]
-		return raw.map(s => ({
-			id: Number(s.id),
-			shareType: Number(s.share_type ?? s.shareType),
-			shareWith: typeof (s.share_with ?? s.shareWith) === 'string' ? String(s.share_with ?? s.shareWith) : undefined,
-			shareWithDisplayName: typeof (s.share_with_displayname ?? s.shareWithDisplayName) === 'string' ? String(s.share_with_displayname ?? s.shareWithDisplayName) : undefined,
-			permissions: Number(s.permissions),
-			path: String(s.path ?? clean),
-			fileTarget: typeof (s.file_target ?? s.fileTarget) === 'string' ? String(s.file_target ?? s.fileTarget) : undefined,
-			expiration: typeof s.expiration === 'string' ? s.expiration : null,
-			mailSend: s.mail_send === 1 || s.sendMail === true,
-		}))
+	async sharesRead(resourceId: string, expectedRevisionOrSignal?: string | AbortSignal, signal?: AbortSignal): Promise<ShareEntry[]> {
+		const expectedRevision = typeof expectedRevisionOrSignal === 'string' ? expectedRevisionOrSignal : undefined
+		const actualSignal = expectedRevisionOrSignal instanceof AbortSignal ? expectedRevisionOrSignal : signal
+		await this.assertIdentity(actualSignal)
+		return this.post<ShareEntry[]>('/files/shares', { resourceId, expectedRevision }, actualSignal)
 	}
 
 	async shareReadonly(path: string, recipientUserId: string, expectedEtag: string, signal?: AbortSignal): Promise<ShareEntry> {
@@ -759,34 +743,12 @@ export class NextcloudFiles implements FileApi {
 		}
 	}
 
-	async organizeRead(folderPath?: string, signal?: AbortSignal): Promise<FolderListing> {
-		await this.assertIdentity(signal)
-		const cleanFolder = davFilePath(folderPath ?? '')
-		const davUrl = `${generateRemoteUrl('dav')}files/${encodeURIComponent(this.initial.userId)}/${cleanFolder ? cleanFolder + '/' : ''}`
-		const propfindXml = '<d:propfind xmlns:d="DAV:"><d:prop><d:displayname/><d:getetag/><d:resourcetype/></d:prop></d:propfind>'
-		const response = await axios.request<string>({
-			url: davUrl,
-			method: 'PROPFIND',
-			data: propfindXml,
-			headers: { Depth: '1', 'Content-Type': 'application/xml' },
-			responseType: 'text',
-			signal,
-			timeout: 15000,
-		})
-		const entries: FolderListingEntry[] = []
-		if (typeof DOMParser !== 'undefined') {
-			const doc = new DOMParser().parseFromString(response.data, 'application/xml')
-			const responses = doc.getElementsByTagNameNS('DAV:', 'response')
-			for (let i = 0; i < responses.length; i++) {
-				const r = responses[i]
-				const href = r?.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? ''
-				const filename = r?.getElementsByTagNameNS('DAV:', 'displayname')[0]?.textContent ?? href.replace(/\/$/, '').split('/').pop() ?? ''
-				const etag = (r?.getElementsByTagNameNS('DAV:', 'getetag')[0]?.textContent ?? '').replace(/^"|"$/g, '')
-				const isDir = (r?.getElementsByTagNameNS('DAV:', 'collection').length ?? 0) > 0
-				entries.push({ href, filename, etag, folder: isDir })
-			}
-		}
-		return { directory: `/${cleanFolder}`, entries: entries.slice(0, 50) }
+	async organizeRead(resourceIdOrSignal?: string | AbortSignal, expectedRevisionOrSignal?: string | AbortSignal, signal?: AbortSignal): Promise<FolderListing> {
+		const resourceId = typeof resourceIdOrSignal === 'string' ? resourceIdOrSignal : undefined
+		const expectedRevision = typeof expectedRevisionOrSignal === 'string' ? expectedRevisionOrSignal : undefined
+		const actualSignal = resourceIdOrSignal instanceof AbortSignal ? resourceIdOrSignal : (expectedRevisionOrSignal instanceof AbortSignal ? expectedRevisionOrSignal : signal)
+		await this.assertIdentity(actualSignal)
+		return this.post<FolderListing>('/files/organize', { resourceId, expectedRevision }, actualSignal)
 	}
 
 }

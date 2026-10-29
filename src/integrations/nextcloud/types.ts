@@ -12,6 +12,7 @@ export interface Identity extends AppConfig {
 	locale?: string
 	scopePolicy?: ScopePolicy | null
 	historyEnabled?: boolean
+	filesReadsEnabled?: boolean
 	/** Development fixtures only until native provider scope/history acceptance. */
 	extendedFilesEnabled?: boolean
 	tablesEnabled?: boolean
@@ -151,18 +152,26 @@ export interface ShareEntry {
 	fileTarget?: string
 	expiration?: string | null
 	mailSend?: boolean
+	inherited?: boolean
 }
 
 export interface FolderListingEntry {
+	resourceId?: string
 	href: string
 	filename: string
 	etag: string
 	folder: boolean
+	size?: number
+	modified?: number
+	permissions?: number
 }
 
 export interface FolderListing {
 	directory: string
+	resourceId?: string
+	etag?: string
 	entries: FolderListingEntry[]
+	partial?: boolean
 }
 
 export interface FolderCreateResult {
@@ -386,8 +395,8 @@ export interface FileApi {
 	createFolder?(folderPath: string, name: string, signal?: AbortSignal): Promise<FolderCreateResult>
 	copyFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>
 	moveFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>
-	sharesRead?(path: string, signal?: AbortSignal): Promise<ShareEntry[]>
+	sharesRead?(resourceId: string, expectedRevisionOrSignal?: string | AbortSignal, signal?: AbortSignal): Promise<ShareEntry[]>
 	shareReadonly?(path: string, recipientUserId: string, expectedEtag: string, signal?: AbortSignal): Promise<ShareEntry>
-	organizeRead?(folderPath?: string, signal?: AbortSignal): Promise<FolderListing>
+	organizeRead?(resourceId?: string, expectedRevisionOrSignal?: string | AbortSignal, signal?: AbortSignal): Promise<FolderListing>
 	getAppCapabilities?(signal?: AbortSignal): Promise<AppCapabilities>
 }

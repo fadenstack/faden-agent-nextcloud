@@ -44,6 +44,11 @@ class Configuration {
 		return $this->config->getAppValue(Application::APP_ID, 'history_enabled', '0') === '1';
 	}
 
+	/** Distinct server-controlled opt-in for verified read-only Files tools (nc_files_organize_read, nc_files_shares_read). Default false. */
+	public function filesReadsEnabled(): bool {
+		return $this->config->getAppValue(Application::APP_ID, 'files_reads_enabled', '0') === '1';
+	}
+
 	public function save(string $serverUrl, string $agent, bool $enabled, bool $development): array {
 		$origin = self::origin(trim($serverUrl), $development);
 		if (!preg_match('/^[a-zA-Z0-9_-]{1,100}$/D', $agent)) {

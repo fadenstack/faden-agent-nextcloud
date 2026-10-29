@@ -14,6 +14,8 @@ return ['routes' => [
 	['name' => 'files#read', 'url' => '/context/read', 'verb' => 'POST'],
 	['name' => 'files#content', 'url' => '/context/content', 'verb' => 'POST'],
 	['name' => 'files#listing', 'url' => '/context/list', 'verb' => 'POST'],
+	['name' => 'files#organize', 'url' => '/files/organize', 'verb' => 'POST'],
+	['name' => 'files#shares', 'url' => '/files/shares', 'verb' => 'POST'],
 	['name' => 'files#propose', 'url' => '/proposals', 'verb' => 'POST'],
 	['name' => 'files#approve', 'url' => '/proposals/{id}/approve', 'verb' => 'POST'],
 	['name' => 'files#commit', 'url' => '/proposals/{id}/commit', 'verb' => 'POST'],

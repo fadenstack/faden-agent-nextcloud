@@ -116,7 +116,7 @@ export const EXTENDED_FILE_CAPABILITIES: readonly FileToolCapability[] = Object.
 	capability('nc_files_move', 'move-file', 'known-or-included', 'not-integrated'),
 	capability('nc_files_shares_read', 'metadata', 'known-or-included', 'not-applicable'),
 	capability('nc_files_share_readonly', 'share-file', 'known-or-included', 'not-integrated'),
-	capability('nc_files_organize_read', 'metadata', 'included', 'not-applicable'),
+	capability('nc_files_organize_read', 'metadata', 'known-or-included', 'not-applicable'),
 ])
 
 // NC09: Tables tools slice (five tested tools)

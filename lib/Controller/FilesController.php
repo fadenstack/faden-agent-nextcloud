@@ -104,6 +104,16 @@ class FilesController extends Controller {
 	}
 	#[NoAdminRequired]
 	#[UseSession]
+	public function organize(string $resourceId = '', string $expectedRevision = ''): Response {
+		return $this->run(fn () => $this->files->organizeRead($resourceId, $expectedRevision !== '' ? $expectedRevision : null));
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function shares(string $resourceId = '', string $expectedRevision = ''): Response {
+		return $this->run(fn () => $this->files->sharesRead($resourceId, $expectedRevision !== '' ? $expectedRevision : null));
+	}
+	#[NoAdminRequired]
+	#[UseSession]
 	public function propose(string $contextId, string $operation, string $filename = '', string $content = '', string $expectedEtag = ''): Response {
 		return $this->run(fn () => $this->files->propose($contextId, $operation, $filename, $content, $expectedEtag), true);
 	}

@@ -5,7 +5,7 @@ import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
-import { filesExtendedTools, EXTENDED_FILES_MUTATIONS, validateFolderName, validateCopyMoveArgs, validateShareReadonlyArgs, type ExtendedProposal } from '../integrations/nextcloud/filesExtended.ts'
+import { filesReadTools, filesMutationTools, EXTENDED_FILES_MUTATIONS, validateFolderName, validateCopyMoveArgs, validateShareReadonlyArgs, type ExtendedProposal } from '../integrations/nextcloud/filesExtended.ts'
 import { tablesTools, TABLES_MUTATIONS, validateAddColumnArgs, validateAddRowArgs, validateUpdateRowArgs, validateDeleteRowArgs, sha256Hex, canonical, rowContent, type TablesProposal } from '../integrations/nextcloud/tables.ts'
 import { experimentalAdaptersAllowed, optionalPositiveInteger } from '../integrations/nextcloud/adapterGuards.ts'
 import { deckTools, DECK_MUTATIONS, validateDeckPatchArgs, validateDeckCreateArgs, validateDeckMoveArgs, validateDeckAssignArgs, validateDeckLabelArgs, cardContent, type DeckProposal } from '../integrations/nextcloud/deck.ts'
@@ -112,7 +112,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.tokens = new AgentTokenProvider({ apiUrl: config.serverUrl, agent: config.agent, store: new MemoryTokenStore(), fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const experimental = experimentalAdaptersAllowed(config)
-		const extendedFiles = experimental && config.extendedFilesEnabled === true && !!files.createFolder
+		const filesReadsActive = (config.filesReadsEnabled === true || (experimental && config.extendedFilesEnabled === true)) && !!files.organizeRead && !!files.sharesRead
+		const extendedFilesMutations = experimental && config.extendedFilesEnabled === true && !!files.createFolder
 		const tablesEnabled = experimental && config.tablesEnabled === true && !!files.tables
 		const deckEnabled = experimental && config.deckEnabled === true && !!files.deck
 		const calendarEnabled = experimental && config.calendarEnabled === true && !!files.calendar
@@ -120,7 +121,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const contactsEnabled = experimental && config.contactsEnabled === true && !!files.contacts
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
 			.addTools(...nextcloudTools(this))
-			.addTools(...(extendedFiles ? filesExtendedTools(this) : []))
+			.addTools(...(filesReadsActive ? filesReadTools(this) : []))
+			.addTools(...(extendedFilesMutations ? filesMutationTools(this) : []))
 			.addTools(...(config.historyEnabled && files.history ? historyTools(this) : []))
 			.addTools(...(tablesEnabled ? tablesTools(this) : []))
 			.addTools(...(deckEnabled ? deckTools(this) : []))
@@ -402,12 +404,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		return result
 	}
 
-	private async rememberSource(reference: string, signal: AbortSignal): Promise<void> {
+	async rememberSource(reference: string, signal: AbortSignal): Promise<void> {
 		if (!this.#scope) return
 		this.#sources.record(await this.#scope.bindSource(reference, signal))
 	}
 
-	private async authorizeSource(reference: string, signal: AbortSignal, purpose: 'read' | 'metadata' = 'read'): Promise<void> {
+	async authorizeSource(reference: string, signal: AbortSignal, purpose: 'read' | 'metadata' = 'read'): Promise<void> {
 		if (!this.#scope) return
 		this.#sources.record(await this.#scope.authorize(reference, purpose, signal))
 	}
@@ -1558,6 +1560,8 @@ function resultRecords(result: unknown): number {
 	if (result && typeof result === 'object') {
 		if ('results' in result && Array.isArray(result.results)) return result.results.length
 		if ('files' in result && Array.isArray(result.files)) return result.files.length + 1
+		if ('entries' in result && Array.isArray(result.entries)) return result.entries.length + 1
+		if (Array.isArray(result)) return result.length
 	}
 	return 1
 }
