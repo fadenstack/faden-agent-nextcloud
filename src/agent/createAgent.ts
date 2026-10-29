@@ -37,6 +37,49 @@ import {
 	type AgentWithTasks,
 	type AgentWithContacts,
 } from '../integrations/nextcloud/caldav.ts'
+import {
+	mailTools,
+	talkTools,
+	MAIL_MUTATIONS,
+	TALK_MUTATIONS,
+	validateMailDraftArgs,
+	validateMailSendArgs,
+	validateTalkSendMessageArgs,
+} from '../integrations/nextcloud/mailTalk.ts'
+import {
+	collectivesTools,
+	formsTools,
+	COLLECTIVES_MUTATIONS,
+	FORMS_MUTATIONS,
+	validateCollectivesCreatePageArgs,
+	validateCollectivesDeletePageArgs,
+	validateFormsCreateFormArgs,
+	validateFormsSubmitResponseArgs,
+} from '../integrations/nextcloud/collaborativeApps.ts'
+import {
+	whiteboardTools,
+	flowTools,
+	windmillTools,
+	n8nTools,
+	agentfileTool,
+	notesTools,
+	bookmarksTools,
+	WHITEBOARD_MUTATIONS,
+	FLOW_MUTATIONS,
+	WINDMILL_MUTATIONS,
+	N8N_MUTATIONS,
+	NOTES_MUTATIONS,
+	BOOKMARKS_MUTATIONS,
+	validateWhiteboardCreateArgs,
+	validateFlowCreateDraftArgs,
+	validateFlowUpdateRuleArgs,
+	validateWindmillDraftArgs,
+	validateWindmillRunArgs,
+	validateN8nDraftArgs,
+	validateN8nExecuteArgs,
+	validateNotesCreateArgs,
+	validateBookmarksCreateArgs,
+} from '../integrations/nextcloud/workflowAgentfile.ts'
 import type { FileApi, FileContext, Identity, Proposal, WriteArguments, ToolViewResults, HistoryDirection, HistoryItem, HistoryPreview, HistoryAvailability, TableSnapshot, TableReadResult, DeckCard, FolderCreateProposal } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 import type { MutationBinding, WorkspaceCoordinator } from '../workspace/coordinator.ts'
@@ -66,6 +109,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #tablesProposals = new Map<string, TablesProposal>()
 	readonly #deckProposals = new Map<string, DeckProposal>()
 	readonly #davProposals = new Map<string, DavProposal>()
+	readonly #mailProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
+	readonly #talkProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
+	readonly #collectivesProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
+	readonly #formsProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
+	readonly #workflowProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
 	readonly #expandedInputs = new Map<string, string>()
 	readonly #expandedPreviews = new Map<string, string>()
 	readonly #expandedApproved = new Set<string>()
@@ -126,6 +174,17 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const calendarEnabled = experimental && config.calendarEnabled === true && !!files.calendar
 		const tasksEnabled = experimental && config.tasksEnabled === true && !!files.tasks
 		const contactsEnabled = experimental && config.contactsEnabled === true && !!files.contacts
+		const mailEnabled = experimental && config.mailEnabled === true && !!files.mail
+		const talkEnabled = experimental && config.talkEnabled === true && !!files.talk
+		const collectivesEnabled = experimental && config.collectivesEnabled === true && !!files.collectives
+		const formsEnabled = experimental && config.formsEnabled === true && !!files.forms
+		const whiteboardEnabled = experimental && config.whiteboardEnabled === true && !!files.whiteboard
+		const flowEnabled = experimental && config.flowEnabled === true && !!files.flow
+		const windmillEnabled = experimental && config.windmillEnabled === true && !!files.windmill
+		const n8nEnabled = experimental && config.n8nEnabled === true && !!files.n8n
+		const agentfileEnabled = experimental && config.agentfileEnabled === true && !!files.agentfile
+		const notesEnabled = experimental && config.notesEnabled === true && !!files.notes
+		const bookmarksEnabled = experimental && config.bookmarksEnabled === true && !!files.bookmarks
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
 			.addTools(...nextcloudTools(this))
 			.addTools(...(filesReadsActive ? filesReadTools(this) : []))
@@ -137,6 +196,17 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(calendarEnabled ? calendarTools(this) : []))
 			.addTools(...(tasksEnabled ? tasksTools(this) : []))
 			.addTools(...(contactsEnabled ? contactsTools(this) : []))
+			.addTools(...(mailEnabled ? mailTools(this) : []))
+			.addTools(...(talkEnabled ? talkTools(this) : []))
+			.addTools(...(collectivesEnabled ? collectivesTools(this) : []))
+			.addTools(...(formsEnabled ? formsTools(this) : []))
+			.addTools(...(whiteboardEnabled ? whiteboardTools(this) : []))
+			.addTools(...(flowEnabled ? flowTools(this) : []))
+			.addTools(...(windmillEnabled ? windmillTools(this) : []))
+			.addTools(...(n8nEnabled ? n8nTools(this) : []))
+			.addTools(...(agentfileEnabled ? agentfileTool(this) : []))
+			.addTools(...(notesEnabled ? notesTools(this) : []))
+			.addTools(...(bookmarksEnabled ? bookmarksTools(this) : []))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
 					const available = this.#scope?.offeredTools
@@ -155,7 +225,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						this.#scope?.budget.consumeResult(result, resultRecords(result))
 					} catch (error) {
 						this.#toolResults.delete(this.resultKey(invocation.context))
-						if (WRITE_TOOLS.has(invocation.tool.name) || HISTORY_TOOLS.has(invocation.tool.name) || EXTENDED_FILES_MUTATIONS.has(invocation.tool.name) || TABLES_MUTATIONS.has(invocation.tool.name) || DECK_MUTATIONS.has(invocation.tool.name) || CALENDAR_MUTATIONS.has(invocation.tool.name) || TASKS_MUTATIONS.has(invocation.tool.name) || CONTACTS_MUTATIONS.has(invocation.tool.name)) this.#writeBlocked = true
+						if (WRITE_TOOLS.has(invocation.tool.name) || HISTORY_TOOLS.has(invocation.tool.name) || EXTENDED_FILES_MUTATIONS.has(invocation.tool.name) || TABLES_MUTATIONS.has(invocation.tool.name) || DECK_MUTATIONS.has(invocation.tool.name) || CALENDAR_MUTATIONS.has(invocation.tool.name) || TASKS_MUTATIONS.has(invocation.tool.name) || CONTACTS_MUTATIONS.has(invocation.tool.name)
+							|| MAIL_MUTATIONS.has(invocation.tool.name) || TALK_MUTATIONS.has(invocation.tool.name) || COLLECTIVES_MUTATIONS.has(invocation.tool.name) || FORMS_MUTATIONS.has(invocation.tool.name) || WHITEBOARD_MUTATIONS.has(invocation.tool.name) || FLOW_MUTATIONS.has(invocation.tool.name) || WINDMILL_MUTATIONS.has(invocation.tool.name) || N8N_MUTATIONS.has(invocation.tool.name) || NOTES_MUTATIONS.has(invocation.tool.name) || BOOKMARKS_MUTATIONS.has(invocation.tool.name)) this.#writeBlocked = true
 						throw error
 					}
 					return result
@@ -164,7 +235,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.useSessionStore(new MemorySessionStore()).useApprovalStore(new MemoryApprovalStore())
 			.useApprovals({
 				request: async (request, signal) => {
-					const expanded = ([TABLES_MUTATIONS, DECK_MUTATIONS, CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS].some(names => names.has(request.toolName))
+					const expanded = ([
+						TABLES_MUTATIONS, DECK_MUTATIONS, CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS,
+						MAIL_MUTATIONS, TALK_MUTATIONS, COLLECTIVES_MUTATIONS, FORMS_MUTATIONS,
+						WHITEBOARD_MUTATIONS, FLOW_MUTATIONS, WINDMILL_MUTATIONS, N8N_MUTATIONS,
+						NOTES_MUTATIONS, BOOKMARKS_MUTATIONS,
+					].some(names => names.has(request.toolName))
 						|| (EXTENDED_FILES_MUTATIONS.has(request.toolName) && (!files.proposeFolderCreate || request.toolName !== 'nc_files_create_folder')))
 						&& request.source === 'host'
 					if (expanded) {
@@ -263,6 +339,66 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after },
 						}
 					}
+					if (MAIL_MUTATIONS.has(request.toolName) && request.source === 'host') {
+						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+						const target = request.toolName === 'nc_mail_send_draft' ? `Send draft #${request.arguments.draftId}` : `Draft: ${request.arguments.subject}`
+						const plan = { name: request.toolName, args: { ...request.arguments }, target, revision: `mail:${request.toolName}:${request.callId}` }
+						this.#mailProposals.set(request.callId, plan)
+						request = {
+							...request,
+							canAllowAlways: false,
+							canAllowForSession: false,
+							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, content: request.arguments },
+						}
+					}
+					if (TALK_MUTATIONS.has(request.toolName) && request.source === 'host') {
+						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+						const target = `Send message to room ${request.arguments.roomToken}`
+						const plan = { name: request.toolName, args: { ...request.arguments }, target, revision: `talk:${request.toolName}:${request.callId}` }
+						this.#talkProposals.set(request.callId, plan)
+						request = {
+							...request,
+							canAllowAlways: false,
+							canAllowForSession: false,
+							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, content: request.arguments },
+						}
+					}
+					if (COLLECTIVES_MUTATIONS.has(request.toolName) && request.source === 'host') {
+						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+						const target = request.toolName === 'nc_collectives_create_page' ? `Collective Page: ${request.arguments.title}` : `Delete Page #${request.arguments.pageId}`
+						const plan = { name: request.toolName, args: { ...request.arguments }, target, revision: `collectives:${request.toolName}:${request.callId}` }
+						this.#collectivesProposals.set(request.callId, plan)
+						request = {
+							...request,
+							canAllowAlways: false,
+							canAllowForSession: false,
+							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, content: request.arguments },
+						}
+					}
+					if (FORMS_MUTATIONS.has(request.toolName) && request.source === 'host') {
+						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+						const target = request.toolName === 'nc_forms_create_form' ? `Form: ${request.arguments.title}` : `Submit response for form #${request.arguments.formId}`
+						const plan = { name: request.toolName, args: { ...request.arguments }, target, revision: `forms:${request.toolName}:${request.callId}` }
+						this.#formsProposals.set(request.callId, plan)
+						request = {
+							...request,
+							canAllowAlways: false,
+							canAllowForSession: false,
+							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, content: request.arguments },
+						}
+					}
+					if ((WHITEBOARD_MUTATIONS.has(request.toolName) || FLOW_MUTATIONS.has(request.toolName) || WINDMILL_MUTATIONS.has(request.toolName) || N8N_MUTATIONS.has(request.toolName) || NOTES_MUTATIONS.has(request.toolName) || BOOKMARKS_MUTATIONS.has(request.toolName)) && request.source === 'host') {
+						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+						const target = `${request.toolName}`
+						const plan = { name: request.toolName, args: { ...request.arguments }, target, revision: `workflow:${request.toolName}:${request.callId}` }
+						this.#workflowProposals.set(request.callId, plan)
+						request = {
+							...request,
+							canAllowAlways: false,
+							canAllowForSession: false,
+							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, content: request.arguments },
+						}
+					}
 					if (WRITE_TOOLS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const binding = this.workspace?.prepare('files')
@@ -301,11 +437,25 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						this.#tablesProposals.delete(request.callId)
 						this.#deckProposals.delete(request.callId)
 						this.#davProposals.delete(request.callId)
+						this.#mailProposals.delete(request.callId)
+						this.#talkProposals.delete(request.callId)
+						this.#collectivesProposals.delete(request.callId)
+						this.#formsProposals.delete(request.callId)
+						this.#workflowProposals.delete(request.callId)
 						this.cancelHistory(request.callId)
 						this.#proposalViews.delete(request.callId)
 						this.#proposalResources.delete(request.callId)
 						this.#proposalParents.delete(request.callId)
-						if (WRITE_TOOLS.has(request.toolName) || HISTORY_TOOLS.has(request.toolName) || EXTENDED_FILES_MUTATIONS.has(request.toolName) || TABLES_MUTATIONS.has(request.toolName) || DECK_MUTATIONS.has(request.toolName) || CALENDAR_MUTATIONS.has(request.toolName) || TASKS_MUTATIONS.has(request.toolName) || CONTACTS_MUTATIONS.has(request.toolName)) this.#writeBlocked = true
+						const isMutation = WRITE_TOOLS.has(request.toolName) || HISTORY_TOOLS.has(request.toolName)
+							|| EXTENDED_FILES_MUTATIONS.has(request.toolName) || TABLES_MUTATIONS.has(request.toolName)
+							|| DECK_MUTATIONS.has(request.toolName) || CALENDAR_MUTATIONS.has(request.toolName)
+							|| TASKS_MUTATIONS.has(request.toolName) || CONTACTS_MUTATIONS.has(request.toolName)
+							|| MAIL_MUTATIONS.has(request.toolName) || TALK_MUTATIONS.has(request.toolName)
+							|| COLLECTIVES_MUTATIONS.has(request.toolName) || FORMS_MUTATIONS.has(request.toolName)
+							|| WHITEBOARD_MUTATIONS.has(request.toolName) || FLOW_MUTATIONS.has(request.toolName)
+							|| WINDMILL_MUTATIONS.has(request.toolName) || N8N_MUTATIONS.has(request.toolName)
+							|| NOTES_MUTATIONS.has(request.toolName) || BOOKMARKS_MUTATIONS.has(request.toolName)
+						if (isMutation) this.#writeBlocked = true
 					}
 					return result
 				},
@@ -733,6 +883,31 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		}
 		if ((CALENDAR_MUTATIONS.has(part.toolName) || TASKS_MUTATIONS.has(part.toolName) || CONTACTS_MUTATIONS.has(part.toolName)) && part.request.source === 'host') {
 			const proposal = this.#davProposals.get(part.request.callId)
+			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+		}
+		if (MAIL_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
+			const proposal = this.#mailProposals.get(part.request.callId)
+			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+		}
+		if (TALK_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
+			const proposal = this.#talkProposals.get(part.request.callId)
+			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+		}
+		if (COLLECTIVES_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
+			const proposal = this.#collectivesProposals.get(part.request.callId)
+			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+		}
+		if (FORMS_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
+			const proposal = this.#formsProposals.get(part.request.callId)
+			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+		}
+		if ((WHITEBOARD_MUTATIONS.has(part.toolName) || FLOW_MUTATIONS.has(part.toolName) || WINDMILL_MUTATIONS.has(part.toolName) || N8N_MUTATIONS.has(part.toolName) || NOTES_MUTATIONS.has(part.toolName) || BOOKMARKS_MUTATIONS.has(part.toolName)) && part.request.source === 'host') {
+			const proposal = this.#workflowProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
 		}
@@ -1573,6 +1748,203 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		} catch (error) {
 			this.#writeBlocked = true
 			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
+			throw error
+		}
+	}
+
+	async commitMailMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		const proposal = this.#mailProposals.get(call.callId)
+		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
+		this.#mailProposals.delete(call.callId)
+		const binding = this.#proposalViews.get(call.callId)
+		this.#proposalViews.delete(call.callId)
+		if (!this.files.mail) throw new Error('Nextcloud Mail service is unavailable.')
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+		try {
+			let result: unknown
+			if (name === 'nc_mail_save_draft') {
+				const draft = validateMailDraftArgs(args)
+				result = await this.files.mail.saveDraft(draft, call.signal)
+			} else if (name === 'nc_mail_send_draft') {
+				const { draftId, expectedRevision } = validateMailSendArgs(args)
+				result = await this.files.mail.sendDraft(draftId, expectedRevision, call.signal)
+			} else {
+				throw new Error('Unsupported Mail mutation.')
+			}
+			return {
+				status: name === 'nc_mail_send_draft' ? 'sent' : 'saved',
+				result,
+				target: proposal.target,
+				history: name === 'nc_mail_send_draft' ? 'no_undo_of_delivery_or_exposure_compensation_only' : 'not-integrated',
+			}
+		} catch (error) {
+			this.#writeBlocked = true
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
+			throw error
+		}
+	}
+
+	async commitTalkMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		const proposal = this.#talkProposals.get(call.callId)
+		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
+		this.#talkProposals.delete(call.callId)
+		const binding = this.#proposalViews.get(call.callId)
+		this.#proposalViews.delete(call.callId)
+		if (!this.files.talk) throw new Error('Nextcloud Talk service is unavailable.')
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+		try {
+			const { roomToken, message, replyTo } = validateTalkSendMessageArgs(args)
+			const result = await this.files.talk.sendMessage(roomToken, message, replyTo, call.signal)
+			return {
+				status: 'sent',
+				result,
+				target: proposal.target,
+				history: 'no_undo_of_delivery_or_exposure_compensation_only',
+			}
+		} catch (error) {
+			this.#writeBlocked = true
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
+			throw error
+		}
+	}
+
+	async commitCollectivesMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		const proposal = this.#collectivesProposals.get(call.callId)
+		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
+		this.#collectivesProposals.delete(call.callId)
+		const binding = this.#proposalViews.get(call.callId)
+		this.#proposalViews.delete(call.callId)
+		if (!this.files.collectives) throw new Error('Collectives service is unavailable.')
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+		try {
+			let result: unknown
+			if (name === 'nc_collectives_create_page') {
+				const { collectiveId, title, parentId } = validateCollectivesCreatePageArgs(args)
+				result = await this.files.collectives.createPage(collectiveId, title, parentId, call.signal)
+			} else if (name === 'nc_collectives_delete_page') {
+				const { pageId } = validateCollectivesDeletePageArgs(args)
+				result = await this.files.collectives.deletePage(pageId, call.signal)
+			} else {
+				throw new Error('Unsupported Collectives mutation.')
+			}
+			return {
+				status: name === 'nc_collectives_delete_page' ? 'deleted' : 'saved',
+				result,
+				target: proposal.target,
+				history: 'not-integrated',
+			}
+		} catch (error) {
+			this.#writeBlocked = true
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
+			throw error
+		}
+	}
+
+	async commitFormsMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		const proposal = this.#formsProposals.get(call.callId)
+		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
+		this.#formsProposals.delete(call.callId)
+		const binding = this.#proposalViews.get(call.callId)
+		this.#proposalViews.delete(call.callId)
+		if (!this.files.forms) throw new Error('Nextcloud Forms service is unavailable.')
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+		try {
+			let result: unknown
+			if (name === 'nc_forms_create_form') {
+				const { title, questions } = validateFormsCreateFormArgs(args)
+				result = await this.files.forms.createForm(title, questions, call.signal)
+			} else if (name === 'nc_forms_submit_response') {
+				const { formId, answers } = validateFormsSubmitResponseArgs(args)
+				result = await this.files.forms.submitResponse(formId, answers, call.signal)
+			} else {
+				throw new Error('Unsupported Forms mutation.')
+			}
+			return {
+				status: name === 'nc_forms_submit_response' ? 'submitted' : 'saved',
+				result,
+				target: proposal.target,
+				history: name === 'nc_forms_submit_response' ? 'no_undo_of_delivery_or_exposure_compensation_only' : 'not-integrated',
+			}
+		} catch (error) {
+			this.#writeBlocked = true
+			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
+			throw error
+		}
+	}
+
+	async commitWorkflowMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		const proposal = this.#workflowProposals.get(call.callId)
+		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
+		this.consumeExpandedApproval(call.callId, args)
+		this.#workflowProposals.delete(call.callId)
+		await this.files.assertIdentity(call.signal)
+		call.signal.throwIfAborted()
+		try {
+			let result: unknown
+			if (name === 'nc_whiteboard_create') {
+				const { path, name: bName } = validateWhiteboardCreateArgs(args)
+				if (!this.files.whiteboard) throw new Error('Whiteboard service is unavailable.')
+				result = await this.files.whiteboard.createBoard(path, bName, call.signal)
+			} else if (name === 'nc_flow_create_draft') {
+				const { description, operation, config } = validateFlowCreateDraftArgs(args)
+				if (!this.files.flow) throw new Error('Flow service is unavailable.')
+				result = await this.files.flow.createDraftRule(description, operation, config, call.signal)
+			} else if (name === 'nc_flow_update_rule') {
+				const { ruleId, active, deleteRule } = validateFlowUpdateRuleArgs(args)
+				if (!this.files.flow) throw new Error('Flow service is unavailable.')
+				result = await this.files.flow.updateRule(ruleId, active, deleteRule, call.signal)
+			} else if (name === 'nc_windmill_draft') {
+				const { path, summary, value } = validateWindmillDraftArgs(args)
+				if (!this.files.windmill) throw new Error('Windmill service is unavailable.')
+				result = await this.files.windmill.createDraftFlow(path, summary, value, call.signal)
+			} else if (name === 'nc_windmill_run') {
+				const { path, args: fArgs } = validateWindmillRunArgs(args)
+				if (!this.files.windmill) throw new Error('Windmill service is unavailable.')
+				result = await this.files.windmill.runFlow(path, fArgs, call.signal)
+			} else if (name === 'nc_n8n_draft') {
+				const { name: wName, nodes, connections } = validateN8nDraftArgs(args)
+				if (!this.files.n8n) throw new Error('n8n service is unavailable.')
+				result = await this.files.n8n.createDraftWorkflow(wName, nodes, connections, call.signal)
+			} else if (name === 'nc_n8n_execute') {
+				const { workflowId, data } = validateN8nExecuteArgs(args)
+				if (!this.files.n8n) throw new Error('n8n service is unavailable.')
+				result = await this.files.n8n.executeWorkflow(workflowId, data, call.signal)
+			} else if (name === 'nc_notes_create') {
+				const { title, content, category } = validateNotesCreateArgs(args)
+				if (!this.files.notes) throw new Error('Notes service is unavailable.')
+				result = await this.files.notes.createNote(title, content, category, call.signal)
+			} else if (name === 'nc_bookmarks_create') {
+				const { url, title, tags } = validateBookmarksCreateArgs(args)
+				if (!this.files.bookmarks) throw new Error('Bookmarks service is unavailable.')
+				result = await this.files.bookmarks.createBookmark(url, title, tags, call.signal)
+			} else {
+				throw new Error('Unsupported workflow mutation.')
+			}
+			return {
+				status: name.endsWith('_run') || name.endsWith('_execute') ? 'executed' : 'saved',
+				result,
+				target: proposal.target,
+				history: name.endsWith('_run') || name.endsWith('_execute') ? 'no_undo_of_delivery_or_exposure_compensation_only' : 'not-integrated',
+			}
+		} catch (error) {
+			this.#writeBlocked = true
 			throw error
 		}
 	}

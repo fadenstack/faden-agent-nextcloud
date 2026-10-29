@@ -21,6 +21,17 @@ export interface Identity extends AppConfig {
 	calendarEnabled?: boolean
 	tasksEnabled?: boolean
 	contactsEnabled?: boolean
+	mailEnabled?: boolean
+	talkEnabled?: boolean
+	collectivesEnabled?: boolean
+	formsEnabled?: boolean
+	whiteboardEnabled?: boolean
+	flowEnabled?: boolean
+	windmillEnabled?: boolean
+	n8nEnabled?: boolean
+	agentfileEnabled?: boolean
+	notesEnabled?: boolean
+	bookmarksEnabled?: boolean
 }
 export interface FileMetadata {
 	id: number
@@ -455,6 +466,137 @@ export interface ContactsApi {
 	deleteContact(bookId: string, filename: string, expectedEtag: string, signal?: AbortSignal): Promise<void>
 }
 
+export interface MailMessage {
+	id: number
+	subject: string
+	from: string
+	to: string[]
+	date: string
+	body?: string
+	hasAttachments?: boolean
+	unread?: boolean
+}
+
+export interface MailDraft {
+	id?: number
+	accountRef: string
+	subject: string
+	body: string
+	recipients: string[]
+	attachments?: string[]
+}
+
+export interface MailApi {
+	readMail(query?: string, accountId?: string, signal?: AbortSignal): Promise<{ messages: MailMessage[]; total: number }>
+	saveDraft(draft: MailDraft, signal?: AbortSignal): Promise<{ draftId: number; revision: string }>
+	sendDraft(draftId: number, expectedRevision: string, signal?: AbortSignal): Promise<{ delivered: boolean; messageId: string }>
+}
+
+export interface TalkRoom {
+	token: string
+	name: string
+	type: number
+	participants: string[]
+	unreadMessages?: number
+}
+
+export interface TalkMessage {
+	id: number
+	token: string
+	actorId: string
+	actorDisplayName: string
+	message: string
+	timestamp: number
+}
+
+export interface TalkApi {
+	readContext(roomToken: string, signal?: AbortSignal): Promise<{ room: TalkRoom; history: TalkMessage[] }>
+	sendMessage(roomToken: string, message: string, replyTo?: number, signal?: AbortSignal): Promise<{ messageId: number; timestamp: number }>
+}
+
+export interface Collective {
+	id: number
+	name: string
+}
+
+export interface CollectivePage {
+	id: number
+	collectiveId: number
+	title: string
+	content?: string
+	parentId?: number | null
+}
+
+export interface CollectivesApi {
+	readHierarchy(collectiveId?: number, signal?: AbortSignal): Promise<{ collectives: Collective[]; pages: CollectivePage[] }>
+	createPage(collectiveId: number, title: string, parentId?: number | null, signal?: AbortSignal): Promise<{ pageId: number; title: string }>
+	deletePage(pageId: number, signal?: AbortSignal): Promise<{ deleted: boolean; pageId: number }>
+}
+
+export interface FormQuestion {
+	id: number
+	text: string
+	type: string
+	mandatory: boolean
+	options?: string[]
+}
+
+export interface FormDefinition {
+	id: number
+	title: string
+	questions: FormQuestion[]
+}
+
+export interface FormsApi {
+	readForm(formId?: number, signal?: AbortSignal): Promise<{ forms: FormDefinition[]; submissions?: unknown[] }>
+	createForm(title: string, questions: FormQuestion[], signal?: AbortSignal): Promise<{ formId: number; title: string }>
+	submitResponse(formId: number, answers: Record<string, unknown>, signal?: AbortSignal): Promise<{ submissionId: number; recorded: boolean }>
+}
+
+export interface WhiteboardApi {
+	readBoard(pathOrId: string, signal?: AbortSignal): Promise<{ id: string; scene: unknown }>
+	createBoard(path: string, name: string, signal?: AbortSignal): Promise<{ path: string; created: boolean }>
+}
+
+export interface FlowRule {
+	id: number
+	description: string
+	operation: string
+	active: boolean
+}
+
+export interface FlowApi {
+	readRules(signal?: AbortSignal): Promise<{ rules: FlowRule[] }>
+	createDraftRule(description: string, operation: string, config: Record<string, unknown>, signal?: AbortSignal): Promise<{ ruleId: number; active: false }>
+	updateRule(ruleId: number, active?: boolean, deleteRule?: boolean, signal?: AbortSignal): Promise<{ ruleId: number; active: boolean; deleted: boolean }>
+}
+
+export interface WindmillApi {
+	readFlows(path?: string, signal?: AbortSignal): Promise<{ flows: unknown[]; jobs: unknown[] }>
+	createDraftFlow(path: string, summary: string, value: unknown, signal?: AbortSignal): Promise<{ path: string; draft: boolean }>
+	runFlow(path: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<{ jobId: string; status: string }>
+}
+
+export interface N8nApi {
+	readWorkflows(signal?: AbortSignal): Promise<{ workflows: unknown[]; executions: unknown[] }>
+	createDraftWorkflow(name: string, nodes: unknown[], connections: unknown, signal?: AbortSignal): Promise<{ id: string; active: false }>
+	executeWorkflow(workflowId: string, data?: Record<string, unknown>, signal?: AbortSignal): Promise<{ executionId: string; status: string }>
+}
+
+export interface AgentfileApi {
+	readManifest(contentOrPath: string, signal?: AbortSignal): Promise<{ name: string; version: string; description: string; instructions: string }>
+}
+
+export interface NotesApi {
+	readNotes(category?: string, signal?: AbortSignal): Promise<{ notes: { id: number; title: string; category: string; content?: string }[] }>
+	createNote(title: string, content: string, category?: string, signal?: AbortSignal): Promise<{ noteId: number; title: string }>
+}
+
+export interface BookmarksApi {
+	searchBookmarks(query?: string, signal?: AbortSignal): Promise<{ bookmarks: { id: number; url: string; title: string; tags: string[] }[] }>
+	createBookmark(url: string, title?: string, tags?: string[], signal?: AbortSignal): Promise<{ bookmarkId: number; url: string }>
+}
+
 export interface FileApi {
 	history?: HistoryApi
 	tables?: TablesApi
@@ -462,6 +604,17 @@ export interface FileApi {
 	calendar?: CalendarApi
 	tasks?: TasksApi
 	contacts?: ContactsApi
+	mail?: MailApi
+	talk?: TalkApi
+	collectives?: CollectivesApi
+	forms?: FormsApi
+	whiteboard?: WhiteboardApi
+	flow?: FlowApi
+	windmill?: WindmillApi
+	n8n?: N8nApi
+	agentfile?: AgentfileApi
+	notes?: NotesApi
+	bookmarks?: BookmarksApi
 	setCloudIdentity?(provider?: (signal?: AbortSignal) => Promise<string>): void
 	searchTransport?: SearchTransport
 	identity(signal?: AbortSignal): Promise<Identity>
