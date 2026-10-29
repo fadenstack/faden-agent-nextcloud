@@ -347,7 +347,9 @@ export function stricterRisk(host: ToolRisk, published: ToolRisk): ToolRisk {
 /** Research disposition is planning traceability, never an executable tool list. */
 export const TOOL_ROLLOUT = Object.freeze({
 	manifestVersion: 1,
-	enabledSubsystems: Object.freeze([
+	enabledSubsystems: Object.freeze(['files'] as const),
+	// Interfaces and mock tests do not establish production provider support.
+	experimentalSubsystems: Object.freeze([
 		'files', 'tables', 'deck', 'calendar', 'tasks', 'contacts',
 		'mail', 'talk', 'collectives', 'forms', 'whiteboard',
 		'flow', 'windmill', 'n8n', 'agentfile', 'notes', 'bookmarks',
