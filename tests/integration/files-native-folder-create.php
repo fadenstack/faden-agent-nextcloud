@@ -138,7 +138,7 @@ try {
 	$assert('proposal binds folderId', $proposal['folderId'] === $fixtureFolder->getId());
 	$assert('proposal binds name', $proposal['name'] === $unicodeName);
 	$assert('proposal approved is false', $proposal['approved'] === false);
-	$assert('proposal announces execution gate before approval', $proposal['executionReady'] === true);
+	$assert('proposal announces execution gate before approval', $proposal['executionReady'] === false);
 	$assert('proposal has future expiration', $proposal['expires'] > time());
 	$assert('proposal target has full path', str_ends_with($proposal['target'], '/' . $unicodeName));
 
@@ -173,37 +173,48 @@ try {
 	$assert('cancelFolder returns cancelled true', ($cancelled['cancelled'] ?? false) === true);
 	$denied('cancelled proposal cannot be approved', fn () => $broker->approveFolder($cancelProp['id']), 410);
 
-	// 13c. Conditional folder creation protocol with folderProtocol = 1
+	// 13c. Conditional DAV remains gated because path substitution can write elsewhere.
 	$condProp = $broker->proposeFolder($folderRef, 'CondFolder');
 	$broker->approveFolder($condProp['id']);
-	$plan = $broker->commitFolder($condProp['id'], 1);
-	$assert('commitFolder with protocol 1 returns dav-create-folder plan', ($plan['kind'] ?? '') === 'dav-create-folder');
-	$assert('plan binds receiptId', !empty($plan['receiptId']));
-	$assert('plan binds dav_path', str_contains($plan['dav_path'], 'CondFolder'));
-	$assert('plan binds parent_resource_id', $plan['parent_resource_id'] === $folderRef);
-	$assert('plan binds parent_etag', !empty($plan['parent_etag']));
-	$assert('plan binds name', $plan['name'] === 'CondFolder');
+	$blocked = $broker->commitFolder($condProp['id'], 1);
+	$assert('protocol 1 cannot bypass the native dispatch release gate', $blocked['outcome'] === 'not-dispatched' && !isset($blocked['kind']));
+	$assert('gated conditional protocol creates no directory', !$fixtureFolder->nodeExists('CondFolder'));
 
-	// finishFolder before folder exists fails 409 and consumes receipt
-	$denied('finishFolder fails 409 before folder exists on filesystem', fn () => $broker->finishFolder($plan['receiptId']), 409);
-	$denied('replaying consumed finishFolder fails 410', fn () => $broker->finishFolder($plan['receiptId']), 410);
+	// Legacy receipt reconciliation validates an actual native response identity.
+	$legacyProp = $broker->proposeFolder($folderRef, 'LegacyReceipt');
+	$created = $fixtureFolder->newFolder('LegacyReceipt');
+	$nativeSession = Server::get(ISession::class);
+	$state = $nativeSession->get('fadenstack_agent.state');
+	$legacy = ['receiptId' => $legacyProp['id'], 'folderId' => $fixtureFolder->getId(),
+		'folderPath' => '/' . ltrim($homeA->getRelativePath($fixtureFolder->getPath()), '/'), 'name' => 'LegacyReceipt',
+		'target' => $legacyProp['target'], 'parentEtag' => $fixtureFolder->getEtag(), 'expires' => time() + 600,
+		'identityScope' => $legacyProp['identityScope'], 'identitySession' => $legacyProp['identitySession']];
+	$state['folderReceipts'][$legacyProp['id']] = $legacy;
+	$nativeSession->set('fadenstack_agent.state', $state);
+	$denied('missing creation response ID is refused', fn () => $broker->finishFolder($legacyProp['id']), 400);
+	$denied('invalid creation response ID is refused', fn () => $broker->finishFolder($legacyProp['id'], 'not-an-id'), 400);
+	$denied('numeric-prefix ID substitution is refused', fn () => $broker->finishFolder($legacyProp['id'], (string)$created->getId() . 'forged'), 409);
+	$state = $nativeSession->get('fadenstack_agent.state');
+	$state['folderReceipts'][$legacyProp['id']] = $legacy;
+	$nativeSession->set('fadenstack_agent.state', $state);
+	$verified = $broker->finishFolder($legacyProp['id'], \OCP\Files\DavUtil::getDavFileId($created->getId()));
+	$assert('valid legacy receipt verifies exact native DAV identity', $verified['outcome'] === 'verified' && $verified['resourceId'] === 'nextcloud:files:' . $created->getId());
+	$denied('legacy receipt finalization remains single-use', fn () => $broker->finishFolder($legacyProp['id'], \OCP\Files\DavUtil::getDavFileId($created->getId())), 410);
 
-	// 13d. Successful conditional folder creation and verification
-	$condProp2 = $broker->proposeFolder($folderRef, 'CondVerified');
-	$broker->approveFolder($condProp2['id']);
-	$plan2 = $broker->commitFolder($condProp2['id'], 1);
-
-	// Simulate client WebDAV MKCOL 201
-	$createdFolderNode = $fixtureFolder->newFolder('CondVerified');
-	$verifiedOutcome = $broker->finishFolder($plan2['receiptId'], (string)$createdFolderNode->getId());
-	$assert('finishFolder returns verified outcome', ($verifiedOutcome['outcome'] ?? '') === 'verified');
-	$assert('verified outcome returns history not-integrated', ($verifiedOutcome['history'] ?? '') === 'not-integrated');
-	$assert('verified outcome binds created resourceId', $verifiedOutcome['resourceId'] === 'nextcloud:files:' . $createdFolderNode->getId());
-	$assert('verified outcome binds folder metadata', is_array($verifiedOutcome['folder']));
-	$assert('verified outcome observedState is directory', ($verifiedOutcome['observedState']['is_directory'] ?? false) === true);
-
-	// finishFolder cannot be replayed (fails 410)
-	$denied('replaying finishFolder fails 410', fn () => $broker->finishFolder($plan2['receiptId']), 410);
+	// Cancellation works before the proposal response is available, and after configuration changes.
+	$nonce = 'request-11111111-1111-4111-8111-111111111111';
+	$broker->cancelFolder($nonce);
+	$denied('cancel-before-propose tombstone refuses a reordered preview', fn () => $broker->proposeFolder($folderRef, 'TooLate', null, $nonce), 410);
+	$nonce2 = 'request-22222222-2222-4222-8222-222222222222';
+	$correlated = $broker->proposeFolder($folderRef, 'Correlated', null, $nonce2);
+	$broker->cancelFolder($nonce2);
+	$denied('cancellation by request nonce removes pending proposal', fn () => $broker->approveFolder($correlated['id']), 410);
+	$changedConfig = $broker->proposeFolder($folderRef, 'ChangedConfig');
+	$oldAgent = $config->getAppValue(Application::APP_ID, 'agent', '');
+	$config->setAppValue(Application::APP_ID, 'agent', 'changed-profile');
+	$broker->cancelFolder($changedConfig['id']);
+	$config->setAppValue(Application::APP_ID, 'agent', $oldAgent);
+	$denied('own-session cancellation survives a changed agent configuration', fn () => $broker->approveFolder($changedConfig['id']), 410);
 
 	// 14. Expiration, configuration/session substitution and native Unicode bounds.
 	$expired = $broker->proposeFolder($folderRef, 'Expired');
@@ -227,6 +238,27 @@ try {
 	$assert('native name accepts 100 Unicode characters within 255 bytes', $unicode['name'] === str_repeat('ä', 100));
 	$denied('native name refuses more than 255 UTF-8 bytes', fn () => $broker->proposeFolder($folderRef, str_repeat('📁', 64)), 400);
 	$denied('native name refuses surrounding whitespace', fn () => $broker->proposeFolder($folderRef, ' padded '), 400);
+
+	// Repeated cancellation recovers proposal quota; tombstones stay bounded.
+	$state = $nativeSession->get('fadenstack_agent.state');
+	$state['folderProposals'] = [];
+	$nativeSession->set('fadenstack_agent.state', $state);
+	for ($index = 0; $index < 12; $index++) {
+		$item = $broker->proposeFolder($folderRef, 'Cancelled' . $index);
+		$broker->cancelFolder($item['id']);
+	}
+	$assert('twelve cancelled previews recover the ten-proposal quota immediately', count($nativeSession->get('fadenstack_agent.state')['folderProposals']) === 0);
+	$enabled = $config->getAppValue(Application::APP_ID, 'integration_enabled', '0');
+	$config->setAppValue(Application::APP_ID, 'integration_enabled', '0');
+	$broker->checkSession($nativeSession->get('fadenstack_agent.state')['binding']);
+	$assert('native session cleanup does not require an enabled integration', $broker->cancelFolder($nonce)['cancelled']);
+	$denied('ordinary operations remain disabled during cleanup', fn () => $broker->check($nativeSession->get('fadenstack_agent.state')['binding']), 403);
+	$config->setAppValue(Application::APP_ID, 'integration_enabled', $enabled);
+	for ($index = 0; $index < 101; $index++) {
+		$broker->cancelFolder(sprintf('request-%08x-1111-4111-8111-111111111111', $index));
+	}
+	$assert('cancellation tombstones are bounded to one hundred entries', count($nativeSession->get('fadenstack_agent.state')['folderCancellations']) === 100);
+	$denied('overflow refuses new previews without evicting live cancellation records', fn () => $broker->proposeFolder($folderRef, 'Overflow'), 429);
 
 	// 15. Native permission refusal: read-only share recipient cannot create folder
 	// Share fixture folder with User B read-only (PERMISSION_READ only, no PERMISSION_CREATE)

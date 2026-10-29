@@ -126,11 +126,16 @@ class FileService {
 	}
 
 	public function check(string $binding): void {
+		$this->checkSession($binding);
+		$this->config->requireEnabled();
+	}
+
+	/** Native cleanup only: revoking an own-session proposal needs no active cloud configuration. */
+	public function checkSession(string $binding): void {
 		$s = $this->state();
 		if (!$binding || !hash_equals($s['binding'], $binding)) {
 			throw new Problem('The Nextcloud session changed. Reload and sign in again.', 401);
 		}
-		$this->config->requireEnabled();
 	}
 
 	private function node(int $id): Node {
@@ -702,8 +707,18 @@ class FileService {
 		return ['operation' => 'create', 'file' => $this->metadata($file, 'write'), 'actionId' => $r['journal']['id']];
 	}
 
-	public function proposeFolder(string $resourceId = '', string $name = '', ?string $expectedRevision = null): array {
+	public function proposeFolder(string $resourceId = '', string $name = '', ?string $expectedRevision = null, string $clientRequestId = ''): array {
 		$this->scope->assertFolderCreateTool();
+		if ($clientRequestId !== '' && !preg_match('/^request-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/D', $clientRequestId)) {
+			throw new Problem('Invalid folder preview request identifier.');
+		}
+		$state = $this->state();
+		if (($state['folderCancellationOverflow'] ?? 0) > time()) {
+			throw new Problem('Too many preview cancellations. Wait up to ten minutes before starting another preview.', 429);
+		}
+		if ($clientRequestId !== '' && ($state['folderCancellations'][$clientRequestId] ?? 0) > time()) {
+			throw new Problem('This folder preview request was cancelled. Start a new request.', 410);
+		}
 		if (!preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $resourceId, $match)) {
 			throw new Problem('Use a Nextcloud file resource ID, not a path or URL.');
 		}
@@ -728,7 +743,7 @@ class FileService {
 
 		$id = bin2hex(random_bytes(24));
 		$identity = $this->journalIdentity();
-		$executionReady = $this->config->folderCreateEnabled();
+		$executionReady = $this->config->folderCreateEnabled() && $this->config->folderDispatchSupported();
 		$p = [
 			'id' => $id,
 			'toolName' => 'nc_files_create_folder',
@@ -742,6 +757,7 @@ class FileService {
 			'expires' => time() + 600,
 			'approved' => false,
 			'executionReady' => $executionReady,
+			'clientRequestId' => $clientRequestId,
 			'identityScope' => $identity->scopeHash,
 			'identitySession' => $identity->sessionHash,
 		];
@@ -764,14 +780,26 @@ class FileService {
 	}
 
 	public function cancelFolder(string $id): array {
+		if ($id === '' || strlen($id) > 128 || !preg_match('/^[a-zA-Z0-9-]+$/D', $id)) {
+			throw new Problem('Invalid folder cancellation identifier.');
+		}
 		$s = $this->state();
+		$s['folderCancellations'] = array_filter($s['folderCancellations'] ?? [], fn ($expires) => $expires > time());
+		if (preg_match('/^request-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/D', $id)) {
+			if (count($s['folderCancellations']) < 100 || isset($s['folderCancellations'][$id])) {
+				$s['folderCancellations'][$id] = time() + 600;
+			} else {
+				// Never evict a live cancellation and accidentally revive a delayed preview.
+				$s['folderCancellationOverflow'] = time() + 600;
+			}
+		}
 		$s['folderProposals'] = array_filter($s['folderProposals'] ?? [], fn ($item) => ($item['expires'] ?? 0) > time());
+		$s['folderProposals'] = array_filter($s['folderProposals'], fn ($item) => ($item['clientRequestId'] ?? '') !== $id);
 		if (isset($s['folderProposals'][$id])) {
-			$this->assertProposalIdentity($s['folderProposals'][$id]);
 			unset($s['folderProposals'][$id]);
 		}
+		$s['folderReceipts'] = array_filter($s['folderReceipts'] ?? [], fn ($item) => ($item['expires'] ?? 0) > time());
 		if (isset($s['folderReceipts'][$id])) {
-			$this->assertProposalIdentity($s['folderReceipts'][$id]);
 			unset($s['folderReceipts'][$id]);
 		}
 		$this->session->set(self::KEY, $s);
@@ -823,7 +851,7 @@ class FileService {
 			throw new Problem('A folder or file with this name already exists.', 409);
 		}
 
-		if ($folderProtocol === 1 && $this->config->folderCreateEnabled()) {
+		if ($folderProtocol === 1 && $this->config->folderCreateEnabled() && $this->config->folderDispatchSupported()) {
 			$parentMetadata = $this->metadata($folder, 'write');
 			$base = '/files/' . rawurlencode($this->uid()) . '/' . implode('/', array_map('rawurlencode', explode('/', trim($parentMetadata['path'], '/'))));
 			$base = rtrim($base, '/') . '/';
@@ -865,6 +893,9 @@ class FileService {
 
 	public function finishFolder(string $receiptId, string $createdFileId = ''): array {
 		$this->scope->assertFolderCreateTool();
+		if ($createdFileId === '' || strlen($createdFileId) > 128 || !ctype_alnum($createdFileId)) {
+			throw new Problem('A valid native creation response ID is required.', 400);
+		}
 		$s = $this->state();
 		$r = $s['folderReceipts'][$receiptId] ?? null;
 		if (!$r || ($r['expires'] ?? 0) <= time()) {
@@ -883,6 +914,7 @@ class FileService {
 		if ($parentPath !== $r['folderPath']) {
 			throw new Problem('The destination folder moved. No success is claimed.', 409);
 		}
+		$this->scope->assertMovement($folder, $folder);
 		if (!$folder->nodeExists($r['name'])) {
 			throw new Problem('The created folder could not be confirmed. Inspect the destination before continuing.', 409);
 		}
@@ -890,7 +922,7 @@ class FileService {
 		if (!$createdNode instanceof Folder) {
 			throw new Problem('The created resource is not a directory.', 409);
 		}
-		if ($createdFileId !== '' && (int)$createdFileId > 0 && $createdNode->getId() !== (int)$createdFileId) {
+		if (!hash_equals(\OCP\Files\DavUtil::getDavFileId($createdNode->getId()), $createdFileId)) {
 			throw new Problem('The created folder identity does not match the creation response.', 409);
 		}
 		if (count($createdNode->getDirectoryListing()) !== 0) {

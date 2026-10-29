@@ -29,9 +29,13 @@ class FilesController extends Controller {
 		parent::__construct($appName, $request);
 	}
 
-	private function run(callable $operation, bool $mutation = false): Response {
+	private function run(callable $operation, bool $mutation = false, bool $cleanup = false): Response {
 		try {
-			$this->files->check($this->request->getHeader('X-Fadenstack-Session'));
+			if ($cleanup) {
+				$this->files->checkSession($this->request->getHeader('X-Fadenstack-Session'));
+			} else {
+				$this->files->check($this->request->getHeader('X-Fadenstack-Session'));
+			}
 			if ($mutation) {
 				$token = $this->request->getHeader('X-Fadenstack-Agent-Token');
 				if ($token !== '' || $this->configuration->historyEnabled()) {
@@ -134,8 +138,8 @@ class FilesController extends Controller {
 	}
 	#[NoAdminRequired]
 	#[UseSession]
-	public function proposeFolder(string $resourceId = '', string $name = '', string $expectedRevision = ''): Response {
-		return $this->run(fn () => $this->files->proposeFolder($resourceId, $name, $expectedRevision !== '' ? $expectedRevision : null), true);
+	public function proposeFolder(string $resourceId = '', string $name = '', string $expectedRevision = '', string $clientRequestId = ''): Response {
+		return $this->run(fn () => $this->files->proposeFolder($resourceId, $name, $expectedRevision !== '' ? $expectedRevision : null, $clientRequestId), true);
 	}
 	#[NoAdminRequired]
 	#[UseSession]
@@ -145,7 +149,7 @@ class FilesController extends Controller {
 	#[NoAdminRequired]
 	#[UseSession]
 	public function cancelFolder(string $id): Response {
-		return $this->run(fn () => $this->files->cancelFolder($id), true);
+		return $this->run(fn () => $this->files->cancelFolder($id), false, true);
 	}
 	#[NoAdminRequired]
 	#[UseSession]

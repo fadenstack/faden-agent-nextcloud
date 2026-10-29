@@ -26,8 +26,8 @@ async function approve() {
 		approving.value = false
 	}
 }
-async function deny() {
-	try { await props.host.deny?.(props.part) } catch { /* ignore */ }
+function deny() {
+	props.host.deny?.(props.part).catch(() => {})
 	props.part.deny()
 }
 </script>

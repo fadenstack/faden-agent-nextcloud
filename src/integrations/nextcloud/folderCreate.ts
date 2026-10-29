@@ -1,5 +1,24 @@
-import type { FolderCreateOutcome, FolderCreateProposal } from './types.ts'
+import type { DavFolderCreatePlan, FolderCreateOutcome, FolderCreateProposal } from './types.ts'
 import { nativeFileLink } from './fileReadResults.ts'
+import { validateFolderName } from './filesExtended.ts'
+import { strongEtagHeader } from './adapterGuards.ts'
+
+/** Consistency validation only; this does not replace the native dispatch release gate. */
+export function folderDavPlan(value: DavFolderCreatePlan, id: string, user: string): DavFolderCreatePlan {
+	const fail = () => { throw new Error('Invalid approved Nextcloud creation plan.') }
+	if (!value || value.kind !== 'dav-create-folder' || value.receiptId !== id
+		|| !/^nextcloud:files:[1-9][0-9]{0,14}$/.test(value.parent_resource_id)
+		|| typeof value.parent_path !== 'string' || !value.parent_path.startsWith('/') || value.parent_path.length > 4096
+		|| /[\x00-\x1f\x7f\\]/.test(value.parent_path)) return fail()
+	const parts = value.parent_path === '/' ? [] : value.parent_path.slice(1).split('/')
+	if (parts.some(part => !part || part === '.' || part === '..')) return fail()
+	try { validateFolderName(value.name); strongEtagHeader(value.parent_etag) } catch { return fail() }
+	const target = (value.parent_path === '/' ? '' : value.parent_path) + '/' + value.name
+	const encode = (part: string) => encodeURIComponent(part).replace(/[!'()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+	const path = '/files/' + [user, ...parts, value.name].map(encode).join('/')
+	if (value.target !== target || value.dav_path !== path) return fail()
+	return { kind: value.kind, receiptId: id, dav_path: path, parent_resource_id: value.parent_resource_id, parent_path: value.parent_path, parent_etag: value.parent_etag, name: value.name, target }
+}
 
 export function folderProposal(value: FolderCreateProposal, reference: string, name: string, revision: string): FolderCreateProposal {
 	if (!value || typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.id)

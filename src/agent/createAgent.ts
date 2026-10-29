@@ -288,6 +288,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if (expanded) this.#expandedPreviews.set(request.callId, canonical(request.arguments))
 					const result = await this.approvals.request(request, signal)
 					if (!result.approved) {
+						const folder = this.#folderCreateProposals.get(request.callId)
+						if (folder) this.files.cancelFolderCreate?.(folder.id).catch(() => {})
 						this.#expandedInputs.delete(request.callId)
 						this.#expandedPreviews.delete(request.callId)
 						this.#expandedApproved.delete(request.callId)
@@ -564,6 +566,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (typeof expectedRevision !== 'string' || expectedRevision !== destination.revision) throw new Error('The destination revision changed. Inspect the folder again.')
 		if (!this.files.proposeFolderCreate) throw new Error('Folder creation is unavailable.')
 		const result = await this.files.proposeFolderCreate(targetId, folderName, expectedRevision, signal)
+		if (signal.aborted) this.files.cancelFolderCreate?.(result.id).catch(() => {})
 		signal.throwIfAborted()
 		return folderProposal(result, targetId, folderName, expectedRevision)
 	}
@@ -744,12 +747,14 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	async deny(part: ApprovalPart): Promise<void> {
+		if (!part.isPending) return
 		if (part.toolName === 'nc_files_create_folder' && part.request.source === 'host') {
 			const proposal = this.#folderCreateProposals.get(part.request.callId)
 			this.#folderCreateProposals.delete(part.request.callId)
 			this.#folderCreateInputs.delete(part.request.callId)
 			this.#folderCreatePreviews.delete(part.request.callId)
 			this.#proposalViews.delete(part.request.callId)
+			part.deny()
 			if (proposal && this.files.cancelFolderCreate) {
 				try {
 					await this.files.cancelFolderCreate(proposal.id)
@@ -757,7 +762,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					// Ignore cancellation network errors
 				}
 			}
-		}
+		} else part.deny()
 	}
 
 	/** One exact, explicitly approved development action. Native production permits remain a release gate. */

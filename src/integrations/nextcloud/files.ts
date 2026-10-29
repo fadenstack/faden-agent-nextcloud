@@ -6,6 +6,7 @@ import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 import { sha256Hex } from './tables.ts'
 import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './adapterGuards.ts'
 import { parseDavProperties, parseDavDocument, contentProperty } from './caldav.ts'
+import { folderDavPlan } from './folderCreate.ts'
 
 const MAX_DAV_RESPONSE_BYTES = 512 * 1024
 
@@ -596,7 +597,20 @@ export class NextcloudFiles implements FileApi {
 
 	async proposeFolderCreate(resourceId: string, name: string, expectedRevision?: string, signal?: AbortSignal): Promise<FolderCreateProposal> {
 		await this.assertIdentity(signal)
-		return this.post<FolderCreateProposal>('/files/folder/propose', { resourceId, name, expectedRevision }, signal)
+		signal?.throwIfAborted()
+		const clientRequestId = `request-${crypto.randomUUID()}`
+		let cancelled = false
+		const cancel = () => {
+			if (cancelled) return
+			cancelled = true
+			this.cancelFolderCreate(clientRequestId).catch(() => {})
+		}
+		signal?.addEventListener('abort', cancel, { once: true })
+		try {
+			const result = await this.post<FolderCreateProposal>('/files/folder/propose', { resourceId, name, expectedRevision, clientRequestId }, signal)
+			signal?.throwIfAborted()
+			return result
+		} catch (error) { cancel(); throw error } finally { signal?.removeEventListener('abort', cancel) }
 	}
 
 	async approveFolderCreate(id: string, signal?: AbortSignal): Promise<void> {
@@ -605,8 +619,13 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async cancelFolderCreate(id: string, signal?: AbortSignal): Promise<void> {
-		await this.assertIdentity(signal)
-		await this.post(`/files/folder/${encodeURIComponent(id)}/cancel`, {}, signal)
+		// Cancelling only own native-session state remains possible after agent or
+		// integration configuration changes. Never send a cloud token for cleanup.
+		await axios.post(generateUrl(`/apps/fadenstack_agent/files/folder/${encodeURIComponent(id)}/cancel`), {}, {
+			headers: { 'X-Fadenstack-Session': this.initial.binding },
+			timeout: 5000,
+			signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
+		})
 	}
 
 	async commitFolderCreate(id: string, signal?: AbortSignal): Promise<FolderCreateOutcome> {
@@ -619,11 +638,7 @@ export class NextcloudFiles implements FileApi {
 		if (!('kind' in planOrOutcome) || planOrOutcome.kind !== 'dav-create-folder') {
 			return planOrOutcome as FolderCreateOutcome
 		}
-		const plan = planOrOutcome
-		const prefix = `/files/${encodeURIComponent(this.initial.userId)}/`
-		if (!plan.dav_path.startsWith(prefix) || /[?#\r\n]/.test(plan.dav_path)) {
-			throw new Error('Invalid approved Nextcloud creation plan.')
-		}
+		const plan = folderDavPlan(planOrOutcome, id, this.initial.userId)
 		await this.assertIdentity(signal)
 		const [parent] = await this.searchTransport.resolve([plan.parent_resource_id], 'all', signal ?? AbortSignal.timeout(20000))
 		if (!parent?.folder || parent.path !== plan.parent_path || parent.etag !== plan.parent_etag || !(parent.permissions & 4)) {
@@ -660,9 +675,12 @@ export class NextcloudFiles implements FileApi {
 
 		if (mkcolRes.status === 201) {
 			const ocFileId = mkcolRes.headers?.['oc-fileid'] || mkcolRes.headers?.['OC-FileId']
+			if (typeof ocFileId !== 'string' || !/^[a-zA-Z0-9]{1,128}$/.test(ocFileId)) {
+				return { outcome: 'ambiguous', history: 'not-integrated', proposalId: plan.receiptId, name: plan.name, parentResourceId: plan.parent_resource_id, target: plan.target, message: 'Nextcloud did not provide a creation identity. Inspect the destination before trying again.' }
+			}
 			try {
 				await this.assertIdentity()
-				return await this.finishFolderCreate(plan.receiptId, ocFileId ? String(ocFileId) : '', AbortSignal.timeout(10000))
+				return await this.finishFolderCreate(plan.receiptId, ocFileId, AbortSignal.timeout(10000))
 			} catch {
 				return {
 					outcome: 'ambiguous',
@@ -676,42 +694,8 @@ export class NextcloudFiles implements FileApi {
 			}
 		}
 
-		if (mkcolRes.status === 412 || mkcolRes.status === 405) {
-			return {
-				outcome: 'not-dispatched',
-				history: 'not-integrated',
-				proposalId: plan.receiptId,
-				name: plan.name,
-				parentResourceId: plan.parent_resource_id,
-				target: plan.target,
-				message: 'A folder or file with this name already exists. No folder was created.',
-			}
-		}
-
-		if (mkcolRes.status === 423) {
-			return {
-				outcome: 'not-dispatched',
-				history: 'not-integrated',
-				proposalId: plan.receiptId,
-				name: plan.name,
-				parentResourceId: plan.parent_resource_id,
-				target: plan.target,
-				message: 'The destination is busy or locked by another operation. No folder was created.',
-			}
-		}
-
-		if (mkcolRes.status === 403) {
-			return {
-				outcome: 'not-dispatched',
-				history: 'not-integrated',
-				proposalId: plan.receiptId,
-				name: plan.name,
-				parentResourceId: plan.parent_resource_id,
-				target: plan.target,
-				message: 'Permission denied to create folder in this destination.',
-			}
-		}
-
+		// A dispatched request's error may originate after a write (hooks or a
+		// lost/replaced response). Status alone is not proof that nothing changed.
 		return {
 			outcome: 'ambiguous',
 			history: 'not-integrated',
@@ -719,7 +703,7 @@ export class NextcloudFiles implements FileApi {
 			name: plan.name,
 			parentResourceId: plan.parent_resource_id,
 			target: plan.target,
-			message: `Folder creation returned unexpected status ${mkcolRes.status}. Inspect destination before retrying.`,
+			message: `Nextcloud returned status ${mkcolRes.status}. Creation is not confirmed; inspect the destination before trying again.`,
 		}
 	}
 
