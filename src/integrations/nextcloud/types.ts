@@ -182,6 +182,26 @@ export interface FolderListing {
 	partial?: boolean
 }
 
+export interface FolderOverviewResults {
+	kind: 'nextcloud-folder-overview'
+	directory: string
+	resourceId?: string
+	etag?: string
+	entries: FolderListingEntry[]
+	partial: boolean
+}
+
+export interface ShareOverviewResults {
+	kind: 'nextcloud-share-overview'
+	resourceId: string
+	etag: string
+	shares: ShareEntry[]
+	complete: boolean
+	coverage: string
+}
+
+export type ToolViewResults = SearchViewResults | FolderOverviewResults | ShareOverviewResults
+
 export interface FolderCreateResult {
 	path: string
 	name: string

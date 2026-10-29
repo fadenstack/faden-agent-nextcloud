@@ -246,6 +246,15 @@
 	background: var(--fdn-bg);
 }
 
+.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-shares-badge {
+	font-size: var(--default-font-size-small, 12px);
+	font-weight: 500;
+	padding: 1px calc(var(--default-grid-baseline, 4px) * 1.5);
+	border: 1px solid var(--fdn-border);
+	border-radius: var(--border-radius-element, 8px);
+	background: var(--fdn-bg);
+}
+
 .fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-excerpt,
 .fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-search-passage p {
 	overflow-wrap: anywhere;

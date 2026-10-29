@@ -7,9 +7,11 @@ import '@fadenstack/ui-web/styles.css'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { useObservable } from '../agent/useObservable.ts'
 import { WRITE_TOOLS, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
-import type { FileContext } from '../integrations/nextcloud/types.ts'
+import type { FileContext, SearchViewResults } from '../integrations/nextcloud/types.ts'
 import NextcloudApproval from './NextcloudApproval.vue'
 import SearchResultsCard from './SearchResultsCard.vue'
+import FolderResultsCard from './FolderResultsCard.vue'
+import SharesResultsCard from './SharesResultsCard.vue'
 import AssistantDetails from './AssistantDetails.vue'
 import ActionHistory from './ActionHistory.vue'
 import '../styles/nextcloud.css'
@@ -60,7 +62,15 @@ const renderers: PartRenderer[] = [
 		}
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
 			const result = props.host.toolResult(part.callId)
-			if (result) return [h(SearchResultsCard, { result, host: props.host }), h(ToolCallView, { part, strings })]
+			if (result) {
+				if (result.kind === 'nextcloud-folder-overview') {
+					return [h(FolderResultsCard, { result, host: props.host }), h(ToolCallView, { part, strings })]
+				}
+				if (result.kind === 'nextcloud-share-overview') {
+					return [h(SharesResultsCard, { result, host: props.host }), h(ToolCallView, { part, strings })]
+				}
+				return [h(SearchResultsCard, { result: result as SearchViewResults, host: props.host }), h(ToolCallView, { part, strings })]
+			}
 		}
 		return undefined
 	},

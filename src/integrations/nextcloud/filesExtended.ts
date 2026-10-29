@@ -1,6 +1,6 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
-import type { FileApi, FileContext, ShareEntry } from './types.ts'
+import type { FileApi, FileContext, ShareEntry, FolderOverviewResults, ShareOverviewResults } from './types.ts'
 import { fileReference } from '../../platform/scope.ts'
 
 export interface ExtendedProposal {
@@ -117,7 +117,16 @@ export function filesReadTools(host: ExtendedFilesHost) {
 					}
 				}
 				c.signal.throwIfAborted()
-				return listing
+				const result: FolderOverviewResults = {
+					kind: 'nextcloud-folder-overview',
+					directory: listing.directory,
+					resourceId: targetId,
+					etag: listing.etag,
+					entries: listing.entries ?? [],
+					partial: listing.partial ?? false,
+				}
+				host.recordResult(c.callId, result)
+				return result
 			},
 		}),
 		defineTool({
@@ -169,7 +178,17 @@ export function filesReadTools(host: ExtendedFilesHost) {
 					if (s.inherited !== undefined) sanitized.inherited = s.inherited
 					return sanitized
 				})
-				return { resourceId: target, etag: listing.etag, shares, complete: listing.complete, coverage: listing.coverage }
+				const result: ShareOverviewResults = {
+					kind: 'nextcloud-share-overview',
+					resourceId: target,
+					etag: listing.etag,
+					shares,
+					complete: listing.complete,
+					coverage: listing.coverage,
+				}
+				c.signal.throwIfAborted()
+				host.recordResult(c.callId, result)
+				return result
 			},
 		}),
 	]

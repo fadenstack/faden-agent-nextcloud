@@ -37,7 +37,7 @@ import {
 	type AgentWithTasks,
 	type AgentWithContacts,
 } from '../integrations/nextcloud/caldav.ts'
-import type { FileApi, FileContext, Identity, Proposal, WriteArguments, SearchViewResults, HistoryDirection, HistoryItem, HistoryPreview, HistoryAvailability, TableSnapshot, TableReadResult, DeckCard } from '../integrations/nextcloud/types.ts'
+import type { FileApi, FileContext, Identity, Proposal, WriteArguments, ToolViewResults, HistoryDirection, HistoryItem, HistoryPreview, HistoryAvailability, TableSnapshot, TableReadResult, DeckCard } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 import type { MutationBinding, WorkspaceCoordinator } from '../workspace/coordinator.ts'
 import { TurnScope, type ScopeIdentity } from '../platform/scope.ts'
@@ -69,7 +69,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #proposalViews = new Map<string, MutationBinding>()
 	readonly #proposalResources = new Map<string, unknown>()
 	readonly #proposalParents = new Map<string, number>()
-	readonly #toolResults = new Map<string, SearchViewResults>()
+	readonly #toolResults = new Map<string, ToolViewResults>()
 	readonly #sessionSources = new Map<string, SourceLedger>()
 	#sources = new SourceLedger()
 	#scope: TurnScope | undefined
@@ -415,12 +415,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	recordResult(callId: string, value: unknown): void {
-		if (!value || typeof value !== 'object' || !('kind' in value) || !['nextcloud-search-results', 'nextcloud-document-search'].includes(String(value.kind))) return
-		this.#toolResults.set(callId, value as SearchViewResults)
+		if (!value || typeof value !== 'object' || !('kind' in value) || !['nextcloud-search-results', 'nextcloud-document-search', 'nextcloud-folder-overview', 'nextcloud-share-overview'].includes(String((value as Record<string, unknown>).kind))) return
+		this.#toolResults.set(callId, value as ToolViewResults)
 		while (this.#toolResults.size > 100) this.#toolResults.delete(this.#toolResults.keys().next().value!)
 	}
 
-	toolResult(callId: string): SearchViewResults | undefined { return this.#toolResults.get(callId) }
+	toolResult(callId: string): ToolViewResults | undefined { return this.#toolResults.get(callId) }
 	async addSearchContext(id: string): Promise<void> {
 		await this.discovery.metadata(id, this.#stop.signal)
 		const context = await this.selection.select(resourceId(id))
