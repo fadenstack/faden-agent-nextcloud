@@ -132,4 +132,19 @@ class FilesController extends Controller {
 	public function finishCreate(string $receiptId): Response {
 		return $this->run(fn () => $this->files->finishCreate($receiptId), true);
 	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function proposeFolder(string $resourceId = '', string $name = '', string $expectedRevision = ''): Response {
+		return $this->run(fn () => $this->files->proposeFolder($resourceId, $name, $expectedRevision !== '' ? $expectedRevision : null), true);
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function approveFolder(string $id): Response {
+		return $this->run(fn () => $this->files->approveFolder($id), true);
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function commitFolder(string $id): Response {
+		return $this->run(fn () => $this->files->commitFolder($id), true);
+	}
 }

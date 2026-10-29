@@ -122,7 +122,7 @@ class FileService {
 		$s = $this->state();
 		$config = $this->config->get();
 		$policy = $config['enabled'] && $config['agent'] && $config['serverUrl'] ? $this->scope->getPolicy($s['user'], $config['serverUrl']) : null;
-		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled(), 'filesReadsEnabled' => $this->config->filesReadsEnabled()];
+		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled(), 'filesReadsEnabled' => $this->config->filesReadsEnabled(), 'folderCreateEnabled' => $this->config->folderCreateEnabled()];
 	}
 
 	public function check(string $binding): void {
@@ -474,6 +474,15 @@ class FileService {
 		}
 	}
 
+	public static function folderName(string $name): void {
+		if ($name !== trim($name) || strlen($name) < 1 || strlen($name) > 100
+			|| preg_match('/[\x00-\x1f\x7f\/\\\\:<>"|?*]/', $name)
+			|| $name === '.' || $name === '..'
+			|| !mb_check_encoding($name, 'UTF-8')) {
+			throw new Problem('Use a valid folder name of 1–100 characters without path separators or special characters.');
+		}
+	}
+
 	/** Call after flushing a guarded stream, before releasing its native write lock. */
 	public static function updateStreamMetadata(File $file): void {
 		$storage = $file->getStorage();
@@ -691,5 +700,148 @@ class FileService {
 		$resource = new JournalResource('files', 'parent:' . $folder->getId() . '/name:' . $r['filename'], 'file:' . $file->getId());
 		$this->journal->finish($this->journalIdentity(), $r['journal']['id'], $r['journal']['ticket'], 'verified', new VerifiedReadback($file->getStorage()->getETag($file->getInternalPath()), $resource));
 		return ['operation' => 'create', 'file' => $this->metadata($file, 'write'), 'actionId' => $r['journal']['id']];
+	}
+
+	public function proposeFolder(string $resourceId = '', string $name = '', ?string $expectedRevision = null): array {
+		$this->scope->assertFolderCreateTool();
+		if (!preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $resourceId, $match)) {
+			throw new Problem('Use a Nextcloud file resource ID, not a path or URL.');
+		}
+		$folder = $this->node((int)$match[1]);
+		if (!$folder instanceof Folder) {
+			throw new Problem('Folder creation requires an explicitly chosen folder, not a file.', 415);
+		}
+		self::folderName($name);
+		if ($expectedRevision !== null && $expectedRevision !== '' && $folder->getEtag() !== $expectedRevision) {
+			throw new Problem('The folder revision changed. Inspect the folder before continuing.', 409);
+		}
+		if (!$folder->isCreatable() || ($folder->getPermissions() & Constants::PERMISSION_CREATE) === 0) {
+			throw new Problem('You cannot create folders in this destination.', 403);
+		}
+		$this->scope->assertMovement($folder, $folder);
+		if ($folder->nodeExists($name)) {
+			throw new Problem('A folder or file with this name already exists.', 409);
+		}
+		$home = $this->root->getUserFolder($this->uid());
+		$parentPath = $home->getRelativePath($folder->getPath());
+		$targetPath = rtrim('/' . ltrim($parentPath, '/'), '/') . '/' . $name;
+
+		$id = bin2hex(random_bytes(24));
+		$identity = $this->journalIdentity();
+		$p = [
+			'id' => $id,
+			'toolName' => 'nc_files_create_folder',
+			'resourceId' => $resourceId,
+			'folderId' => $folder->getId(),
+			'name' => $name,
+			'parentEtag' => $folder->getEtag(),
+			'expectedRevision' => $expectedRevision ?? $folder->getEtag(),
+			'target' => $targetPath,
+			'expires' => time() + 600,
+			'approved' => false,
+			'identityScope' => $identity->scopeHash,
+			'identitySession' => $identity->sessionHash,
+		];
+		$s = $this->state();
+		$s['folderProposals'] = array_filter($s['folderProposals'] ?? [], fn ($item) => ($item['expires'] ?? 0) > time());
+		if (count($s['folderProposals']) >= 10) {
+			throw new Problem('Too many pending proposals. Wait for them to expire.', 429);
+		}
+		$s['folderProposals'][$id] = $p;
+		$this->session->set(self::KEY, $s);
+		return $p;
+	}
+
+	public function folderProposal(string $id): array {
+		$p = $this->state()['folderProposals'][$id] ?? null;
+		if (!$p || ($p['expires'] ?? 0) < time()) {
+			throw new Problem('The folder proposal expired or was already consumed.', 410);
+		}
+		return $p;
+	}
+
+	public function approveFolder(string $id): array {
+		$this->scope->assertFolderCreateTool();
+		$p = $this->folderProposal($id);
+		$this->assertProposalIdentity($p);
+		$folder = $this->node($p['folderId']);
+		if (!$folder instanceof Folder || $folder->getEtag() !== $p['parentEtag']) {
+			throw new Problem('The destination folder changed. Review a new proposal.', 409);
+		}
+		$s = $this->state();
+		$s['folderProposals'][$id]['approved'] = true;
+		$this->session->set(self::KEY, $s);
+		return ['approved' => true];
+	}
+
+	public function commitFolder(string $id): array {
+		$this->scope->assertFolderCreateTool();
+		$p = $this->folderProposal($id);
+		$this->assertProposalIdentity($p);
+		if (!$p['approved']) {
+			throw new Problem('This operation requires explicit approval.', 403);
+		}
+		$s = $this->state();
+		unset($s['folderProposals'][$id]); // one attempt, including failed attempts
+		$this->session->set(self::KEY, $s);
+
+		$folder = $this->node($p['folderId']);
+		if (!$folder instanceof Folder) {
+			throw new Problem('The destination is no longer a folder.', 409);
+		}
+		if ($folder->getEtag() !== $p['parentEtag']) {
+			throw new Problem('The destination folder changed. No folder was created.', 409);
+		}
+		if (!$folder->isCreatable() || ($folder->getPermissions() & Constants::PERMISSION_CREATE) === 0) {
+			throw new Problem('You cannot create folders in this destination.', 403);
+		}
+		$this->scope->assertMovement($folder, $folder);
+
+		if ($folder->nodeExists($p['name'])) {
+			throw new Problem('A folder or file with this name already exists.', 409);
+		}
+
+		try {
+			$createdNode = $folder->newFolder($p['name']);
+		} catch (\OCP\Files\AlreadyExistsException) {
+			throw new Problem('A folder or file with this name already exists.', 409);
+		} catch (\OCP\Files\InvalidPathException $e) {
+			if ($folder->nodeExists($p['name'])) {
+				throw new Problem('A folder or file with this name already exists.', 409);
+			}
+			throw new Problem('Invalid folder name: ' . $e->getMessage(), 400);
+		} catch (\OCP\Files\NotPermittedException) {
+			throw new Problem('Permission denied to create folder in this destination.', 403);
+		} catch (\Throwable $e) {
+			if ($folder->nodeExists($p['name'])) {
+				throw new Problem('A folder or file with this name already exists.', 409);
+			}
+			throw new Problem('Folder creation failed: ' . $e->getMessage(), 500);
+		}
+
+		if (!$createdNode instanceof Folder || !$folder->nodeExists($p['name'])) {
+			throw new Problem('The created folder could not be confirmed. Inspect the destination before continuing.', 409);
+		}
+
+		$createdMetadata = $this->metadata($createdNode, 'metadata');
+		$parentMetadata = $this->metadata($folder, 'metadata');
+
+		return [
+			'outcome' => 'verified',
+			'history' => 'not-integrated',
+			'resourceId' => 'nextcloud:files:' . $createdNode->getId(),
+			'name' => $p['name'],
+			'parentResourceId' => 'nextcloud:files:' . $folder->getId(),
+			'parentPath' => '/' . ltrim($parentMetadata['path'], '/'),
+			'folder' => $createdMetadata,
+			'observedState' => [
+				'id' => $createdNode->getId(),
+				'name' => $createdNode->getName(),
+				'path' => '/' . ltrim($createdMetadata['path'], '/'),
+				'etag' => $createdNode->getEtag(),
+				'permissions' => $createdNode->getPermissions(),
+				'is_directory' => true,
+			],
+		];
 	}
 }

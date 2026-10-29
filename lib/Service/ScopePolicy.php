@@ -72,6 +72,15 @@ class ScopePolicy {
 		}
 	}
 
+	/** Server opt-in and development mode are mandatory for experimental folder creation. */
+	public function assertFolderCreateTool(): void {
+		if ($this->config->getAppValue(Application::APP_ID, 'development', '0') !== '1'
+			|| $this->config->getAppValue(Application::APP_ID, 'folder_create_enabled', '0') !== '1'
+			|| !in_array('nc_files_create_folder', $this->currentPolicy()['tools'], true)) {
+			throw new Problem('Folder creation is unavailable under the current native policy.', 403);
+		}
+	}
+
 	private function currentPolicy(): array {
 		return $this->getPolicy($this->uid(), $this->config->getAppValue(Application::APP_ID, 'server_url', ''));
 	}
@@ -86,6 +95,10 @@ class ScopePolicy {
 			}
 			if ($this->config->getAppValue(Application::APP_ID, 'files_reads_enabled', '0') === '1') {
 				$tools = [...$tools, ...self::EXTENDED_READ_TOOLS];
+			}
+			if ($this->config->getAppValue(Application::APP_ID, 'development', '0') === '1'
+				&& $this->config->getAppValue(Application::APP_ID, 'folder_create_enabled', '0') === '1') {
+				$tools = [...$tools, 'nc_files_create_folder'];
 			}
 			return ['revision' => 'legacy-files-v1', 'sources' => [['kind' => 'user-files']], 'destinations' => [['kind' => 'user-files']],
 				'tools' => $tools, 'sourceClasses' => ['standard'], 'downstreamPolicy' => 'unverified',
@@ -103,12 +116,16 @@ class ScopePolicy {
 			$this->keys($value, ['revision', 'sources', 'destinations', 'tools', 'sourceClasses', 'downstreamPolicy', 'destinationAudiences', 'movements', 'classificationDefault', 'classificationRules', 'limits']);
 			$sources = $this->scopes($value['sources'] ?? []);
 			$destinations = $this->scopes($value['destinations'] ?? []);
-			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS]);
+			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS, 'nc_files_create_folder']);
 			if (!$sources || !$tools || !is_string($value['revision'] ?? null) || strlen($value['revision']) < 1 || strlen($value['revision']) > 100) {
 				throw new \InvalidArgumentException();
 			}
 			if ($this->config->getAppValue(Application::APP_ID, 'files_reads_enabled', '0') !== '1') {
 				$tools = array_values(array_diff($tools, self::EXTENDED_READ_TOOLS));
+			}
+			if ($this->config->getAppValue(Application::APP_ID, 'development', '0') !== '1'
+				|| $this->config->getAppValue(Application::APP_ID, 'folder_create_enabled', '0') !== '1') {
+				$tools = array_values(array_diff($tools, ['nc_files_create_folder']));
 			}
 			$classes = $this->enumList($value['sourceClasses'] ?? ['standard'], self::CLASSES);
 			$audiences = $this->enumList($value['destinationAudiences'] ?? ['private'], self::AUDIENCES);

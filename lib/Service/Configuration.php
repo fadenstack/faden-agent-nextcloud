@@ -49,6 +49,12 @@ class Configuration {
 		return $this->config->getAppValue(Application::APP_ID, 'files_reads_enabled', '0') === '1';
 	}
 
+	/** Distinct server-controlled opt-in for experimental single-folder creation (nc_files_create_folder). Default false, development-only. */
+	public function folderCreateEnabled(): bool {
+		return $this->get()['development']
+			&& $this->config->getAppValue(Application::APP_ID, 'folder_create_enabled', '0') === '1';
+	}
+
 	public function save(string $serverUrl, string $agent, bool $enabled, bool $development): array {
 		$origin = self::origin(trim($serverUrl), $development);
 		if (!preg_match('/^[a-zA-Z0-9_-]{1,100}$/D', $agent)) {

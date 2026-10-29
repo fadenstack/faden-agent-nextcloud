@@ -13,6 +13,7 @@ export interface Identity extends AppConfig {
 	scopePolicy?: ScopePolicy | null
 	historyEnabled?: boolean
 	filesReadsEnabled?: boolean
+	folderCreateEnabled?: boolean
 	/** Development fixtures only until native provider scope/history acceptance. */
 	extendedFilesEnabled?: boolean
 	tablesEnabled?: boolean
@@ -201,6 +202,39 @@ export interface ShareOverviewResults {
 }
 
 export type ToolViewResults = SearchViewResults | FolderOverviewResults | ShareOverviewResults
+
+export interface FolderCreateProposal {
+	id: string
+	toolName: 'nc_files_create_folder'
+	resourceId: string
+	folderId: number
+	name: string
+	parentEtag: string
+	expectedRevision: string
+	target: string
+	expires: number
+	approved: boolean
+	identityScope?: string
+	identitySession?: string
+}
+
+export interface FolderCreateOutcome {
+	outcome: 'verified' | 'not-dispatched' | 'ambiguous'
+	history: 'not-integrated'
+	resourceId: string
+	name: string
+	parentResourceId: string
+	parentPath: string
+	folder: FileMetadata
+	observedState: {
+		id: number
+		name: string
+		path: string
+		etag: string
+		permissions: number
+		is_directory: boolean
+	}
+}
 
 export interface FolderCreateResult {
 	path: string
@@ -420,6 +454,9 @@ export interface FileApi {
 	approve(id: string, signal?: AbortSignal): Promise<void>
 	commit(id: string, signal?: AbortSignal): Promise<WriteResult>
 	scopeResource?(resourceId: string, purpose: ResourcePurpose, signal: AbortSignal): Promise<NativeResource>
+	proposeFolderCreate?(resourceId: string, name: string, expectedRevision?: string, signal?: AbortSignal): Promise<FolderCreateProposal>
+	approveFolderCreate?(id: string, signal?: AbortSignal): Promise<void>
+	commitFolderCreate?(id: string, signal?: AbortSignal): Promise<FolderCreateOutcome>
 	createFolder?(folderPath: string, name: string, signal?: AbortSignal): Promise<FolderCreateResult>
 	copyFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>
 	moveFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>

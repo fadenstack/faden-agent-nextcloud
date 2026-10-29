@@ -31,7 +31,7 @@ async function approve() {
 			{{ part.reason }}
 		</p>
 		<p class="fdn-approval-target">
-			{{ part.toolName === 'nc_actions_revalidate' ? t('fadenstack_agent', 'Verify file revision') : part.toolName === 'nc_actions_reconcile' ? t('fadenstack_agent', 'Inspect outcome') : part.toolName === 'nc_actions_undo' ? t('fadenstack_agent', 'Undo file change') : part.toolName === 'nc_actions_redo' ? t('fadenstack_agent', 'Redo file change') : part.toolName === 'nc_create_text_file' ? t('fadenstack_agent', 'Create file') : t('fadenstack_agent', 'Replace file') }}:
+			{{ part.toolName === 'nc_files_create_folder' ? t('fadenstack_agent', 'Create folder') : part.toolName === 'nc_actions_revalidate' ? t('fadenstack_agent', 'Verify file revision') : part.toolName === 'nc_actions_reconcile' ? t('fadenstack_agent', 'Inspect outcome') : part.toolName === 'nc_actions_undo' ? t('fadenstack_agent', 'Undo file change') : part.toolName === 'nc_actions_redo' ? t('fadenstack_agent', 'Redo file change') : part.toolName === 'nc_create_text_file' ? t('fadenstack_agent', 'Create file') : t('fadenstack_agent', 'Replace file') }}:
 			<strong>{{ part.request.arguments.target }}</strong>
 		</p>
 		<template v-if="part.toolName === 'nc_actions_revalidate'">
@@ -51,10 +51,17 @@ async function approve() {
 			<summary>{{ t('fadenstack_agent', 'Current content') }}</summary>
 			<pre class="fdn-approval-args" dir="auto">{{ part.request.arguments.before }}</pre>
 		</details>
-		<div class="fdn-label">
-			{{ ['nc_actions_reconcile', 'nc_actions_revalidate'].includes(part.toolName) ? t('fadenstack_agent', 'Observed content') : t('fadenstack_agent', 'Proposed content') }}
-		</div>
-		<pre class="fdn-approval-args" dir="auto">{{ part.request.arguments.content }}</pre>
+		<template v-if="part.toolName === 'nc_files_create_folder'">
+			<p class="fdn-approval-description">
+				{{ t('fadenstack_agent', 'An empty folder will be created inside the target directory. Existing items are not overwritten.') }}
+			</p>
+		</template>
+		<template v-else>
+			<div class="fdn-label">
+				{{ ['nc_actions_reconcile', 'nc_actions_revalidate'].includes(part.toolName) ? t('fadenstack_agent', 'Observed content') : t('fadenstack_agent', 'Proposed content') }}
+			</div>
+			<pre class="fdn-approval-args" dir="auto">{{ part.request.arguments.content }}</pre>
+		</template>
 		<div v-if="part.isPending" class="fdn-approval-actions">
 			<button type="button"
 				class="fdn-button fdn-primary"

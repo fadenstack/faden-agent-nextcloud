@@ -196,8 +196,7 @@ export function filesReadTools(host: ExtendedFilesHost) {
 	]
 }
 
-export function filesMutationTools(host: ExtendedFilesHost) {
-	const textSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 200 }
+export function filesFolderCreateTool(host: ExtendedFilesHost) {
 	const nameSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 100, pattern: '^[^/\\\\?#:<>"|*]+$' }
 	const etagSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 150 }
 
@@ -210,7 +209,8 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 				type: 'object',
 				properties: {
 					name: nameSchema,
-					resource_id: { type: 'string', description: 'Optional parent folder path or nextcloud:files:ID.' },
+					resource_id: { type: 'string', description: 'Canonical nextcloud:files:ID for the parent folder. If omitted, uses the explicitly included folder.' },
+					expectedRevision: etagSchema,
 				},
 				required: ['name'],
 				additionalProperties: false,
@@ -223,6 +223,15 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 				return host.files.createFolder(parent, String(args.name), c.signal)
 			},
 		}),
+	]
+}
+
+export function filesMutationTools(host: ExtendedFilesHost) {
+	const textSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 200 }
+	const nameSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 100, pattern: '^[^/\\\\?#:<>"|*]+$' }
+	const etagSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 150 }
+
+	return [
 		defineTool({
 			name: 'nc_files_copy',
 			toolClass: 'destructive',
@@ -297,5 +306,5 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 }
 
 export function filesExtendedTools(host: ExtendedFilesHost) {
-	return [...filesReadTools(host), ...filesMutationTools(host)]
+	return [...filesReadTools(host), ...filesFolderCreateTool(host), ...filesMutationTools(host)]
 }

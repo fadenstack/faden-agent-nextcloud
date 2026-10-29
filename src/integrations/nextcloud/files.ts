@@ -1,7 +1,7 @@
 import axios from '@nextcloud/axios'
 import { getRequestToken } from '@nextcloud/auth'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact, DavCollection, ShareListing } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderCreateResult, FolderCreateProposal, FolderCreateOutcome, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact, DavCollection, ShareListing } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 import { sha256Hex } from './tables.ts'
 import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './adapterGuards.ts'
@@ -555,7 +555,7 @@ export class NextcloudFiles implements FileApi {
 		if (now.userId !== this.initial.userId || now.binding !== this.initial.binding
 			|| now.historyEnabled !== this.initial.historyEnabled
 			|| now.development !== this.initial.development
-			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled', 'filesReadsEnabled'] as const).some(key => now[key] !== this.initial[key])
+			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled', 'filesReadsEnabled', 'folderCreateEnabled'] as const).some(key => now[key] !== this.initial[key])
 			|| now.scopePolicy?.version !== this.initial.scopePolicy?.version
 			|| now.serverUrl !== this.initial.serverUrl || now.agent !== this.initial.agent || !now.enabled) {
 			throw new Error('The Nextcloud session or agent configuration changed. Reload and sign in again.')
@@ -563,7 +563,7 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-		if (this.initial.historyEnabled && (/^\/proposals(?:\/|$)/.test(path) || path === '/creations/finish')) return this.authenticatedPost(path, body, signal)
+		if (this.initial.historyEnabled && (/^\/proposals(?:\/|$)/.test(path) || /^\/files\/folder(?:\/|$)/.test(path) || path === '/creations/finish')) return this.authenticatedPost(path, body, signal)
 		return (await axios.post<T>(generateUrl(`/apps/fadenstack_agent${path}`), body, {
 			headers: { 'X-Fadenstack-Session': this.initial.binding }, signal, timeout: 20000,
 		})).data
@@ -592,6 +592,21 @@ export class NextcloudFiles implements FileApi {
 		if (put.status !== 201) throw new Error('Nextcloud did not confirm a new file creation. No success is claimed.')
 		await this.assertIdentity(signal)
 		return this.post('/creations/finish', { receiptId: result.receiptId }, signal)
+	}
+
+	async proposeFolderCreate(resourceId: string, name: string, expectedRevision?: string, signal?: AbortSignal): Promise<FolderCreateProposal> {
+		await this.assertIdentity(signal)
+		return this.post<FolderCreateProposal>('/files/folder/propose', { resourceId, name, expectedRevision }, signal)
+	}
+
+	async approveFolderCreate(id: string, signal?: AbortSignal): Promise<void> {
+		await this.assertIdentity(signal)
+		await this.post(`/files/folder/${encodeURIComponent(id)}/approve`, {}, signal)
+	}
+
+	async commitFolderCreate(id: string, signal?: AbortSignal): Promise<FolderCreateOutcome> {
+		await this.assertIdentity(signal)
+		return this.post<FolderCreateOutcome>(`/files/folder/${encodeURIComponent(id)}/commit`, {}, signal)
 	}
 
 	async pdf(contextId: string, signal?: AbortSignal): Promise<Uint8Array> {

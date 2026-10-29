@@ -5,7 +5,7 @@ import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
-import { filesReadTools, filesMutationTools, EXTENDED_FILES_MUTATIONS, validateFolderName, validateCopyMoveArgs, validateShareReadonlyArgs, type ExtendedProposal } from '../integrations/nextcloud/filesExtended.ts'
+import { filesReadTools, filesFolderCreateTool, filesMutationTools, EXTENDED_FILES_MUTATIONS, validateFolderName, validateCopyMoveArgs, validateShareReadonlyArgs, type ExtendedProposal } from '../integrations/nextcloud/filesExtended.ts'
 import { tablesTools, TABLES_MUTATIONS, validateAddColumnArgs, validateAddRowArgs, validateUpdateRowArgs, validateDeleteRowArgs, sha256Hex, canonical, rowContent, type TablesProposal } from '../integrations/nextcloud/tables.ts'
 import { experimentalAdaptersAllowed, optionalPositiveInteger } from '../integrations/nextcloud/adapterGuards.ts'
 import { deckTools, DECK_MUTATIONS, validateDeckPatchArgs, validateDeckCreateArgs, validateDeckMoveArgs, validateDeckAssignArgs, validateDeckLabelArgs, cardContent, type DeckProposal } from '../integrations/nextcloud/deck.ts'
@@ -37,7 +37,7 @@ import {
 	type AgentWithTasks,
 	type AgentWithContacts,
 } from '../integrations/nextcloud/caldav.ts'
-import type { FileApi, FileContext, Identity, Proposal, WriteArguments, ToolViewResults, HistoryDirection, HistoryItem, HistoryPreview, HistoryAvailability, TableSnapshot, TableReadResult, DeckCard } from '../integrations/nextcloud/types.ts'
+import type { FileApi, FileContext, Identity, Proposal, WriteArguments, ToolViewResults, HistoryDirection, HistoryItem, HistoryPreview, HistoryAvailability, TableSnapshot, TableReadResult, DeckCard, FolderCreateProposal } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 import type { MutationBinding, WorkspaceCoordinator } from '../workspace/coordinator.ts'
 import { TurnScope, type ScopeIdentity } from '../platform/scope.ts'
@@ -58,6 +58,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly approvals = new ApprovalBroker()
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
+	readonly #folderCreateProposals = new Map<string, FolderCreateProposal>()
 	readonly #extendedProposals = new Map<string, ExtendedProposal>()
 	readonly #tablesProposals = new Map<string, TablesProposal>()
 	readonly #deckProposals = new Map<string, DeckProposal>()
@@ -114,7 +115,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const experimental = experimentalAdaptersAllowed(config)
 		const filesReadsActive = config.filesReadsEnabled === true && !!config.scopePolicy && !!files.organizeRead && !!files.sharesRead
-		const extendedFilesMutations = experimental && config.extendedFilesEnabled === true && !!files.createFolder
+		const folderCreateActive = (config.development === true && config.folderCreateEnabled === true && !!files.proposeFolderCreate)
+			|| (experimental && config.extendedFilesEnabled === true && !files.proposeFolderCreate && !!files.createFolder)
+		const extendedFilesMutations = experimental && config.extendedFilesEnabled === true && (!!files.createFolder || (!!files.copyFile && !!files.moveFile))
 		const tablesEnabled = experimental && config.tablesEnabled === true && !!files.tables
 		const deckEnabled = experimental && config.deckEnabled === true && !!files.deck
 		const calendarEnabled = experimental && config.calendarEnabled === true && !!files.calendar
@@ -123,6 +126,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
 			.addTools(...nextcloudTools(this))
 			.addTools(...(filesReadsActive ? filesReadTools(this) : []))
+			.addTools(...(folderCreateActive ? filesFolderCreateTool(this) : []))
 			.addTools(...(extendedFilesMutations ? filesMutationTools(this) : []))
 			.addTools(...(config.historyEnabled && files.history ? historyTools(this) : []))
 			.addTools(...(tablesEnabled ? tablesTools(this) : []))
@@ -157,7 +161,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.useSessionStore(new MemorySessionStore()).useApprovalStore(new MemoryApprovalStore())
 			.useApprovals({
 				request: async (request, signal) => {
-					const expanded = [EXTENDED_FILES_MUTATIONS, TABLES_MUTATIONS, DECK_MUTATIONS, CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS].some(names => names.has(request.toolName)) && request.source === 'host'
+					const expanded = ([TABLES_MUTATIONS, DECK_MUTATIONS, CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS].some(names => names.has(request.toolName))
+						|| (EXTENDED_FILES_MUTATIONS.has(request.toolName) && (!files.proposeFolderCreate || request.toolName !== 'nc_files_create_folder')))
+						&& request.source === 'host'
 					if (expanded) {
 						if (!experimentalAdaptersAllowed(this.config)) throw new Error('Expanded adapters require isolated development acceptance.')
 						this.#expandedInputs.set(request.callId, canonical(request.arguments))
@@ -180,7 +186,19 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							arguments: { ...request.arguments, historyPreviewId: preview.id, digest: preview.digest, target: preview.target, before: preview.before, content: preview.content, ...(preview.resolution ? { resolution: preview.resolution } : {}), ...(preview.revalidation ? { revalidation: preview.revalidation } : {}) },
 						}
 					}
-					if (EXTENDED_FILES_MUTATIONS.has(request.toolName) && request.source === 'host') {
+					if (request.toolName === 'nc_files_create_folder' && request.source === 'host' && files.proposeFolderCreate) {
+						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+						const binding = this.workspace?.prepare('files')
+						const plan = await this.planFolderCreateMutation(request.arguments, signal)
+						this.#folderCreateProposals.set(request.callId, plan)
+						if (binding) this.#proposalViews.set(request.callId, binding)
+						request = {
+							...request,
+							canAllowAlways: false,
+							canAllowForSession: false,
+							arguments: { ...request.arguments, proposalId: plan.id, target: plan.target, resourceId: plan.resourceId, parentEtag: plan.parentEtag, folderName: plan.name },
+						}
+					} else if (EXTENDED_FILES_MUTATIONS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const binding = this.workspace?.prepare('files')
 						const plan = await this.planExtendedMutation(request.toolName, request.arguments, signal)
@@ -513,6 +531,36 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		}
 	}
 
+	private async planFolderCreateMutation(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<FolderCreateProposal> {
+		await this.files.assertIdentity(signal)
+		const folderName = validateFolderName(args.name)
+		let targetId: string
+		if (args.resource_id !== undefined) {
+			const raw = String(args.resource_id).trim()
+			if (!/^nextcloud:files:[1-9][0-9]{0,14}$/.test(raw)) {
+				throw new Error('Use a Nextcloud file resource ID, not a path or URL.')
+			}
+			targetId = raw
+		} else if (this.turnContext) {
+			if (!this.turnContext.file.folder) {
+				throw new Error('Folder creation requires an explicitly chosen folder, not a file.')
+			}
+			targetId = `nextcloud:files:${this.turnContext.file.id}`
+		} else {
+			throw new Error('Include a folder or provide a parent folder resource_id.')
+		}
+
+		if (this.#scope) {
+			const destination = await this.#scope.bindDestination(targetId, signal)
+			const sources = await Promise.all(this.#sources.references.map(reference => this.#scope!.authorize(reference, this.#sources.purpose(reference), signal)))
+			await this.#scope.assertMovement(sources, destination, signal)
+		}
+
+		const expectedRevision = args.expectedRevision !== undefined ? String(args.expectedRevision) : undefined
+		if (!this.files.proposeFolderCreate) throw new Error('Folder creation is unavailable.')
+		return this.files.proposeFolderCreate(targetId, folderName, expectedRevision, signal)
+	}
+
 	private async planExtendedMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<ExtendedProposal> {
 		await this.files.assertIdentity(signal)
 		if (name === 'nc_files_create_folder') {
@@ -536,6 +584,42 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	async commitMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
+		if (name === 'nc_files_create_folder' && this.#folderCreateProposals.has(call.callId)) {
+			const proposal = this.#folderCreateProposals.get(call.callId)!
+			if (!proposal.approved) throw new Error('This operation requires explicit approval.')
+			if (validateFolderName(args.name) !== proposal.name
+				|| (args.expectedRevision !== undefined && String(args.expectedRevision) !== proposal.expectedRevision)
+				|| (args.resource_id !== undefined && String(args.resource_id).trim() !== proposal.resourceId)) {
+				this.#writeBlocked = true
+				this.#folderCreateProposals.delete(call.callId)
+				this.#proposalViews.delete(call.callId)
+				throw new Error('The arguments changed or no individual approval exists. Review a new proposal.')
+			}
+			this.#folderCreateProposals.delete(call.callId)
+			const binding = this.#proposalViews.get(call.callId)
+			this.#proposalViews.delete(call.callId)
+			await this.files.assertIdentity(call.signal)
+			call.signal.throwIfAborted()
+			const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+			try {
+				if (!this.files.commitFolderCreate) throw new Error('Folder creation is unavailable.')
+				const outcome = await this.files.commitFolderCreate(proposal.id, call.signal)
+				if (outcome.resourceId && this.rememberSource) {
+					await this.rememberSource(outcome.resourceId, call.signal)
+				}
+				const activity = binding && generation !== undefined
+					? await this.workspace!.committed(call.callId, generation, binding, {
+						operation: 'create_folder',
+						file: outcome.folder,
+					}, call.signal)
+					: undefined
+				return activity ? { ...outcome, view: activity.view } : outcome
+			} catch (error) {
+				this.#writeBlocked = true
+				if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error, 'create_folder')
+				throw error
+			}
+		}
 		const proposal = this.#extendedProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
 		this.consumeExpandedApproval(call.callId, args)
@@ -593,7 +677,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			await this.files.history.approve(preview, this.#stop.signal)
 		}
 		const id = part.request.arguments.proposalId
-		if (EXTENDED_FILES_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
+		if (part.toolName === 'nc_files_create_folder' && part.request.source === 'host' && this.files.approveFolderCreate) {
+			const proposal = this.#folderCreateProposals.get(part.request.callId)
+			if (!proposal || proposal.id !== id || !part.isPending) throw new Error('This proposal is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+			await this.files.approveFolderCreate(proposal.id, this.#stop.signal)
+			proposal.approved = true
+		} else if (EXTENDED_FILES_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
 			const proposal = this.#extendedProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
@@ -1539,6 +1629,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#scope = undefined
 		this.#active = undefined
 		this.#proposals.clear()
+		this.#folderCreateProposals.clear()
 		this.#extendedProposals.clear()
 		this.#tablesProposals.clear()
 		this.#deckProposals.clear()
@@ -1570,6 +1661,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#scope?.invalidate()
 		this.#active = undefined
 		this.#proposals.clear()
+		this.#folderCreateProposals.clear()
 		this.#extendedProposals.clear()
 		this.#tablesProposals.clear()
 		this.#deckProposals.clear()

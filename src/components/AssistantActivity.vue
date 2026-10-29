@@ -38,7 +38,7 @@ function dismiss() { props.runtime?.workspace.dismissReceipt() }
 			</button>
 		</div>
 		<div v-else-if="latest" role="status">
-			<strong v-if="latest.outcome === 'committed'">{{ latest.operation === 'revalidate' ? t('fadenstack_agent', 'File revision verified: {name}', { name: latest.target }) : latest.operation === 'reconcile' ? t('fadenstack_agent', 'Outcome recorded: {name}', { name: latest.target }) : t('fadenstack_agent', 'Saved: {name}', { name: latest.target }) }}</strong>
+			<strong v-if="latest.outcome === 'committed'">{{ latest.operation === 'create_folder' ? t('fadenstack_agent', 'Folder created: {name}', { name: latest.target }) : latest.operation === 'revalidate' ? t('fadenstack_agent', 'File revision verified: {name}', { name: latest.target }) : latest.operation === 'reconcile' ? t('fadenstack_agent', 'Outcome recorded: {name}', { name: latest.target }) : t('fadenstack_agent', 'Saved: {name}', { name: latest.target }) }}</strong>
 			<strong v-else>{{ latest.message }}</strong>
 			<p v-if="latest.outcome === 'committed' && !['reconcile', 'revalidate'].includes(latest.operation) && latest.view !== 'refreshed'">
 				{{ latest.view === 'not_visible' ? t('fadenstack_agent', 'Saved in Nextcloud. Open the changed resource to see it.') : t('fadenstack_agent', 'Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.') }}

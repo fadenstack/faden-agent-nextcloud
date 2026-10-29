@@ -57,7 +57,7 @@ const theme = 'nextcloud' as ChatTheme
 // allowed; a search shows its results as cards above the tool line. Everything else is the SDK's own view.
 const renderers: PartRenderer[] = [
 	(part, strings) => {
-		if (part instanceof ApprovalPart && ((WRITE_TOOLS.has(part.toolName) && part.request.arguments.proposalId) || (HISTORY_TOOLS.has(part.toolName) && part.request.arguments.historyPreviewId))) {
+		if (part instanceof ApprovalPart && ((WRITE_TOOLS.has(part.toolName) && part.request.arguments.proposalId) || (HISTORY_TOOLS.has(part.toolName) && part.request.arguments.historyPreviewId) || (part.toolName === 'nc_files_create_folder' && part.request.arguments.proposalId))) {
 			return h(NextcloudApproval, { part, strings, host: props.host })
 		}
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
