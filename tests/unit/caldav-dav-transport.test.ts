@@ -104,7 +104,7 @@ describe('NC10 maintained ical.js parser and hardened DAV read transport', () =>
 			})
 			expect(patched).toContain('München and Zürich')
 			// In RFC 5545, commas are escaped as \, in text values
-			expect(patched).toContain('Ä\\, Ö\\, Ü\\, ß and French')
+			expect(unfold(patched)).toContain('Ä\\, Ö\\, Ü\\, ß and French')
 			const repared = parseDavProperties(patched, 'VEVENT')
 			expect(repared.values.DESCRIPTION).toContain('Ä\\, Ö\\, Ü\\, ß and French')
 		})

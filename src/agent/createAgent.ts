@@ -959,14 +959,14 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (!this.files.calendar) throw new Error('Calendar app is unavailable.')
 		await this.files.assertIdentity(signal)
 		const calendars = await this.files.calendar.listCalendars(signal)
-		return { calendars }
+		return { calendars, complete: calendars.complete === true }
 	}
 
 	async readCalendar(calendarId: string, signal?: AbortSignal): Promise<unknown> {
 		if (!this.files.calendar) throw new Error('Calendar app is unavailable.')
 		await this.files.assertIdentity(signal)
 		const events = await this.files.calendar.readEvents(calendarId, signal)
-		return { calendarId, events }
+		return { calendarId, events, complete: events.complete === true }
 	}
 
 	async planCalendarMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DavProposal> {
@@ -1107,7 +1107,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (!this.files.tasks) throw new Error('Tasks app is unavailable.')
 		await this.files.assertIdentity(signal)
 		const tasks = await this.files.tasks.readTasks(calendarId, signal)
-		return { calendarId, tasks }
+		return { calendarId, tasks, complete: tasks.complete === true }
 	}
 
 	async planTasksMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DavProposal> {
@@ -1261,7 +1261,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
 		await this.files.assertIdentity(signal)
 		const addressBooks = await this.files.contacts.listAddressBooks(signal)
-		return { addressBooks }
+		return { addressBooks, complete: addressBooks.complete === true }
 	}
 
 	async findContacts(query: string, signal?: AbortSignal): Promise<unknown> {

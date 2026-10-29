@@ -94,7 +94,7 @@ export interface ParsedComponent {
 }
 
 /** The value separator can follow quoted parameters containing colons. */
-function contentProperty(line: string): { key: string; header: string; value: string } | undefined {
+export function contentProperty(line: string): { key: string; header: string; value: string } | undefined {
 	let quoted = false
 	for (let i = 0; i < line.length; i++) {
 		if (line[i] === '"') quoted = !quoted
@@ -117,19 +117,47 @@ function validUtc(value: string): boolean {
 
 type JCalData = ConstructorParameters<typeof ICAL.Component>[0]
 
+/** Validate structure/version for reads as well as private edits. No scheduling restriction on reads. */
+export function parseDavDocument(raw: string): ICAL.Component {
+	if (typeof raw !== 'string' || !raw.trim()) throw new Error('Malformed component document.')
+	const stack: string[] = []
+	let roots = 0
+	for (const line of unfold(raw).split(/\r?\n/).filter(Boolean)) {
+		const upper = line.toUpperCase()
+		if (upper.startsWith('BEGIN:')) { if (!stack.length) roots++; stack.push(upper.slice(6)) } else if (upper.startsWith('END:')) { if (stack.pop() !== upper.slice(4)) throw new Error('Malformed component nesting.') } else if (!stack.length) throw new Error('Malformed component content outside its root.')
+	}
+	if (stack.length || roots !== 1) throw new Error('Malformed component nesting.')
+	let root: ICAL.Component
+	try {
+		const data = ICAL.parse(raw)
+		if (!Array.isArray(data) || typeof data[0] !== 'string') throw new Error()
+		root = new ICAL.Component(data as unknown as JCalData)
+	} catch { throw new Error('Malformed component document.') }
+	const version = root.getFirstPropertyValue('version')
+	if (root.getAllProperties('version').length !== 1 || (root.name === 'vcalendar' ? version !== '2.0' : root.name === 'vcard' ? version !== '3.0' && version !== '4.0' : true)) throw new Error('Unsupported component version.')
+	return root
+}
+
+function componentText(value: string, limit = 2000): string {
+	escapeCalendarText(value)
+	if (typeof value !== 'string' || value.length > limit) throw new Error(`Use text up to ${limit} characters.`)
+	return value.replace(/\r\n|\r/g, '\n')
+}
+
+function singleLineText(value: string, limit: number): string {
+	if (/[\r\n]/.test(value)) throw new Error('A single-line contact value is required.')
+	return componentText(value, limit)
+}
+
+/** Keep physical continuation lines within 75 UTF-8 octets, including their space. */
+function serializeDav(root: ICAL.Component): string {
+	return unfold(root.toString()).split(/\r?\n/).filter(Boolean).map(fold).join('\r\n') + '\r\n'
+}
+
 /** Parse top-level properties and parameters of a specified component using structured ical.js. */
 export function parseDavProperties(raw: string, component: string): ParsedComponent {
 	try {
-		let jcal: unknown
-		try {
-			jcal = ICAL.parse(raw)
-		} catch {
-			return { values: {}, parameters: {}, instances: 0, allLines: [], counts: {} }
-		}
-		if (!Array.isArray(jcal) || typeof jcal[0] !== 'string') {
-			return { values: {}, parameters: {}, instances: 0, allLines: [], counts: {} }
-		}
-		const root = new ICAL.Component(jcal as unknown as JCalData)
+		const root = parseDavDocument(raw)
 		let target: ICAL.Component | undefined
 		let instances = 0
 		if (component.toUpperCase() === 'VCARD') {
@@ -232,6 +260,7 @@ export function assertPrivateComponent(raw: string, component: string): ParsedCo
 		if (instances !== 1) {
 			throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
 		}
+		if (root.getAllSubcomponents().some(child => child.name !== component.toLowerCase() && child.name !== 'vtimezone')) throw new Error('Mixed component resources require a separate private editor.')
 		target = subcomps[0]
 		const recurrenceProps = ['rrule', 'recurrence-id', 'rdate', 'exdate']
 		for (const rk of recurrenceProps) {
@@ -312,11 +341,12 @@ export function patchIcs(raw: string, component: string, changes: Record<string,
 			continue
 		}
 		let valueToSet: string | ICAL.Time = normalized
-		if (typeof normalized === 'string' && /^\d{8}T\d{6}Z$/.test(normalized)) {
+		if (['completed', 'dtstamp', 'last-modified', 'created'].includes(propName) && typeof normalized === 'string' && /^\d{8}T\d{6}Z$/.test(normalized)) {
 			const iso = `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}T${normalized.slice(9, 11)}:${normalized.slice(11, 13)}:${normalized.slice(13, 15)}Z`
 			valueToSet = ICAL.Time.fromDateTimeString(iso)
 		}
 		const existing = target.getFirstProperty(propName)
+		if (existing && ['summary', 'description', 'location'].includes(propName) && existing.type !== 'text') throw new Error('Unsupported non-text property type for a private text edit.')
 		if (existing) {
 			existing.setValue(valueToSet)
 		} else {
@@ -325,9 +355,7 @@ export function patchIcs(raw: string, component: string, changes: Record<string,
 			target.addProperty(prop)
 		}
 	}
-	let output = root.toString()
-	if (!output.endsWith('\r\n')) output += '\r\n'
-	return output
+	return serializeDav(root)
 }
 
 /**
@@ -343,6 +371,7 @@ export function patchVcard(raw: string, changes: Record<string, string | null>):
 	}
 	for (const [rawKey, rawValue] of Object.entries(changes)) {
 		const propName = rawKey.toLowerCase()
+		if (rawValue !== null && ['email', 'tel'].includes(propName)) singleLineText(rawValue, propName === 'tel' ? 50 : 120)
 		if (rawValue === null) {
 			target.removeAllProperties(propName)
 			continue
@@ -374,15 +403,14 @@ export function patchVcard(raw: string, changes: Record<string, string | null>):
 			continue
 		}
 		const existing = target.getFirstProperty(propName)
+		if (existing && ['fn', 'note', 'email'].includes(propName) && existing.type !== 'text') throw new Error('Unsupported non-text contact property type.')
 		if (existing) {
 			existing.setValue(normalized)
 		} else {
 			target.addPropertyWithValue(propName, normalized)
 		}
 	}
-	let output = root.toString()
-	if (!output.endsWith('\r\n')) output += '\r\n'
-	return output
+	return serializeDav(root)
 }
 
 export function buildEventIcs(params: {
@@ -405,7 +433,7 @@ export function buildEventIcs(params: {
 	const vevent = new ICAL.Component('vevent')
 	vevent.addPropertyWithValue('uid', params.uid)
 	vevent.addPropertyWithValue('dtstamp', ICAL.Time.now())
-	vevent.addPropertyWithValue('summary', params.summary.replace(/\r\n|\r/g, '\n'))
+	vevent.addPropertyWithValue('summary', componentText(params.summary, 120))
 
 	const startTime = ICAL.Time.fromDateTimeString(params.startUtc)
 	vevent.addPropertyWithValue('dtstart', startTime)
@@ -417,13 +445,11 @@ export function buildEventIcs(params: {
 	vevent.addPropertyWithValue('transp', 'OPAQUE')
 	vevent.addPropertyWithValue('x-fadenstack-ai-generated', 'TRUE')
 
-	if (params.description) vevent.addPropertyWithValue('description', params.description.replace(/\r\n|\r/g, '\n'))
-	if (params.location) vevent.addPropertyWithValue('location', params.location.replace(/\r\n|\r/g, '\n'))
+	if (params.description) vevent.addPropertyWithValue('description', componentText(params.description))
+	if (params.location) vevent.addPropertyWithValue('location', componentText(params.location, 120))
 
 	cal.addSubcomponent(vevent)
-	let output = cal.toString()
-	if (!output.endsWith('\r\n')) output += '\r\n'
-	return output
+	return serializeDav(cal)
 }
 
 export function buildTaskIcs(params: {
@@ -444,7 +470,7 @@ export function buildTaskIcs(params: {
 	const vtodo = new ICAL.Component('vtodo')
 	vtodo.addPropertyWithValue('uid', params.uid)
 	vtodo.addPropertyWithValue('dtstamp', ICAL.Time.now())
-	vtodo.addPropertyWithValue('summary', params.summary.replace(/\r\n|\r/g, '\n'))
+	vtodo.addPropertyWithValue('summary', componentText(params.summary, 120))
 
 	const dueTime = ICAL.Time.fromData({
 		year: Number(params.dueDate.slice(0, 4)),
@@ -460,15 +486,13 @@ export function buildTaskIcs(params: {
 	vtodo.addPropertyWithValue('percent-complete', 0)
 	vtodo.addPropertyWithValue('x-fadenstack-ai-generated', 'TRUE')
 
-	if (params.description) vtodo.addPropertyWithValue('description', params.description.replace(/\r\n|\r/g, '\n'))
+	if (params.description) vtodo.addPropertyWithValue('description', componentText(params.description))
 	if (params.priority !== undefined && params.priority >= 0 && params.priority <= 9) {
 		vtodo.addPropertyWithValue('priority', params.priority)
 	}
 
 	cal.addSubcomponent(vtodo)
-	let output = cal.toString()
-	if (!output.endsWith('\r\n')) output += '\r\n'
-	return output
+	return serializeDav(cal)
 }
 
 export function buildContactVcard(params: {
@@ -486,27 +510,25 @@ export function buildContactVcard(params: {
 	vcard.addPropertyWithValue('version', '3.0')
 	vcard.addPropertyWithValue('prodid', '-//Fadenstack//Nextcloud Agent//EN')
 	vcard.addPropertyWithValue('uid', params.uid)
-	vcard.addPropertyWithValue('fn', params.fn.trim().replace(/\r\n|\r/g, '\n'))
+	vcard.addPropertyWithValue('fn', componentText(params.fn.trim(), 120))
 	const nProp = new ICAL.Property('n')
 	nProp.setValue([params.fn.trim(), '', '', '', ''])
 	vcard.addProperty(nProp)
 	vcard.addPropertyWithValue('x-fadenstack-ai-generated', 'TRUE')
-	if (params.email) vcard.addPropertyWithValue('email', params.email.trim())
+	if (params.email) vcard.addPropertyWithValue('email', singleLineText(params.email.trim(), 120))
 	if (params.tel) {
 		const telProp = new ICAL.Property('tel')
 		telProp.setParameter('type', 'VOICE')
-		telProp.setValue(params.tel.trim())
+		telProp.setValue(singleLineText(params.tel.trim(), 50))
 		vcard.addProperty(telProp)
 	}
-	if (params.note) vcard.addPropertyWithValue('note', params.note.replace(/\r\n|\r/g, '\n'))
+	if (params.note) vcard.addPropertyWithValue('note', componentText(params.note))
 	if (params.categories) {
 		const catProp = new ICAL.Property('categories')
-		catProp.setValues(params.categories.split(','))
+		catProp.setValues(componentText(params.categories, 120).split(','))
 		vcard.addProperty(catProp)
 	}
-	let output = vcard.toString()
-	if (!output.endsWith('\r\n')) output += '\r\n'
-	return output
+	return serializeDav(vcard)
 }
 
 export function validateCalendarCreateArgs(args: Readonly<Record<string, unknown>>) {

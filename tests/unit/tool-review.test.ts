@@ -132,7 +132,7 @@ describe('independent NC08–NC10 review regressions', () => {
  it('decodes a contact collection REPORT into bounded contact records', async () => {
   const files = new NextcloudFiles(identity)
   vi.spyOn(files, 'assertIdentity').mockResolvedValue()
-  vi.mocked(axios.request).mockResolvedValue({ status: 207, headers: {}, data: '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:response><d:href>/remote.php/dav/addressbooks/users/alice/contacts/alice.vcf</d:href><d:propstat><d:prop><d:getetag>"rev"</d:getetag><c:address-data>BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nUID:one\r\nEND:VCARD\r\n</c:address-data></d:prop></d:propstat></d:response></d:multistatus>' })
+  vi.mocked(axios.request).mockResolvedValue({ status: 207, headers: {}, data: '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:response><d:href>/remote.php/dav/addressbooks/users/alice/contacts/alice.vcf</d:href><d:propstat><d:prop><d:getetag>"rev"</d:getetag><c:address-data>BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nUID:one\r\nEND:VCARD\r\n</c:address-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>' })
   const result = await files.contacts.readContact('contacts')
   expect(result.contacts).toHaveLength(1)
   expect(result.contacts![0]).toMatchObject({ name: 'Alice', uid: 'one', filename: 'alice.vcf' })

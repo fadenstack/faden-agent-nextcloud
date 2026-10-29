@@ -286,6 +286,9 @@ export interface DavCalendar {
 	color?: string
 }
 
+/** Optional for existing host mocks; native DAV reads always supply completeness. */
+export type DavCollection<T> = T[] & { readonly complete?: boolean }
+
 export interface DavCalendarObject {
 	href: string
 	filename: string
@@ -298,6 +301,9 @@ export interface DavCalendarObject {
 	startDate?: string
 	endDate?: string
 	timezone?: string
+	startTimezone?: string
+	endTimezone?: string
+	dueTimezone?: string
 	dueDate?: string
 	dueUtc?: string
 	status?: string
@@ -332,8 +338,8 @@ export interface DavContact {
 }
 
 export interface CalendarApi {
-	listCalendars(signal?: AbortSignal): Promise<DavCalendar[]>
-	readEvents(calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]>
+	listCalendars(signal?: AbortSignal): Promise<DavCollection<DavCalendar>>
+	readEvents(calendarId: string, signal?: AbortSignal): Promise<DavCollection<DavCalendarObject>>
 	getEvent(calendarId: string, filename: string, signal?: AbortSignal): Promise<{ etag: string; raw: string; values: Record<string, string> }>
 	createEvent(calendarId: string, filename: string, icsData: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
 	updateEvent(calendarId: string, filename: string, icsData: string, expectedEtag: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
@@ -341,8 +347,8 @@ export interface CalendarApi {
 }
 
 export interface TasksApi {
-	listTaskLists(signal?: AbortSignal): Promise<DavCalendar[]>
-	readTasks(calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]>
+	listTaskLists(signal?: AbortSignal): Promise<DavCollection<DavCalendar>>
+	readTasks(calendarId: string, signal?: AbortSignal): Promise<DavCollection<DavCalendarObject>>
 	getTask(calendarId: string, filename: string, signal?: AbortSignal): Promise<{ etag: string; raw: string; values: Record<string, string> }>
 	createTask(calendarId: string, filename: string, icsData: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
 	updateTask(calendarId: string, filename: string, icsData: string, expectedEtag: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>
@@ -350,7 +356,7 @@ export interface TasksApi {
 }
 
 export interface ContactsApi {
-	listAddressBooks(signal?: AbortSignal): Promise<DavAddressBook[]>
+	listAddressBooks(signal?: AbortSignal): Promise<DavCollection<DavAddressBook>>
 	findContacts(query: string, signal?: AbortSignal): Promise<{ contacts: DavContact[]; complete: boolean }>
 	readContact(bookId: string, filename?: string, signal?: AbortSignal): Promise<{ etag: string; raw: string; values: Record<string, string>; contacts?: DavContact[]; complete?: boolean }>
 	createContact(bookId: string, filename: string, vcardData: string, signal?: AbortSignal): Promise<{ etag?: string; href: string }>

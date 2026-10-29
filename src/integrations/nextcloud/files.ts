@@ -1,14 +1,35 @@
 import axios from '@nextcloud/axios'
 import { getRequestToken } from '@nextcloud/auth'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import ICAL from 'ical.js'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderListingEntry, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderListingEntry, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact, DavCollection } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 import { sha256Hex } from './tables.ts'
 import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './adapterGuards.ts'
-import { parseDavProperties } from './caldav.ts'
+import { parseDavProperties, parseDavDocument, contentProperty } from './caldav.ts'
 
 const MAX_DAV_RESPONSE_BYTES = 512 * 1024
+
+function assertDavResponseText(value: unknown): asserts value is string {
+	if (typeof value !== 'string') throw new Error('Invalid DAV response text.')
+	if (new TextEncoder().encode(value).byteLength > MAX_DAV_RESPONSE_BYTES) throw new Error('DAV response exceeds maximum allowed size; narrow the request.')
+}
+
+function davRevision(value: unknown): string {
+	try { if (typeof value !== 'string') throw new Error(); return strongEtagHeader(value).slice(1, -1) } catch { throw new Error('Missing or invalid ETag revision metadata; one strong revision is required.') }
+}
+
+function davCollection<T>(items: T[], complete: boolean): DavCollection<T> {
+	Object.defineProperty(items, 'complete', { value: complete })
+	return items
+}
+
+function parseDavMultistatus(raw: string): Document {
+	assertDavResponseText(raw)
+	if (/<!DOCTYPE/i.test(raw)) throw new Error('Invalid DAV XML document type.')
+	const doc = parseXmlDoc(raw)
+	if (!doc || doc.documentElement.namespaceURI !== 'DAV:' || doc.documentElement.localName !== 'multistatus') throw new Error('Invalid or malformed DAV XML response.')
+	return doc
+}
 
 function resolveRouteTableId(): number | undefined {
 	if (typeof location === 'undefined') return undefined
@@ -208,9 +229,7 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
-				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
-			}
+			assertDavResponseText(res.data)
 			return parseCalendarsXml(res.data, this.calendarHomeUrl())
 		},
 		readEvents: async (calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]> => {
@@ -226,9 +245,7 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
-				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
-			}
+			assertDavResponseText(res.data)
 			return parseCalendarObjectsXml(res.data, 'VEVENT', this.calendarCollectionUrl(calendarId))
 		},
 		getEvent: async (calendarId: string, filename: string, signal?: AbortSignal) => {
@@ -240,13 +257,12 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
-				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
-			}
-			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '').trim()
-			if (!etag || etag === '*') throw new Error('Missing revision metadata from calendar response.')
+			assertDavResponseText(res.data)
+			const etag = davRevision(res.headers.etag)
 			const raw = res.data
-			const values = parseDavProperties(raw, 'VEVENT').values
+			const parsed = parseDavProperties(raw, 'VEVENT')
+			if (!parsed.instances) throw new Error('Malformed native component content.')
+			const values = parsed.values
 			return { etag, raw, values }
 		},
 		createEvent: async (calendarId: string, filename: string, icsData: string, signal?: AbortSignal) => {
@@ -287,7 +303,7 @@ export class NextcloudFiles implements FileApi {
 	readonly tasks: TasksApi = {
 		listTaskLists: async (signal?: AbortSignal): Promise<DavCalendar[]> => {
 			const cals = await this.calendar.listCalendars(signal)
-			return cals.filter(c => c.components.includes('VTODO'))
+			return davCollection(cals.filter(c => c.components.includes('VTODO')), cals.complete === true)
 		},
 		readTasks: async (calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]> => {
 			await this.assertIdentity(signal)
@@ -302,9 +318,7 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
-				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
-			}
+			assertDavResponseText(res.data)
 			return parseCalendarObjectsXml(res.data, 'VTODO', this.calendarCollectionUrl(calendarId))
 		},
 		getTask: async (calendarId: string, filename: string, signal?: AbortSignal) => {
@@ -316,13 +330,12 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
-				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
-			}
-			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '').trim()
-			if (!etag || etag === '*') throw new Error('Missing revision metadata from task response.')
+			assertDavResponseText(res.data)
+			const etag = davRevision(res.headers.etag)
 			const raw = res.data
-			const values = parseDavProperties(raw, 'VTODO').values
+			const parsed = parseDavProperties(raw, 'VTODO')
+			if (!parsed.instances) throw new Error('Malformed native component content.')
+			const values = parsed.values
 			return { etag, raw, values }
 		},
 		createTask: async (calendarId: string, filename: string, icsData: string, signal?: AbortSignal) => {
@@ -374,15 +387,14 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
-				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
-			}
+			assertDavResponseText(res.data)
 			return parseAddressBooksXml(res.data, this.addressBookHomeUrl())
 		},
 		findContacts: async (query: string, signal?: AbortSignal): Promise<{ contacts: DavContact[]; complete: boolean }> => {
 			await this.assertIdentity(signal)
 			const books = await this.contacts.listAddressBooks(signal)
 			const found: DavContact[] = []
+			let complete = books.complete === true
 			for (const book of books.slice(0, 10)) {
 				const body = `<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop><c:filter><c:prop-filter name="FN"><c:text-match collation="i;unicode-casemap" match-type="contains">${escapeXml(query)}</c:text-match></c:prop-filter></c:filter></c:addressbook-query>`
 				const bookTargetUrl = this.addressBookHref(book.href)
@@ -395,17 +407,16 @@ export class NextcloudFiles implements FileApi {
 					signal,
 					timeout: 15000,
 				})
-				if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
-					throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
-				}
+				assertDavResponseText(res.data)
 				const expectedBookUrl = new URL(bookTargetUrl, typeof location !== 'undefined' ? location.href : 'https://localhost/')
 				const contacts = parseContactsXml(res.data, book.title, expectedBookUrl)
+				complete &&= contacts.complete === true
 				for (const c of contacts) {
 					found.push(c)
 					if (found.length >= 20) return { contacts: found.slice(0, 20), complete: false }
 				}
 			}
-			return { contacts: found, complete: books.length <= 10 }
+			return { contacts: found, complete }
 		},
 		readContact: async (bookId: string, filename?: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
@@ -417,13 +428,12 @@ export class NextcloudFiles implements FileApi {
 					signal,
 					timeout: 15000,
 				})
-				if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
-					throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
-				}
-				const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '').trim()
-				if (!etag || etag === '*') throw new Error('Missing revision metadata from contact response.')
+				assertDavResponseText(res.data)
+				const etag = davRevision(res.headers.etag)
 				const raw = res.data
-				const values = parseDavProperties(raw, 'VCARD').values
+				const parsed = parseDavProperties(raw, 'VCARD')
+				if (!parsed.instances) throw new Error('Malformed native component content.')
+				const values = parsed.values
 				return { etag, raw, values }
 			}
 			const url = `${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${davSegment(bookId)}/`
@@ -437,11 +447,9 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
-				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
-			}
+			assertDavResponseText(res.data)
 			const contacts = parseContactsXml(res.data, bookId, this.addressBookCollectionUrl(bookId))
-			return { etag: '', raw: '', values: {}, contacts: contacts.slice(0, 50), complete: contacts.length <= 50 }
+			return { etag: '', raw: '', values: {}, contacts: contacts.slice(0, 50), complete: contacts.complete === true }
 		},
 		createContact: async (bookId: string, filename: string, vcardData: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
@@ -798,14 +806,7 @@ function parseXmlDoc(raw: string): Document | null {
 }
 
 function findElements(parent: Document | Element, ns: string, localName: string): Element[] {
-	const list = Array.from(parent.getElementsByTagNameNS(ns, localName))
-	if (list.length > 0) return list
-	return Array.from(parent.getElementsByTagName(localName)).concat(
-		Array.from(parent.getElementsByTagName(`d:${localName}`)),
-		Array.from(parent.getElementsByTagName(`c:${localName}`)),
-		Array.from(parent.getElementsByTagName(`cal:${localName}`)),
-		Array.from(parent.getElementsByTagName(`card:${localName}`)),
-	)
+	return Array.from(parent.getElementsByTagNameNS(ns, localName))
 }
 
 function getElemText(parent: Element, ns: string, localName: string): string {
@@ -824,7 +825,7 @@ function escapeXml(value: string): string {
 }
 
 function validateDavHref(href: string, expectedParentUrl?: URL): string {
-	if (!href || typeof href !== 'string') throw new Error('Missing or invalid DAV href.')
+	if (!href || typeof href !== 'string' || /[\\\\\x00-\x1f\x7f]/.test(href)) throw new Error('Missing or invalid DAV href.')
 	const base = expectedParentUrl ?? (typeof location !== 'undefined' ? new URL(location.href) : new URL('https://localhost/'))
 	let target: URL
 	try {
@@ -847,18 +848,21 @@ function validateDavHref(href: string, expectedParentUrl?: URL): string {
 		if (targetPath !== expectedPath && !targetPath.startsWith(expectedPath + '/')) {
 			throw new Error(`DAV href outside expected collection: ${target.pathname} is outside ${expectedParentUrl.pathname}`)
 		}
+		const child = targetPath === expectedPath ? '' : targetPath.slice(expectedPath.length + 1)
+		if (child.includes('/')) throw new Error('DAV href must identify a direct child of the expected collection.')
+		if (child) davSegment(decodeURIComponent(child))
 	}
 	return target.pathname
 }
 
 function findSuccessfulPropstats(responseEl: Element): Element[] {
-	const propstats = findElements(responseEl, 'DAV:', 'propstat')
+	const propstats = Array.from(responseEl.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'propstat')
 	const successfulProps: Element[] = []
 	for (const ps of propstats) {
-		const statusEl = findElements(ps, 'DAV:', 'status')[0]
+		const statusEl = Array.from(ps.children).find(el => el.namespaceURI === 'DAV:' && el.localName === 'status')
 		const status = statusEl?.textContent?.trim()
-		if (!status || status.includes('200')) {
-			const propEl = findElements(ps, 'DAV:', 'prop')[0]
+		if (status && /^HTTP\/\d(?:\.\d)?[ \t]+200(?:[ \t]|$)/.test(status)) {
+			const propEl = Array.from(ps.children).find(el => el.namespaceURI === 'DAV:' && el.localName === 'prop')
 			if (propEl) successfulProps.push(propEl)
 		}
 	}
@@ -880,14 +884,14 @@ function hasPropElement(props: Element[], ns: string, localName: string): boolea
 	return false
 }
 
-function parseCalendarsXml(xmlText: string, expectedParentUrl?: URL): DavCalendar[] {
-	const doc = parseXmlDoc(xmlText)
-	if (!doc) return []
-	const responses = findElements(doc, 'DAV:', 'response')
+function parseCalendarsXml(xmlText: string, expectedParentUrl?: URL): DavCollection<DavCalendar> {
+	const doc = parseDavMultistatus(xmlText)
+	const responses = Array.from(doc.documentElement.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'response')
 	const result: DavCalendar[] = []
+	let complete = true
 	for (const r of responses) {
 		const props = findSuccessfulPropstats(r)
-		if (!props.length) continue
+		if (!props.length) { complete = false; continue }
 		const isCalendar = hasPropElement(props, 'urn:ietf:params:xml:ns:caldav', 'calendar')
 		if (!isCalendar) continue
 		const rawHref = getElemText(r, 'DAV:', 'href')
@@ -913,12 +917,16 @@ function parseCalendarsXml(xmlText: string, expectedParentUrl?: URL): DavCalenda
 			canWrite,
 			color: color || undefined,
 		})
-		if (result.length >= 50) break
+		if (result.length >= 10) { complete &&= r === responses.at(-1); break }
 	}
-	return result
+	return davCollection(result, complete)
 }
 
-type JCalData = ConstructorParameters<typeof ICAL.Component>[0]
+function scalarTimezone(value: unknown): string | undefined {
+	if (value === undefined || value === null) return undefined
+	if (typeof value !== 'string') throw new Error('Invalid timezone parameter.')
+	return value
+}
 
 interface DavParsedTime {
 	zone?: { tzid?: string }
@@ -928,36 +936,34 @@ interface DavParsedTime {
 	toString(): string
 }
 
-function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO', expectedParentUrl?: URL): DavCalendarObject[] {
-	const doc = parseXmlDoc(xmlText)
-	if (!doc) return []
-	const responses = findElements(doc, 'DAV:', 'response')
+function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO', expectedParentUrl?: URL): DavCollection<DavCalendarObject> {
+	const doc = parseDavMultistatus(xmlText)
+	const responses = Array.from(doc.documentElement.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'response')
 	const result: DavCalendarObject[] = []
+	let complete = true
 	for (const r of responses) {
 		const rawHref = getElemText(r, 'DAV:', 'href')
 		const validPath = validateDavHref(rawHref, expectedParentUrl)
 		if (!validPath) continue
 
 		// Collections are collections, not leaf calendar objects
-		const isCollection = hasPropElement(findElements(r, 'DAV:', 'prop'), 'DAV:', 'collection') || validPath.endsWith('/')
+		const isCollection = hasPropElement(findSuccessfulPropstats(r), 'DAV:', 'collection') || validPath.endsWith('/')
 		if (isCollection) continue
 
 		const props = findSuccessfulPropstats(r)
-		if (!props.length) continue
+		if (!props.length) { complete = false; continue }
 
 		const rawEtag = getPropText(props, 'DAV:', 'getetag')
-		const etag = rawEtag.replace(/^"|"$/g, '').trim()
-		if (!etag) continue
+		const etag = davRevision(rawEtag)
 
 		const rawData = getPropText(props, 'urn:ietf:params:xml:ns:caldav', 'calendar-data')
-		if (!rawData) continue
+		if (!rawData) { complete = false; continue }
 
 		const filename = decodeURIComponent(validPath.split('/').pop() ?? '')
 		if (!filename.endsWith('.ics')) continue
 
 		try {
-			const jcal = ICAL.parse(rawData)
-			const comp = new ICAL.Component(jcal as unknown as JCalData)
+			const comp = parseDavDocument(rawData)
 			const sub = comp.getFirstSubcomponent(component.toLowerCase())
 			if (!sub) continue
 
@@ -970,12 +976,16 @@ function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO',
 			let endUtc: string | undefined
 			let endDate: string | undefined
 			let timezone: string | undefined
+			let startTimezone: string | undefined
+			let endTimezone: string | undefined
+			let dueTimezone: string | undefined
 			let dueDate: string | undefined
 			let dueUtc: string | undefined
 
 			if (dtstartProp) {
 				const time = dtstartProp.getFirstValue() as unknown as DavParsedTime
-				const tzid = dtstartProp.getParameter('tzid') || (time.zone && time.zone.tzid !== 'floating' && time.zone.tzid !== 'UTC' ? time.zone.tzid : undefined)
+				const tzid = scalarTimezone(dtstartProp.getParameter('tzid')) || (time.zone && time.zone.tzid !== 'floating' && time.zone.tzid !== 'UTC' ? time.zone.tzid : undefined)
+				startTimezone = tzid || time.zone?.tzid || 'floating'
 				if (time.zone?.tzid === 'UTC' || time.isUtc) {
 					startUtc = time.toString()
 				} else {
@@ -985,6 +995,7 @@ function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO',
 			}
 			if (dtendProp) {
 				const time = dtendProp.getFirstValue() as unknown as DavParsedTime
+				endTimezone = scalarTimezone(dtendProp.getParameter('tzid')) || time.zone?.tzid || 'floating'
 				if (time.zone?.tzid === 'UTC' || time.isUtc) {
 					endUtc = time.toString()
 				} else {
@@ -993,13 +1004,14 @@ function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO',
 			}
 			if (dueProp) {
 				const time = dueProp.getFirstValue() as unknown as DavParsedTime
+				dueTimezone = scalarTimezone(dueProp.getParameter('tzid')) || time.zone?.tzid || 'floating'
 				if (time.isDate) {
 					dueDate = time.toString()
 				} else if (time.zone?.tzid === 'UTC' || time.isUtc) {
 					dueUtc = time.toString()
 				} else {
 					dueDate = time.toString()
-					timezone = dueProp.getParameter('tzid') || time.timezone || 'floating'
+					timezone = scalarTimezone(dueProp.getParameter('tzid')) || time.timezone || 'floating'
 				}
 			}
 
@@ -1022,11 +1034,8 @@ function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO',
 			const propertyParameters: Record<string, string> = {}
 			for (const prop of sub.getAllProperties()) {
 				const key = prop.name.toUpperCase()
-				const line = prop.toICALString()
-				const colonIdx = line.indexOf(':')
-				if (colonIdx > 0) {
-					propertyParameters[key] = line.slice(0, colonIdx)
-				}
+				const property = contentProperty(prop.toICALString())
+				if (property) propertyParameters[key] = property.header
 			}
 
 			result.push({
@@ -1041,6 +1050,9 @@ function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO',
 				endUtc,
 				endDate,
 				timezone,
+				startTimezone,
+				endTimezone,
+				dueTimezone,
 				dueDate,
 				dueUtc,
 				status: typeof status === 'string' ? status : undefined,
@@ -1051,22 +1063,23 @@ function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO',
 				hasAttendees,
 				propertyParameters,
 			})
-			if (result.length >= 50) break
+			if (result.length >= 50) { complete &&= r === responses.at(-1); break }
 		} catch {
+			complete = false
 			continue
 		}
 	}
-	return result
+	return davCollection(result, complete)
 }
 
-function parseAddressBooksXml(xmlText: string, expectedParentUrl?: URL): DavAddressBook[] {
-	const doc = parseXmlDoc(xmlText)
-	if (!doc) return []
-	const responses = findElements(doc, 'DAV:', 'response')
+function parseAddressBooksXml(xmlText: string, expectedParentUrl?: URL): DavCollection<DavAddressBook> {
+	const doc = parseDavMultistatus(xmlText)
+	const responses = Array.from(doc.documentElement.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'response')
 	const result: DavAddressBook[] = []
+	let complete = true
 	for (const r of responses) {
 		const props = findSuccessfulPropstats(r)
-		if (!props.length) continue
+		if (!props.length) { complete = false; continue }
 		const isBook = hasPropElement(props, 'urn:ietf:params:xml:ns:carddav', 'addressbook')
 		if (!isBook) continue
 		const rawHref = getElemText(r, 'DAV:', 'href')
@@ -1077,41 +1090,39 @@ function parseAddressBooksXml(xmlText: string, expectedParentUrl?: URL): DavAddr
 		const title = getPropText(props, 'DAV:', 'displayname') || id
 		const canWrite = hasPropElement(props, 'DAV:', 'write')
 		result.push({ id, title, href: validPath, canWrite })
-		if (result.length >= 10) break
+		if (result.length >= 10) { complete &&= r === responses.at(-1); break }
 	}
-	return result
+	return davCollection(result, complete)
 }
 
-function parseContactsXml(xmlText: string, bookTitle: string, expectedParentUrl?: URL): DavContact[] {
-	const doc = parseXmlDoc(xmlText)
-	if (!doc) return []
-	const responses = findElements(doc, 'DAV:', 'response')
+function parseContactsXml(xmlText: string, bookTitle: string, expectedParentUrl?: URL): DavCollection<DavContact> {
+	const doc = parseDavMultistatus(xmlText)
+	const responses = Array.from(doc.documentElement.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'response')
 	const result: DavContact[] = []
+	let complete = true
 	for (const r of responses) {
 		const rawHref = getElemText(r, 'DAV:', 'href')
 		const validPath = validateDavHref(rawHref, expectedParentUrl)
 		if (!validPath) continue
 
 		// Collections are not leaf contacts
-		const isCollection = hasPropElement(findElements(r, 'DAV:', 'prop'), 'DAV:', 'collection') || validPath.endsWith('/')
+		const isCollection = hasPropElement(findSuccessfulPropstats(r), 'DAV:', 'collection') || validPath.endsWith('/')
 		if (isCollection) continue
 
 		const props = findSuccessfulPropstats(r)
-		if (!props.length) continue
+		if (!props.length) { complete = false; continue }
 
 		const rawEtag = getPropText(props, 'DAV:', 'getetag')
-		const etag = rawEtag.replace(/^"|"$/g, '').trim()
-		if (!etag) continue
+		const etag = davRevision(rawEtag)
 
 		const rawData = getPropText(props, 'urn:ietf:params:xml:ns:carddav', 'address-data')
-		if (!rawData) continue
+		if (!rawData) { complete = false; continue }
 
 		const filename = decodeURIComponent(validPath.split('/').pop() ?? '')
 		if (!filename.endsWith('.vcf')) continue
 
 		try {
-			const jcal = ICAL.parse(rawData)
-			const comp = new ICAL.Component(jcal as unknown as JCalData)
+			const comp = parseDavDocument(rawData)
 			if (comp.name !== 'vcard') continue
 
 			const uid = comp.getFirstPropertyValue('uid')
@@ -1134,10 +1145,11 @@ function parseContactsXml(xmlText: string, bookTitle: string, expectedParentUrl?
 				categories: typeof categories === 'string' ? categories : undefined,
 				etag,
 			})
-			if (result.length >= 50) break
+			if (result.length >= 50) { complete &&= r === responses.at(-1); break }
 		} catch {
+			complete = false
 			continue
 		}
 	}
-	return result
+	return davCollection(result, complete)
 }
