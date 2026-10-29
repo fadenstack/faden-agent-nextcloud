@@ -475,7 +475,7 @@ class FileService {
 	}
 
 	public static function folderName(string $name): void {
-		if ($name !== trim($name) || strlen($name) < 1 || strlen($name) > 100
+		if ($name !== trim($name) || strlen($name) < 1 || strlen($name) > 255 || mb_strlen($name, 'UTF-8') > 100
 			|| preg_match('/[\x00-\x1f\x7f\/\\\\:<>"|?*]/', $name)
 			|| $name === '.' || $name === '..'
 			|| !mb_check_encoding($name, 'UTF-8')) {
@@ -739,6 +739,7 @@ class FileService {
 			'target' => $targetPath,
 			'expires' => time() + 600,
 			'approved' => false,
+			'executionReady' => false,
 			'identityScope' => $identity->scopeHash,
 			'identitySession' => $identity->sessionHash,
 		];
@@ -754,7 +755,7 @@ class FileService {
 
 	public function folderProposal(string $id): array {
 		$p = $this->state()['folderProposals'][$id] ?? null;
-		if (!$p || ($p['expires'] ?? 0) < time()) {
+		if (!$p || ($p['expires'] ?? 0) <= time()) {
 			throw new Problem('The folder proposal expired or was already consumed.', 410);
 		}
 		return $p;
@@ -792,56 +793,20 @@ class FileService {
 		if ($folder->getEtag() !== $p['parentEtag']) {
 			throw new Problem('The destination folder changed. No folder was created.', 409);
 		}
+		$this->scope->assertMovement($folder, $folder);
 		if (!$folder->isCreatable() || ($folder->getPermissions() & Constants::PERMISSION_CREATE) === 0) {
 			throw new Problem('You cannot create folders in this destination.', 403);
 		}
-		$this->scope->assertMovement($folder, $folder);
-
 		if ($folder->nodeExists($p['name'])) {
 			throw new Problem('A folder or file with this name already exists.', 409);
 		}
 
-		try {
-			$createdNode = $folder->newFolder($p['name']);
-		} catch (\OCP\Files\AlreadyExistsException) {
-			throw new Problem('A folder or file with this name already exists.', 409);
-		} catch (\OCP\Files\InvalidPathException $e) {
-			if ($folder->nodeExists($p['name'])) {
-				throw new Problem('A folder or file with this name already exists.', 409);
-			}
-			throw new Problem('Invalid folder name: ' . $e->getMessage(), 400);
-		} catch (\OCP\Files\NotPermittedException) {
-			throw new Problem('Permission denied to create folder in this destination.', 403);
-		} catch (\Throwable $e) {
-			if ($folder->nodeExists($p['name'])) {
-				throw new Problem('A folder or file with this name already exists.', 409);
-			}
-			throw new Problem('Folder creation failed: ' . $e->getMessage(), 500);
-		}
-
-		if (!$createdNode instanceof Folder || !$folder->nodeExists($p['name'])) {
-			throw new Problem('The created folder could not be confirmed. Inspect the destination before continuing.', 409);
-		}
-
-		$createdMetadata = $this->metadata($createdNode, 'metadata');
-		$parentMetadata = $this->metadata($folder, 'metadata');
-
-		return [
-			'outcome' => 'verified',
-			'history' => 'not-integrated',
-			'resourceId' => 'nextcloud:files:' . $createdNode->getId(),
-			'name' => $p['name'],
-			'parentResourceId' => 'nextcloud:files:' . $folder->getId(),
-			'parentPath' => '/' . ltrim($parentMetadata['path'], '/'),
-			'folder' => $createdMetadata,
-			'observedState' => [
-				'id' => $createdNode->getId(),
-				'name' => $createdNode->getName(),
-				'path' => '/' . ltrim($createdMetadata['path'], '/'),
-				'etag' => $createdNode->getEtag(),
-				'permissions' => $createdNode->getPermissions(),
-				'is_directory' => true,
-			],
-		];
+		// Folder::newFolder() can return a directory created by another request.
+		// Its public parent lock also blocks its own nested mkdir. Until a public
+		// conditional creation protocol is proven, consume the ticket without a
+		// filesystem write. Development opt-in must not bypass this release gate.
+		return ['outcome' => 'not-dispatched', 'history' => 'not-integrated', 'proposalId' => $p['id'],
+			'name' => $p['name'], 'parentResourceId' => $p['resourceId'], 'target' => $p['target'],
+			'message' => 'Folder creation is unavailable in this version. No folder was created.'];
 	}
 }

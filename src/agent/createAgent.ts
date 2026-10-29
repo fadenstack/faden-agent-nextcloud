@@ -47,6 +47,7 @@ import { SourceLedger } from '../platform/sourceLedger.ts'
 import { shallowReactive } from 'vue'
 import { commandChat } from './commands.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
+import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
 
@@ -59,6 +60,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
 	readonly #folderCreateProposals = new Map<string, FolderCreateProposal>()
+	readonly #folderCreateInputs = new Map<string, string>()
+	readonly #folderCreatePreviews = new Map<string, string>()
 	readonly #extendedProposals = new Map<string, ExtendedProposal>()
 	readonly #tablesProposals = new Map<string, TablesProposal>()
 	readonly #deckProposals = new Map<string, DeckProposal>()
@@ -115,7 +118,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const experimental = experimentalAdaptersAllowed(config)
 		const filesReadsActive = config.filesReadsEnabled === true && !!config.scopePolicy && !!files.organizeRead && !!files.sharesRead
-		const folderCreateActive = (config.development === true && config.folderCreateEnabled === true && !!files.proposeFolderCreate)
+		const folderCreateActive = (config.development === true && config.folderCreateEnabled === true && !!config.scopePolicy && !!files.scopeResource && !!files.proposeFolderCreate && !!files.approveFolderCreate && !!files.commitFolderCreate)
 			|| (experimental && config.extendedFilesEnabled === true && !files.proposeFolderCreate && !!files.createFolder)
 		const extendedFilesMutations = experimental && config.extendedFilesEnabled === true && (!!files.createFolder || (!!files.copyFile && !!files.moveFile))
 		const tablesEnabled = experimental && config.tablesEnabled === true && !!files.tables
@@ -188,6 +191,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					}
 					if (request.toolName === 'nc_files_create_folder' && request.source === 'host' && files.proposeFolderCreate) {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
+						this.#folderCreateInputs.set(request.callId, canonical(request.arguments))
 						const binding = this.workspace?.prepare('files')
 						const plan = await this.planFolderCreateMutation(request.arguments, signal)
 						this.#folderCreateProposals.set(request.callId, plan)
@@ -196,8 +200,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							...request,
 							canAllowAlways: false,
 							canAllowForSession: false,
-							arguments: { ...request.arguments, proposalId: plan.id, target: plan.target, resourceId: plan.resourceId, parentEtag: plan.parentEtag, folderName: plan.name },
+							arguments: { ...request.arguments, proposalId: plan.id, target: plan.target, resourceId: plan.resourceId, parentEtag: plan.parentEtag, folderName: plan.name, executionReady: plan.executionReady !== false },
 						}
+						this.#folderCreatePreviews.set(request.callId, canonical(request.arguments))
 					} else if (EXTENDED_FILES_MUTATIONS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const binding = this.workspace?.prepare('files')
@@ -287,6 +292,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						this.#expandedPreviews.delete(request.callId)
 						this.#expandedApproved.delete(request.callId)
 						this.#proposals.delete(request.callId)
+						this.#folderCreateProposals.delete(request.callId)
+						this.#folderCreateInputs.delete(request.callId)
+						this.#folderCreatePreviews.delete(request.callId)
 						this.#extendedProposals.delete(request.callId)
 						this.#tablesProposals.delete(request.callId)
 						this.#deckProposals.delete(request.callId)
@@ -533,6 +541,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	private async planFolderCreateMutation(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<FolderCreateProposal> {
 		await this.files.assertIdentity(signal)
+		if (Object.keys(args).some(key => !['name', 'resource_id', 'expectedRevision'].includes(key))) throw new Error('Invalid folder creation arguments.')
 		const folderName = validateFolderName(args.name)
 		let targetId: string
 		if (args.resource_id !== undefined) {
@@ -550,15 +559,22 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			throw new Error('Include a folder or provide a parent folder resource_id.')
 		}
 
-		if (this.#scope) {
-			const destination = await this.#scope.bindDestination(targetId, signal)
-			const sources = await Promise.all(this.#sources.references.map(reference => this.#scope!.authorize(reference, this.#sources.purpose(reference), signal)))
-			await this.#scope.assertMovement(sources, destination, signal)
-		}
-
-		const expectedRevision = args.expectedRevision !== undefined ? String(args.expectedRevision) : undefined
+		const destination = await this.authorizeFolderDestination(targetId, signal)
+		const expectedRevision = args.expectedRevision ?? destination.revision
+		if (typeof expectedRevision !== 'string' || expectedRevision !== destination.revision) throw new Error('The destination revision changed. Inspect the folder again.')
 		if (!this.files.proposeFolderCreate) throw new Error('Folder creation is unavailable.')
-		return this.files.proposeFolderCreate(targetId, folderName, expectedRevision, signal)
+		const result = await this.files.proposeFolderCreate(targetId, folderName, expectedRevision, signal)
+		signal.throwIfAborted()
+		return folderProposal(result, targetId, folderName, expectedRevision)
+	}
+
+	private async authorizeFolderDestination(reference: string, signal: AbortSignal) {
+		if (!this.#scope) throw new Error('Folder creation requires the native scope policy.')
+		const destination = await this.#scope.authorizeDestination(reference, signal)
+		const sources = await Promise.all(this.#sources.references.map(source => this.#scope!.authorize(source, this.#sources.purpose(source), signal)))
+		await this.#scope.assertMovement(sources, destination, signal)
+		this.#sources.assertMovement(this.#scope.policy, destination.audience)
+		return destination
 	}
 
 	private async planExtendedMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<ExtendedProposal> {
@@ -587,25 +603,32 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (name === 'nc_files_create_folder' && this.#folderCreateProposals.has(call.callId)) {
 			const proposal = this.#folderCreateProposals.get(call.callId)!
 			if (!proposal.approved) throw new Error('This operation requires explicit approval.')
-			if (validateFolderName(args.name) !== proposal.name
-				|| (args.expectedRevision !== undefined && String(args.expectedRevision) !== proposal.expectedRevision)
-				|| (args.resource_id !== undefined && String(args.resource_id).trim() !== proposal.resourceId)) {
+			if (this.#folderCreateInputs.get(call.callId) !== canonical(args)) {
 				this.#writeBlocked = true
 				this.#folderCreateProposals.delete(call.callId)
 				this.#proposalViews.delete(call.callId)
 				throw new Error('The arguments changed or no individual approval exists. Review a new proposal.')
 			}
 			this.#folderCreateProposals.delete(call.callId)
+			this.#folderCreateInputs.delete(call.callId)
+			this.#folderCreatePreviews.delete(call.callId)
 			const binding = this.#proposalViews.get(call.callId)
 			this.#proposalViews.delete(call.callId)
 			await this.files.assertIdentity(call.signal)
+			const destination = await this.authorizeFolderDestination(proposal.resourceId, call.signal)
+			if (destination.revision !== proposal.parentEtag) throw new Error('The approved destination changed. Review a new proposal.')
 			call.signal.throwIfAborted()
 			const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
 			try {
 				if (!this.files.commitFolderCreate) throw new Error('Folder creation is unavailable.')
-				const outcome = await this.files.commitFolderCreate(proposal.id, call.signal)
-				if (outcome.resourceId && this.rememberSource) {
-					await this.rememberSource(outcome.resourceId, call.signal)
+				const outcome = folderOutcome(await this.files.commitFolderCreate(proposal.id, call.signal), proposal)
+				if (outcome.outcome !== 'verified') {
+					this.#writeBlocked = true
+					if (generation !== undefined) {
+						if (outcome.outcome === 'not-dispatched') this.workspace!.notDispatched(call.callId, generation, proposal.target, outcome.message, 'create_folder')
+						else this.workspace!.failed(call.callId, generation, proposal.target, new Error(outcome.message), 'create_folder')
+					}
+					return outcome
 				}
 				const activity = binding && generation !== undefined
 					? await this.workspace!.committed(call.callId, generation, binding, {
@@ -613,6 +636,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						file: outcome.folder,
 					}, call.signal)
 					: undefined
+				// A confirmed creation stays confirmed if Stop or reauthorization
+				// interrupts optional source binding after dispatch.
+				try { if (!call.signal.aborted) await this.rememberSource(outcome.resourceId, call.signal) } catch {
+					return { outcome: outcome.outcome, history: outcome.history, proposalId: outcome.proposalId, resourceId: outcome.resourceId, name: outcome.name, disclosure: 'restricted', view: activity?.view }
+				}
 				return activity ? { ...outcome, view: activity.view } : outcome
 			} catch (error) {
 				this.#writeBlocked = true
@@ -680,8 +708,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (part.toolName === 'nc_files_create_folder' && part.request.source === 'host' && this.files.approveFolderCreate) {
 			const proposal = this.#folderCreateProposals.get(part.request.callId)
 			if (!proposal || proposal.id !== id || !part.isPending) throw new Error('This proposal is no longer pending.')
+			if (this.#folderCreatePreviews.get(part.request.callId) !== canonical(part.request.arguments)) throw new Error('The folder preview changed after review. Start a new request.')
 			await this.files.assertIdentity(this.#stop.signal)
 			await this.files.approveFolderCreate(proposal.id, this.#stop.signal)
+			if (!part.isPending || this.#folderCreateProposals.get(part.request.callId) !== proposal || !this.chat.isBusy) throw new Error('This proposal is no longer pending.')
 			proposal.approved = true
 		} else if (EXTENDED_FILES_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
 			const proposal = this.#extendedProposals.get(part.request.callId)
@@ -1630,6 +1660,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#active = undefined
 		this.#proposals.clear()
 		this.#folderCreateProposals.clear()
+		this.#folderCreateInputs.clear()
+		this.#folderCreatePreviews.clear()
 		this.#extendedProposals.clear()
 		this.#tablesProposals.clear()
 		this.#deckProposals.clear()
@@ -1662,6 +1694,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#active = undefined
 		this.#proposals.clear()
 		this.#folderCreateProposals.clear()
+		this.#folderCreateInputs.clear()
+		this.#folderCreatePreviews.clear()
 		this.#extendedProposals.clear()
 		this.#tablesProposals.clear()
 		this.#deckProposals.clear()

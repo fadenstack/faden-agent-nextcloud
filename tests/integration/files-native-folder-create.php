@@ -21,6 +21,7 @@ use OCA\FadenstackAgent\Service\ScopePolicy;
 use OCP\Constants;
 use OCP\Files\IRootFolder;
 use OCP\IConfig;
+use OCP\ISession;
 use OCP\IUserManager;
 use OCP\IUserSession;
 use OCP\Server;
@@ -137,6 +138,7 @@ try {
 	$assert('proposal binds folderId', $proposal['folderId'] === $fixtureFolder->getId());
 	$assert('proposal binds name', $proposal['name'] === $unicodeName);
 	$assert('proposal approved is false', $proposal['approved'] === false);
+	$assert('proposal announces execution gate before approval', $proposal['executionReady'] === false);
 	$assert('proposal has future expiration', $proposal['expires'] > time());
 	$assert('proposal target has full path', str_ends_with($proposal['target'], '/' . $unicodeName));
 
@@ -153,20 +155,40 @@ try {
 	$approved = $broker->approveFolder($proposalId);
 	$assert('approveFolder marks proposal approved=true', $approved['approved'] === true);
 
-	// 12. Commit creates the folder, verifies observed state, and consumes ticket
+	// 12. Execution remains gated: newFolder cannot establish exclusive creation.
 	$outcome = $broker->commitFolder($proposalId);
-	$assert('commitFolder returns outcome verified', $outcome['outcome'] === 'verified');
+	$assert('commitFolder returns outcome not-dispatched', $outcome['outcome'] === 'not-dispatched');
 	$assert('commitFolder returns history not-integrated', $outcome['history'] === 'not-integrated');
-	$assert('commitFolder returns canonical resourceId', str_starts_with($outcome['resourceId'], 'nextcloud:files:'));
-	$assert('commitFolder returns folder metadata', $outcome['name'] === $unicodeName);
-	$assert('commitFolder returns observedState is_directory=true', $outcome['observedState']['is_directory'] === true);
-	$assert('commitFolder returns valid etag', !empty($outcome['observedState']['etag']));
+	$assert('blocked receipt binds exact proposal', $outcome['proposalId'] === $proposalId);
+	$assert('blocked receipt binds exact target', $outcome['name'] === $unicodeName && $outcome['parentResourceId'] === $folderRef);
+	$assert('blocked receipt never fabricates a created identity', !isset($outcome['resourceId'], $outcome['observedState']));
+	$assert('execution gate performs no filesystem creation', !$fixtureFolder->nodeExists($unicodeName));
 
 	// 13. Replay attack: proposal ticket was consumed and cannot be reused
 	$denied('replaying consumed proposal fails with 410', fn () => $broker->commitFolder($proposalId), 410);
 
-	// 14. Second attempt with same name fails conflict (folder now exists)
-	$denied('proposing folder that now exists fails with 409', fn () => $broker->proposeFolder($folderRef, $unicodeName), 409);
+	// 14. Expiration, configuration/session substitution and native Unicode bounds.
+	$expired = $broker->proposeFolder($folderRef, 'Expired');
+	$nativeSession = Server::get(ISession::class);
+	$state = $nativeSession->get('fadenstack_agent.state');
+	$state['folderProposals'][$expired['id']]['expires'] = time() - 1;
+	$nativeSession->set('fadenstack_agent.state', $state);
+	$denied('expired approval is refused', fn () => $broker->approveFolder($expired['id']), 410);
+	$identityChanged = $broker->proposeFolder($folderRef, 'IdentityChanged');
+	$state = $nativeSession->get('fadenstack_agent.state');
+	$originalBinding = $state['binding'];
+	$state['binding'] = bin2hex(random_bytes(32));
+	$nativeSession->set('fadenstack_agent.state', $state);
+	$denied('changed native session invalidates proposal', fn () => $broker->approveFolder($identityChanged['id']), 409);
+	$state['binding'] = $originalBinding;
+	$nativeSession->set('fadenstack_agent.state', $state);
+	$config->setAppValue(Application::APP_ID, 'development', '0');
+	$denied('development opt-out refuses commit', fn () => $broker->commitFolder($identityChanged['id']), 403);
+	$config->setAppValue(Application::APP_ID, 'development', '1');
+	$unicode = $broker->proposeFolder($folderRef, str_repeat('ä', 100));
+	$assert('native name accepts 100 Unicode characters within 255 bytes', $unicode['name'] === str_repeat('ä', 100));
+	$denied('native name refuses more than 255 UTF-8 bytes', fn () => $broker->proposeFolder($folderRef, str_repeat('📁', 64)), 400);
+	$denied('native name refuses surrounding whitespace', fn () => $broker->proposeFolder($folderRef, ' padded '), 400);
 
 	// 15. Native permission refusal: read-only share recipient cannot create folder
 	// Share fixture folder with User B read-only (PERMISSION_READ only, no PERMISSION_CREATE)

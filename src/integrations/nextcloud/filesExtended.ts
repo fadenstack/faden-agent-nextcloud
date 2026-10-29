@@ -25,10 +25,10 @@ export interface ExtendedFilesHost {
 }
 
 export function validateFolderName(name: unknown): string {
-	if (typeof name !== 'string' || !name.trim() || name.length > 100 || /[\x00-\x1f\x7f/\\:<>"|?*]/.test(name) || name === '.' || name === '..') {
+	if (typeof name !== 'string' || !name || name !== name.trim() || Array.from(name).length > 100 || new TextEncoder().encode(name).byteLength > 255 || /[\x00-\x1f\x7f/\\:<>"|?*]/.test(name) || name === '.' || name === '..' || new TextDecoder().decode(new TextEncoder().encode(name)) !== name) {
 		throw new Error('A folder name of 1–100 characters without path separators or special characters is required.')
 	}
-	return name.trim()
+	return name
 }
 
 export function validateCopyMoveArgs(args: Readonly<Record<string, unknown>>): { source: string; destination: string; expectedEtag: string } {

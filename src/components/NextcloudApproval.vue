@@ -53,7 +53,7 @@ async function approve() {
 		</details>
 		<template v-if="part.toolName === 'nc_files_create_folder'">
 			<p class="fdn-approval-description">
-				{{ t('fadenstack_agent', 'An empty folder will be created inside the target directory. Existing items are not overwritten.') }}
+				{{ part.request.arguments.executionReady === false ? t('fadenstack_agent', 'Folder creation is unavailable in this version. No folder will be created.') : t('fadenstack_agent', 'An empty folder will be created inside the target directory. Existing items are not overwritten.') }}
 			</p>
 		</template>
 		<template v-else>

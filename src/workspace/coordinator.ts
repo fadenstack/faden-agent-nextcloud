@@ -8,7 +8,7 @@ export interface WorkspaceReceipt {
 	operation: string
 	target: string
 	resourceId?: number
-	outcome: 'committed' | 'conflict' | 'cancelled_before_dispatch' | 'unknown_completion' | 'failed'
+	outcome: 'committed' | 'conflict' | 'cancelled_before_dispatch' | 'unknown_completion' | 'not_dispatched' | 'failed'
 	view: ViewOutcome
 	message?: string
 }
@@ -62,6 +62,12 @@ export class WorkspaceCoordinator {
 			this.state.latest = { ...receipt }
 			return receipt
 		} finally { this.release(id, generation) }
+	}
+
+	notDispatched(id: string, generation: number, target: string, message: string, operation: string): void {
+		if (this.#owner !== id || generation !== this.#sequence) return
+		this.state.latest = { id, operation, target, outcome: 'not_dispatched', view: 'unchanged', message }
+		this.release(id, generation)
 	}
 
 	failed(id: string, generation: number, target: string, error: unknown, operation = 'write'): void {

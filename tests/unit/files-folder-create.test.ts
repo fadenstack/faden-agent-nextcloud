@@ -7,6 +7,8 @@ import { validateFolderName, filesFolderCreateTool } from '../../src/integration
 import { fileCapability } from '../../src/platform/catalog.ts'
 import type { ScopePolicy } from '../../src/platform/scope.ts'
 import type { FileApi, FileContext, Identity, FolderCreateProposal, FolderCreateOutcome } from '../../src/integrations/nextcloud/types.ts'
+import { WorkspaceCoordinator } from '../../src/workspace/coordinator.ts'
+import { folderOutcome } from '../../src/integrations/nextcloud/folderCreate.ts'
 
 vi.mock('@nextcloud/axios', () => ({ default: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn(), request: vi.fn() } }))
 vi.mock('@nextcloud/router', () => ({
@@ -75,6 +77,7 @@ const fileContext: FileContext = {
 }
 
 function createMockFilesApi(overrides: Partial<FileApi> = {}): FileApi {
+	let createdName = 'NewFolder'
 	return {
 		identity: vi.fn(async () => hostIdentity),
 		assertIdentity: vi.fn(async () => {}),
@@ -92,7 +95,9 @@ function createMockFilesApi(overrides: Partial<FileApi> = {}): FileApi {
 			audience: 'private',
 			scope: { kind: 'user-files' },
 		})),
-		proposeFolderCreate: vi.fn(async (resourceId: string, name: string, expectedRevision?: string): Promise<FolderCreateProposal> => ({
+		proposeFolderCreate: vi.fn(async (resourceId: string, name: string, expectedRevision?: string): Promise<FolderCreateProposal> => {
+			createdName = name
+			return ({
 			id: 'folder-prop-123',
 			toolName: 'nc_files_create_folder',
 			resourceId,
@@ -103,19 +108,20 @@ function createMockFilesApi(overrides: Partial<FileApi> = {}): FileApi {
 			target: `/Team-Docs/${name}`,
 			expires: Math.floor(Date.now() / 1000) + 600,
 			approved: false,
-		})),
+		}) }),
 		approveFolderCreate: vi.fn(async () => {}),
 		commitFolderCreate: vi.fn(async (): Promise<FolderCreateOutcome> => ({
 			outcome: 'verified',
+			proposalId: 'folder-prop-123',
 			history: 'not-integrated',
 			resourceId: 'nextcloud:files:999',
-			name: 'NewFolder',
+			name: createdName,
 			parentResourceId: 'nextcloud:files:50',
 			parentPath: '/Team-Docs',
 			folder: {
 				id: 999,
-				name: 'NewFolder',
-				path: '/Team-Docs/NewFolder',
+				name: createdName,
+				path: `/Team-Docs/${createdName}`,
 				etag: 'new-folder-etag-999',
 				mime: 'httpd/unix-directory',
 				size: 0,
@@ -125,8 +131,8 @@ function createMockFilesApi(overrides: Partial<FileApi> = {}): FileApi {
 			},
 			observedState: {
 				id: 999,
-				name: 'NewFolder',
-				path: '/Team-Docs/NewFolder',
+				name: createdName,
+				path: `/Team-Docs/${createdName}`,
 				etag: 'new-folder-etag-999',
 				permissions: 31,
 				is_directory: true,
@@ -205,6 +211,7 @@ describe('NC08: Native Create Folder Prototype', () => {
 
 		const agent = new NextcloudAgent(hostIdentity, files, gateway.fetch)
 		await agent.signIn('alice', 'test')
+		agent.offerSelection(await agent.selection.select(folderContext.file.id))
 		agent.offerSelection(await agent.selection.select(fileContext.file.id))
 
 		await agent.send('Create a folder inside the selected file', true)
@@ -233,8 +240,9 @@ describe('NC08: Native Create Folder Prototype', () => {
 
 		const agent = new NextcloudAgent(hostIdentity, files, gateway.fetch)
 		await agent.signIn('alice', 'test')
+		agent.offerSelection(await agent.selection.select(folderContext.file.id))
 
-		const sendPromise = agent.send('Create folder NewFolder in nextcloud:files:50', false)
+		const sendPromise = agent.send('Create folder NewFolder in nextcloud:files:50', true)
 
 		let part: ApprovalPart | undefined
 		await vi.waitFor(() => {
@@ -290,12 +298,13 @@ describe('NC08: Native Create Folder Prototype', () => {
 
 		const agent = new NextcloudAgent(hostIdentity, files, gateway.fetch)
 		await agent.signIn('alice', 'test')
+		agent.offerSelection(await agent.selection.select(folderContext.file.id))
 
 		const tool = agent.agent.find('nc_files_create_folder')!
 		const invoke = tool.invoke.bind(tool)
 		tool.invoke = (finalArgs, call) => invoke({ ...finalArgs, name: 'SubstitutedFolder' }, call)
 
-		const sendPromise = agent.send('Create folder ValidFolder', false)
+		const sendPromise = agent.send('Create folder ValidFolder', true)
 
 		let part: ApprovalPart | undefined
 		await vi.waitFor(() => {
@@ -327,8 +336,9 @@ describe('NC08: Native Create Folder Prototype', () => {
 
 		const agent = new NextcloudAgent(hostIdentity, files, gateway.fetch)
 		await agent.signIn('alice', 'test')
+		agent.offerSelection(await agent.selection.select(folderContext.file.id))
 
-		const sendPromise = agent.send('Create folder PendingFolder', false)
+		const sendPromise = agent.send('Create folder PendingFolder', true)
 
 		await vi.waitFor(() => {
 			const part = agent.chat.turns.flatMap(t => [...t.parts]).find(p => p instanceof ApprovalPart)
@@ -350,12 +360,13 @@ describe('NC08: Native Create Folder Prototype', () => {
 			commitFolderCreate: vi.fn()
 				.mockResolvedValueOnce({
 					outcome: 'verified',
+			proposalId: 'folder-prop-123',
 					history: 'not-integrated',
 					resourceId: 'nextcloud:files:1001',
 					name: 'Folder1',
 					parentResourceId: 'nextcloud:files:50',
 					parentPath: '/Team-Docs',
-					folder: folderContext.file,
+					folder: { ...folderContext.file, id: 1001, name: 'Folder1', path: '/Team-Docs/Folder1', etag: 'e1' },
 					observedState: { id: 1001, name: 'Folder1', path: '/Team-Docs/Folder1', etag: 'e1', permissions: 31, is_directory: true },
 				})
 				.mockRejectedValueOnce(new Error('The folder proposal expired or was already consumed.')),
@@ -378,8 +389,9 @@ describe('NC08: Native Create Folder Prototype', () => {
 
 		const agent = new NextcloudAgent(hostIdentity, files, gateway.fetch)
 		await agent.signIn('alice', 'test')
+		agent.offerSelection(await agent.selection.select(folderContext.file.id))
 
-		const sendPromise = agent.send('Create Folder1', false)
+		const sendPromise = agent.send('Create Folder1', true)
 		let part: ApprovalPart | undefined
 		await vi.waitFor(() => {
 			part = agent.chat.turns.flatMap(t => [...t.parts]).find(p => p instanceof ApprovalPart) as ApprovalPart | undefined
@@ -392,7 +404,205 @@ describe('NC08: Native Create Folder Prototype', () => {
 		expect(files.commitFolderCreate).toHaveBeenCalledTimes(1)
 
 		// Attempting to commit again directly on the same proposal ID fails
-		await expect(files.commitFolderCreate('folder-prop-123')).rejects.toThrow('already consumed')
+		await expect(agent.approve(part!)).rejects.toThrow('no longer pending')
+		expect(files.commitFolderCreate).toHaveBeenCalledTimes(1)
 		await agent.dispose()
+	})
+})
+
+async function folderFlow(args: Record<string, unknown>, overrides: Partial<FileApi> = {}, selected = true) {
+	const files = createMockFilesApi(overrides)
+	let round = 0
+	const gateway = new FakeGateway({
+		agents: [{ slug: 'nc-folder-agent', version: 1, contract: [{ name: 'nc_files_create_folder', risk: 'destructive' }] }],
+		users: [{ email: 'alice', password: 'test', agents: ['nc-folder-agent'] }],
+		model: () => ++round === 1 ? ({ toolCalls: [{ id: 'review-folder', name: 'nc_files_create_folder', arguments: args }] }) : ({ text: 'Receipt inspected.' }),
+	})
+	const refresh = vi.fn(async () => 'refreshed' as const)
+	const view = { app: 'files', key: '/apps/files', epoch: 1, editState: 'clean' as const, reason: 'Save edits first' }
+	const workspace = new WorkspaceCoordinator({ guard: { snapshot: () => view, dispose: () => {} }, refresh })
+	const agent = new NextcloudAgent(hostIdentity, files, gateway.fetch, workspace)
+	await agent.signIn('alice', 'test')
+	if (selected) agent.offerSelection(await agent.selection.select(folderContext.file.id))
+	const send = agent.send('Create the requested folder', selected)
+	return { agent, files, gateway, workspace, refresh, send }
+}
+
+async function pendingFolder(agent: NextcloudAgent): Promise<ApprovalPart> {
+	let part: ApprovalPart | undefined
+	await vi.waitFor(() => {
+		part = agent.chat.turns.flatMap(t => [...t.parts]).find(p => p instanceof ApprovalPart && p.isPending) as ApprovalPart | undefined
+		expect(part).toBeDefined()
+	})
+	return part!
+}
+
+describe('Independent folder creation regressions', () => {
+	it('does not introduce a model-invented destination even with user-files destination policy', async () => {
+		const flow = await folderFlow({ name: 'NewFolder', resource_id: 'nextcloud:files:4321' }, {}, false)
+		try {
+			await vi.waitFor(() => expect(flow.agent.chat.turns[0].state === 'failed' || flow.agent.chat.turns[0].parts.some(p => p instanceof ApprovalPart)).toBe(true))
+			expect(flow.files.proposeFolderCreate).not.toHaveBeenCalled()
+			expect(flow.agent.chat.turns[0].errorMessage).toContain('known destination')
+		} finally { flow.agent.stop(); await flow.send; await flow.agent.dispose() }
+	})
+
+	it('binds an omitted revision to the freshly authorized parent revision', async () => {
+		const flow = await folderFlow({ name: 'NewFolder' })
+		try {
+			const part = await pendingFolder(flow.agent)
+			expect(flow.files.proposeFolderCreate).toHaveBeenCalledWith('nextcloud:files:50', 'NewFolder', 'parent-etag-1', expect.any(AbortSignal))
+			part.deny()
+		} finally { flow.agent.stop(); await flow.send; await flow.agent.dispose() }
+	})
+
+	it('refuses removal of an approved optional revision at the SDK invocation boundary', async () => {
+		const flow = await folderFlow({ name: 'NewFolder', resource_id: 'nextcloud:files:50', expectedRevision: 'parent-etag-1' })
+		try {
+			const tool = flow.agent.agent.find('nc_files_create_folder')!
+			const invoke = tool.invoke.bind(tool)
+			tool.invoke = (args, call) => { const { expectedRevision: _removed, ...changed } = args; return invoke(changed, call) }
+			await flow.agent.approve(await pendingFolder(flow.agent))
+			await flow.send
+			expect(flow.files.commitFolderCreate).not.toHaveBeenCalled()
+			expect(flow.workspace.state.latest).toBeUndefined()
+		} finally { flow.agent.stop(); await flow.send; await flow.agent.dispose() }
+	})
+
+	it('refuses a substituted approval preview before native approval', async () => {
+		const flow = await folderFlow({ name: 'NewFolder' })
+		try {
+			const part = await pendingFolder(flow.agent)
+			;(part.request.arguments as Record<string, unknown>).target = '/Different/NewFolder'
+			await expect(flow.agent.approve(part)).rejects.toThrow('preview changed')
+			expect(flow.files.approveFolderCreate).not.toHaveBeenCalled()
+			expect(flow.files.commitFolderCreate).not.toHaveBeenCalled()
+		} finally { flow.agent.stop(); await flow.send; await flow.agent.dispose() }
+	})
+
+	it('rechecks the destination audience after approval and before dispatch', async () => {
+		const flow = await folderFlow({ name: 'NewFolder' })
+		try {
+			const part = await pendingFolder(flow.agent)
+			vi.mocked(flow.files.scopeResource!).mockImplementation(async reference => ({ resourceId: reference, revision: 'parent-etag-1', sourceClass: 'standard', audience: 'shared', scope: { kind: 'user-files' } }))
+			await flow.agent.approve(part)
+			await flow.send
+			expect(flow.files.commitFolderCreate).not.toHaveBeenCalled()
+		} finally { flow.agent.stop(); await flow.send; await flow.agent.dispose() }
+	})
+
+	it.each(['not-dispatched', 'ambiguous'] as const)('keeps a %s receipt separate from a confirmed save', async outcome => {
+		const flow = await folderFlow({ name: 'NewFolder' }, { commitFolderCreate: vi.fn(async () => ({ outcome, history: 'not-integrated', proposalId: 'folder-prop-123', name: 'NewFolder', parentResourceId: 'nextcloud:files:50', target: '/Team-Docs/NewFolder', message: 'Inspect the destination.' })) })
+		try {
+			await flow.agent.approve(await pendingFolder(flow.agent))
+			await flow.send
+			expect(flow.workspace.state.latest?.outcome).toBe(outcome === 'not-dispatched' ? 'not_dispatched' : 'unknown_completion')
+			expect(flow.refresh).not.toHaveBeenCalled()
+			expect(flow.files.commitFolderCreate).toHaveBeenCalledTimes(1)
+		} finally { await flow.agent.dispose() }
+	})
+
+	it('preserves verified completion when Stop occurs during a noncooperating dispatch', async () => {
+		const ordinary = createMockFilesApi()
+		let complete!: (value: FolderCreateOutcome) => void
+		const flow = await folderFlow({ name: 'NewFolder' }, { commitFolderCreate: vi.fn(() => new Promise(resolve => { complete = resolve })) })
+		try {
+			await flow.agent.approve(await pendingFolder(flow.agent))
+			await vi.waitFor(() => expect(flow.files.commitFolderCreate).toHaveBeenCalledTimes(1))
+			flow.agent.stop()
+			expect(flow.agent.chat.isBusy).toBe(true)
+			complete(await ordinary.commitFolderCreate!('folder-prop-123'))
+			await flow.send
+			expect(flow.workspace.state.latest).toMatchObject({ outcome: 'committed', operation: 'create_folder', view: 'refresh_required' })
+			expect(flow.refresh).not.toHaveBeenCalled()
+			expect(flow.gateway.modelCalls).toHaveLength(1)
+		} finally { flow.agent.stop(); await flow.agent.dispose() }
+	})
+
+	it('keeps lost-response completion unknown and does not retry', async () => {
+		const flow = await folderFlow({ name: 'NewFolder' }, { commitFolderCreate: vi.fn(async () => { throw new Error('Lost response after dispatch') }) })
+		try {
+			await flow.agent.approve(await pendingFolder(flow.agent))
+			await flow.send
+			expect(flow.workspace.state.latest?.outcome).toBe('unknown_completion')
+			expect(flow.files.commitFolderCreate).toHaveBeenCalledTimes(1)
+			expect(flow.refresh).not.toHaveBeenCalled()
+		} finally { await flow.agent.dispose() }
+	})
+
+	it('uses the same Unicode character and UTF-8 byte limits as native validation', () => {
+		expect(validateFolderName('ä'.repeat(100))).toBe('ä'.repeat(100))
+		expect(() => validateFolderName('📁'.repeat(64))).toThrow()
+		expect(() => validateFolderName(' padded ')).toThrow()
+		expect(() => validateFolderName('\ud800')).toThrow()
+	})
+
+	it('requires the native policy and the complete adapter lifecycle before offering the tool', async () => {
+		const noPolicy = new NextcloudAgent({ ...hostIdentity, scopePolicy: undefined }, createMockFilesApi())
+		const noCommit = new NextcloudAgent(hostIdentity, createMockFilesApi({ commitFolderCreate: undefined }))
+		try {
+			expect(noPolicy.agent.tools.some(tool => tool.name === 'nc_files_create_folder')).toBe(false)
+			expect(noCommit.agent.tools.some(tool => tool.name === 'nc_files_create_folder')).toBe(false)
+		} finally { await noPolicy.dispose(); await noCommit.dispose() }
+	})
+
+	it('does not dispatch after Stop during a delayed native approval response', async () => {
+		let approveDone!: () => void
+		const flow = await folderFlow({ name: 'NewFolder' }, { approveFolderCreate: vi.fn(() => new Promise<void>(resolve => { approveDone = resolve })) })
+		try {
+			const approving = flow.agent.approve(await pendingFolder(flow.agent))
+			await vi.waitFor(() => expect(flow.files.approveFolderCreate).toHaveBeenCalledTimes(1))
+			flow.agent.stop()
+			await flow.send
+			approveDone()
+			await expect(approving).rejects.toThrow('no longer pending')
+			expect(flow.files.commitFolderCreate).not.toHaveBeenCalled()
+		} finally { await flow.agent.dispose() }
+	})
+
+	it('preserves the original protected lineage after a source is reclassified standard', async () => {
+		const policy: ScopePolicy = { ...testPolicy, sourceClasses: ['standard', 'protected'], downstreamPolicy: 'configured' }
+		let classification: 'protected' | 'standard' = 'protected'
+		const files = createMockFilesApi({ scopeResource: vi.fn(async reference => ({ resourceId: reference, revision: 'parent-etag-1', sourceClass: classification, audience: 'private', scope: { kind: 'user-files' } })) })
+		let round = 0
+		const gateway = new FakeGateway({
+			agents: [{ slug: 'nc-folder-agent', version: 1, contract: [{ name: 'nc_files_create_folder', risk: 'destructive' }] }],
+			users: [{ email: 'alice', password: 'test', agents: ['nc-folder-agent'] }],
+			model: () => ++round === 1 ? ({ text: 'Included folder inspected.' }) : ({ toolCalls: [{ id: 'lineage-folder', name: 'nc_files_create_folder', arguments: { name: 'NewFolder' } }] }),
+		})
+		const agent = new NextcloudAgent({ ...hostIdentity, scopePolicy: policy }, files, gateway.fetch)
+		try {
+			await agent.signIn('alice', 'test')
+			agent.offerSelection(await agent.selection.select(50))
+			await agent.send('Use the included folder', true)
+			classification = 'standard'
+			await agent.send('Create a folder using the prior context', true)
+			expect(files.proposeFolderCreate).not.toHaveBeenCalled()
+			expect(agent.chat.turns[1].errorMessage).toContain('Earlier conversation content')
+		} finally { agent.stop(); await agent.dispose() }
+	})
+
+	it('does not dispatch when a native draft appears during approval', async () => {
+		const flow = await folderFlow({ name: 'NewFolder' })
+		try {
+			const part = await pendingFolder(flow.agent)
+			vi.spyOn(flow.workspace.dependencies.guard, 'snapshot').mockReturnValue({ app: 'files', key: '/apps/files', epoch: 1, editState: 'dirty', reason: 'Save edits first' })
+			await flow.agent.approve(part)
+			await flow.send
+			expect(flow.files.commitFolderCreate).not.toHaveBeenCalled()
+			expect(flow.refresh).not.toHaveBeenCalled()
+		} finally { flow.agent.stop(); await flow.send; await flow.agent.dispose() }
+	})
+
+	it('projects verified receipts and refuses a mismatched native identity', async () => {
+		const files = createMockFilesApi()
+		const proposal = await files.proposeFolderCreate!('nextcloud:files:50', 'NewFolder', 'parent-etag-1')
+		const outcome = await files.commitFolderCreate!('folder-prop-123')
+		if (outcome.outcome !== 'verified') throw new Error('Expected synthetic verified fixture')
+		const response = { ...outcome, token: 'synthetic-secret', folder: { ...outcome.folder, token: 'synthetic-secret', url: 'https://unapproved.test/logout' } }
+		const projected = folderOutcome(response, proposal)
+		expect(JSON.stringify(projected)).not.toContain('synthetic-secret')
+		expect(JSON.stringify(projected)).not.toContain('unapproved.test')
+		expect(() => folderOutcome({ ...outcome, resourceId: 'nextcloud:files:50' }, proposal)).toThrow('Invalid native folder receipt')
 	})
 })

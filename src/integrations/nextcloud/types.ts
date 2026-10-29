@@ -214,16 +214,25 @@ export interface FolderCreateProposal {
 	target: string
 	expires: number
 	approved: boolean
+	executionReady?: boolean
 	identityScope?: string
 	identitySession?: string
 }
 
-export interface FolderCreateOutcome {
-	outcome: 'verified' | 'not-dispatched' | 'ambiguous'
+interface FolderCreateReceipt {
 	history: 'not-integrated'
-	resourceId: string
 	name: string
 	parentResourceId: string
+	proposalId: string
+}
+
+export type FolderCreateOutcome = (FolderCreateReceipt & {
+	outcome: 'not-dispatched' | 'ambiguous'
+	target: string
+	message: string
+}) | (FolderCreateReceipt & {
+	outcome: 'verified'
+	resourceId: string
 	parentPath: string
 	folder: FileMetadata
 	observedState: {
@@ -234,7 +243,7 @@ export interface FolderCreateOutcome {
 		permissions: number
 		is_directory: boolean
 	}
-}
+})
 
 export interface FolderCreateResult {
 	path: string
