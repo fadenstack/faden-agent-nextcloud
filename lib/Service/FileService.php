@@ -728,6 +728,7 @@ class FileService {
 
 		$id = bin2hex(random_bytes(24));
 		$identity = $this->journalIdentity();
+		$executionReady = $this->config->folderCreateEnabled();
 		$p = [
 			'id' => $id,
 			'toolName' => 'nc_files_create_folder',
@@ -736,17 +737,18 @@ class FileService {
 			'name' => $name,
 			'parentEtag' => $folder->getEtag(),
 			'expectedRevision' => $expectedRevision ?? $folder->getEtag(),
+			'parentPath' => '/' . ltrim($parentPath, '/'),
 			'target' => $targetPath,
 			'expires' => time() + 600,
 			'approved' => false,
-			'executionReady' => false,
+			'executionReady' => $executionReady,
 			'identityScope' => $identity->scopeHash,
 			'identitySession' => $identity->sessionHash,
 		];
 		$s = $this->state();
 		$s['folderProposals'] = array_filter($s['folderProposals'] ?? [], fn ($item) => ($item['expires'] ?? 0) > time());
 		if (count($s['folderProposals']) >= 10) {
-			throw new Problem('Too many pending proposals. Wait for them to expire.', 429);
+			throw new Problem('Too many pending proposals. Wait for them to expire or cancel them.', 429);
 		}
 		$s['folderProposals'][$id] = $p;
 		$this->session->set(self::KEY, $s);
@@ -759,6 +761,21 @@ class FileService {
 			throw new Problem('The folder proposal expired or was already consumed.', 410);
 		}
 		return $p;
+	}
+
+	public function cancelFolder(string $id): array {
+		$s = $this->state();
+		$s['folderProposals'] = array_filter($s['folderProposals'] ?? [], fn ($item) => ($item['expires'] ?? 0) > time());
+		if (isset($s['folderProposals'][$id])) {
+			$this->assertProposalIdentity($s['folderProposals'][$id]);
+			unset($s['folderProposals'][$id]);
+		}
+		if (isset($s['folderReceipts'][$id])) {
+			$this->assertProposalIdentity($s['folderReceipts'][$id]);
+			unset($s['folderReceipts'][$id]);
+		}
+		$this->session->set(self::KEY, $s);
+		return ['cancelled' => true];
 	}
 
 	public function approveFolder(string $id): array {
@@ -775,7 +792,7 @@ class FileService {
 		return ['approved' => true];
 	}
 
-	public function commitFolder(string $id): array {
+	public function commitFolder(string $id, int $folderProtocol = 0): array {
 		$this->scope->assertFolderCreateTool();
 		$p = $this->folderProposal($id);
 		$this->assertProposalIdentity($p);
@@ -790,6 +807,11 @@ class FileService {
 		if (!$folder instanceof Folder) {
 			throw new Problem('The destination is no longer a folder.', 409);
 		}
+		$home = $this->root->getUserFolder($this->uid());
+		$parentPath = '/' . ltrim($home->getRelativePath($folder->getPath()), '/');
+		if (isset($p['parentPath']) && $parentPath !== $p['parentPath']) {
+			throw new Problem('The destination folder moved. No folder was created.', 409);
+		}
 		if ($folder->getEtag() !== $p['parentEtag']) {
 			throw new Problem('The destination folder changed. No folder was created.', 409);
 		}
@@ -801,12 +823,99 @@ class FileService {
 			throw new Problem('A folder or file with this name already exists.', 409);
 		}
 
-		// Folder::newFolder() can return a directory created by another request.
-		// Its public parent lock also blocks its own nested mkdir. Until a public
-		// conditional creation protocol is proven, consume the ticket without a
-		// filesystem write. Development opt-in must not bypass this release gate.
+		if ($folderProtocol === 1 && $this->config->folderCreateEnabled()) {
+			$parentMetadata = $this->metadata($folder, 'write');
+			$base = '/files/' . rawurlencode($this->uid()) . '/' . implode('/', array_map('rawurlencode', explode('/', trim($parentMetadata['path'], '/'))));
+			$base = rtrim($base, '/') . '/';
+
+			$s = $this->state();
+			$s['folderReceipts'] = array_filter($s['folderReceipts'] ?? [], fn ($r) => ($r['expires'] ?? 0) > time());
+			if (count($s['folderReceipts']) >= 10) {
+				throw new Problem('Too many unfinished folder creations. Wait for them to expire.', 429);
+			}
+			$s['folderReceipts'][$p['id']] = [
+				'receiptId' => $p['id'],
+				'folderId' => $folder->getId(),
+				'folderPath' => '/' . ltrim($parentMetadata['path'], '/'),
+				'name' => $p['name'],
+				'target' => $p['target'],
+				'parentEtag' => $folder->getEtag(),
+				'expires' => time() + 600,
+				'identityScope' => $p['identityScope'],
+				'identitySession' => $p['identitySession'],
+			];
+			$this->session->set(self::KEY, $s);
+
+			return [
+				'kind' => 'dav-create-folder',
+				'receiptId' => $p['id'],
+				'dav_path' => $base . rawurlencode($p['name']),
+				'parent_resource_id' => 'nextcloud:files:' . $folder->getId(),
+				'parent_path' => '/' . ltrim($parentMetadata['path'], '/'),
+				'parent_etag' => $folder->getEtag(),
+				'name' => $p['name'],
+				'target' => $p['target'],
+			];
+		}
+
 		return ['outcome' => 'not-dispatched', 'history' => 'not-integrated', 'proposalId' => $p['id'],
 			'name' => $p['name'], 'parentResourceId' => $p['resourceId'], 'target' => $p['target'],
 			'message' => 'Folder creation is unavailable in this version. No folder was created.'];
+	}
+
+	public function finishFolder(string $receiptId, string $createdFileId = ''): array {
+		$this->scope->assertFolderCreateTool();
+		$s = $this->state();
+		$r = $s['folderReceipts'][$receiptId] ?? null;
+		if (!$r || ($r['expires'] ?? 0) <= time()) {
+			throw new Problem('Folder creation receipt expired or was already consumed.', 410);
+		}
+		$this->assertProposalIdentity($r);
+		unset($s['folderReceipts'][$receiptId]);
+		$this->session->set(self::KEY, $s);
+
+		$folder = $this->node($r['folderId']);
+		if (!$folder instanceof Folder) {
+			throw new Problem('The destination is no longer a folder.', 409);
+		}
+		$home = $this->root->getUserFolder($this->uid());
+		$parentPath = '/' . ltrim($home->getRelativePath($folder->getPath()), '/');
+		if ($parentPath !== $r['folderPath']) {
+			throw new Problem('The destination folder moved. No success is claimed.', 409);
+		}
+		if (!$folder->nodeExists($r['name'])) {
+			throw new Problem('The created folder could not be confirmed. Inspect the destination before continuing.', 409);
+		}
+		$createdNode = $folder->get($r['name']);
+		if (!$createdNode instanceof Folder) {
+			throw new Problem('The created resource is not a directory.', 409);
+		}
+		if ($createdFileId !== '' && (int)$createdFileId > 0 && $createdNode->getId() !== (int)$createdFileId) {
+			throw new Problem('The created folder identity does not match the creation response.', 409);
+		}
+		if (count($createdNode->getDirectoryListing()) !== 0) {
+			throw new Problem('The created folder is not empty.', 409);
+		}
+
+		$createdMetadata = $this->metadata($createdNode, 'metadata');
+		return [
+			'outcome' => 'verified',
+			'history' => 'not-integrated',
+			'resourceId' => 'nextcloud:files:' . $createdNode->getId(),
+			'proposalId' => $r['receiptId'],
+			'name' => $r['name'],
+			'parentResourceId' => 'nextcloud:files:' . $folder->getId(),
+			'parentPath' => $r['folderPath'],
+			'target' => $r['target'],
+			'folder' => $createdMetadata,
+			'observedState' => [
+				'id' => $createdNode->getId(),
+				'name' => $createdNode->getName(),
+				'path' => $r['target'],
+				'etag' => $createdNode->getEtag(),
+				'permissions' => $createdNode->getPermissions(),
+				'is_directory' => true,
+			],
+		];
 	}
 }

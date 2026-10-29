@@ -203,6 +203,17 @@ export interface ShareOverviewResults {
 
 export type ToolViewResults = SearchViewResults | FolderOverviewResults | ShareOverviewResults
 
+export interface DavFolderCreatePlan {
+	kind: 'dav-create-folder'
+	receiptId: string
+	dav_path: string
+	parent_resource_id: string
+	parent_path: string
+	parent_etag: string
+	name: string
+	target: string
+}
+
 export interface FolderCreateProposal {
 	id: string
 	toolName: 'nc_files_create_folder'
@@ -465,7 +476,9 @@ export interface FileApi {
 	scopeResource?(resourceId: string, purpose: ResourcePurpose, signal: AbortSignal): Promise<NativeResource>
 	proposeFolderCreate?(resourceId: string, name: string, expectedRevision?: string, signal?: AbortSignal): Promise<FolderCreateProposal>
 	approveFolderCreate?(id: string, signal?: AbortSignal): Promise<void>
+	cancelFolderCreate?(id: string, signal?: AbortSignal): Promise<void>
 	commitFolderCreate?(id: string, signal?: AbortSignal): Promise<FolderCreateOutcome>
+	finishFolderCreate?(receiptId: string, createdFileId?: string, signal?: AbortSignal): Promise<FolderCreateOutcome>
 	createFolder?(folderPath: string, name: string, signal?: AbortSignal): Promise<FolderCreateResult>
 	copyFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>
 	moveFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>

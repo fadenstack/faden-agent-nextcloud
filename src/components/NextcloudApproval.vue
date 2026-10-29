@@ -16,7 +16,19 @@ const problem = ref('')
 async function approve() {
 	approving.value = true
 	problem.value = ''
-	try { await props.host.approve(props.part) } catch (error) { problem.value = errorMessage(error); props.part.deny() } finally { approving.value = false }
+	try {
+		await props.host.approve(props.part)
+	} catch (error) {
+		problem.value = errorMessage(error)
+		props.host.deny?.(props.part).catch(() => {})
+		props.part.deny()
+	} finally {
+		approving.value = false
+	}
+}
+async function deny() {
+	try { await props.host.deny?.(props.part) } catch { /* ignore */ }
+	props.part.deny()
 }
 </script>
 
@@ -72,7 +84,7 @@ async function approve() {
 			<button type="button"
 				class="fdn-button fdn-quiet"
 				:disabled="approving"
-				@click="part.deny()">
+				@click="deny">
 				{{ strings.deny }}
 			</button>
 		</div>

@@ -1,7 +1,7 @@
 import axios from '@nextcloud/axios'
 import { getRequestToken } from '@nextcloud/auth'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderCreateResult, FolderCreateProposal, FolderCreateOutcome, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact, DavCollection, ShareListing } from './types.ts'
+import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, DavFolderCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderCreateResult, FolderCreateProposal, FolderCreateOutcome, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact, DavCollection, ShareListing } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 import { sha256Hex } from './tables.ts'
 import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './adapterGuards.ts'
@@ -604,9 +604,128 @@ export class NextcloudFiles implements FileApi {
 		await this.post(`/files/folder/${encodeURIComponent(id)}/approve`, {}, signal)
 	}
 
+	async cancelFolderCreate(id: string, signal?: AbortSignal): Promise<void> {
+		await this.assertIdentity(signal)
+		await this.post(`/files/folder/${encodeURIComponent(id)}/cancel`, {}, signal)
+	}
+
 	async commitFolderCreate(id: string, signal?: AbortSignal): Promise<FolderCreateOutcome> {
 		await this.assertIdentity(signal)
-		return this.post<FolderCreateOutcome>(`/files/folder/${encodeURIComponent(id)}/commit`, {}, signal)
+		const planOrOutcome = await this.post<DavFolderCreatePlan | FolderCreateOutcome>(
+			`/files/folder/${encodeURIComponent(id)}/commit`,
+			{ folderProtocol: 1 },
+			signal,
+		)
+		if (!('kind' in planOrOutcome) || planOrOutcome.kind !== 'dav-create-folder') {
+			return planOrOutcome as FolderCreateOutcome
+		}
+		const plan = planOrOutcome
+		const prefix = `/files/${encodeURIComponent(this.initial.userId)}/`
+		if (!plan.dav_path.startsWith(prefix) || /[?#\r\n]/.test(plan.dav_path)) {
+			throw new Error('Invalid approved Nextcloud creation plan.')
+		}
+		await this.assertIdentity(signal)
+		const [parent] = await this.searchTransport.resolve([plan.parent_resource_id], 'all', signal ?? AbortSignal.timeout(20000))
+		if (!parent?.folder || parent.path !== plan.parent_path || parent.etag !== plan.parent_etag || !(parent.permissions & 4)) {
+			throw new Error('The approved destination changed. No write was performed.')
+		}
+
+		if (signal?.aborted) {
+			throw new Error('Operation was cancelled before dispatch.')
+		}
+
+		let mkcolRes
+		try {
+			mkcolRes = await axios.request({
+				url: generateRemoteUrl('dav').replace(/\/$/, '') + '/' + plan.dav_path.replace(/^\//, ''),
+				method: 'MKCOL',
+				headers: {
+					'If-None-Match': '*',
+				},
+				signal,
+				timeout: 20000,
+				validateStatus: () => true,
+			})
+		} catch {
+			return {
+				outcome: 'ambiguous',
+				history: 'not-integrated',
+				proposalId: plan.receiptId,
+				name: plan.name,
+				parentResourceId: plan.parent_resource_id,
+				target: plan.target,
+				message: 'Folder creation could not be confirmed. Inspect the destination before trying again.',
+			}
+		}
+
+		if (mkcolRes.status === 201) {
+			const ocFileId = mkcolRes.headers?.['oc-fileid'] || mkcolRes.headers?.['OC-FileId']
+			try {
+				await this.assertIdentity()
+				return await this.finishFolderCreate(plan.receiptId, ocFileId ? String(ocFileId) : '', AbortSignal.timeout(10000))
+			} catch {
+				return {
+					outcome: 'ambiguous',
+					history: 'not-integrated',
+					proposalId: plan.receiptId,
+					name: plan.name,
+					parentResourceId: plan.parent_resource_id,
+					target: plan.target,
+					message: 'Folder was created on the server, but final verification could not be completed. Inspect the destination before continuing.',
+				}
+			}
+		}
+
+		if (mkcolRes.status === 412 || mkcolRes.status === 405) {
+			return {
+				outcome: 'not-dispatched',
+				history: 'not-integrated',
+				proposalId: plan.receiptId,
+				name: plan.name,
+				parentResourceId: plan.parent_resource_id,
+				target: plan.target,
+				message: 'A folder or file with this name already exists. No folder was created.',
+			}
+		}
+
+		if (mkcolRes.status === 423) {
+			return {
+				outcome: 'not-dispatched',
+				history: 'not-integrated',
+				proposalId: plan.receiptId,
+				name: plan.name,
+				parentResourceId: plan.parent_resource_id,
+				target: plan.target,
+				message: 'The destination is busy or locked by another operation. No folder was created.',
+			}
+		}
+
+		if (mkcolRes.status === 403) {
+			return {
+				outcome: 'not-dispatched',
+				history: 'not-integrated',
+				proposalId: plan.receiptId,
+				name: plan.name,
+				parentResourceId: plan.parent_resource_id,
+				target: plan.target,
+				message: 'Permission denied to create folder in this destination.',
+			}
+		}
+
+		return {
+			outcome: 'ambiguous',
+			history: 'not-integrated',
+			proposalId: plan.receiptId,
+			name: plan.name,
+			parentResourceId: plan.parent_resource_id,
+			target: plan.target,
+			message: `Folder creation returned unexpected status ${mkcolRes.status}. Inspect destination before retrying.`,
+		}
+	}
+
+	async finishFolderCreate(receiptId: string, createdFileId = '', signal?: AbortSignal): Promise<FolderCreateOutcome> {
+		await this.assertIdentity(signal)
+		return this.post<FolderCreateOutcome>('/files/folder/finish', { receiptId, createdFileId }, signal)
 	}
 
 	async pdf(contextId: string, signal?: AbortSignal): Promise<Uint8Array> {

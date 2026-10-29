@@ -138,7 +138,7 @@ try {
 	$assert('proposal binds folderId', $proposal['folderId'] === $fixtureFolder->getId());
 	$assert('proposal binds name', $proposal['name'] === $unicodeName);
 	$assert('proposal approved is false', $proposal['approved'] === false);
-	$assert('proposal announces execution gate before approval', $proposal['executionReady'] === false);
+	$assert('proposal announces execution gate before approval', $proposal['executionReady'] === true);
 	$assert('proposal has future expiration', $proposal['expires'] > time());
 	$assert('proposal target has full path', str_ends_with($proposal['target'], '/' . $unicodeName));
 
@@ -166,6 +166,44 @@ try {
 
 	// 13. Replay attack: proposal ticket was consumed and cannot be reused
 	$denied('replaying consumed proposal fails with 410', fn () => $broker->commitFolder($proposalId), 410);
+
+	// 13b. Cancellation and proposal quota recovery
+	$cancelProp = $broker->proposeFolder($folderRef, 'ToCancel');
+	$cancelled = $broker->cancelFolder($cancelProp['id']);
+	$assert('cancelFolder returns cancelled true', ($cancelled['cancelled'] ?? false) === true);
+	$denied('cancelled proposal cannot be approved', fn () => $broker->approveFolder($cancelProp['id']), 410);
+
+	// 13c. Conditional folder creation protocol with folderProtocol = 1
+	$condProp = $broker->proposeFolder($folderRef, 'CondFolder');
+	$broker->approveFolder($condProp['id']);
+	$plan = $broker->commitFolder($condProp['id'], 1);
+	$assert('commitFolder with protocol 1 returns dav-create-folder plan', ($plan['kind'] ?? '') === 'dav-create-folder');
+	$assert('plan binds receiptId', !empty($plan['receiptId']));
+	$assert('plan binds dav_path', str_contains($plan['dav_path'], 'CondFolder'));
+	$assert('plan binds parent_resource_id', $plan['parent_resource_id'] === $folderRef);
+	$assert('plan binds parent_etag', !empty($plan['parent_etag']));
+	$assert('plan binds name', $plan['name'] === 'CondFolder');
+
+	// finishFolder before folder exists fails 409 and consumes receipt
+	$denied('finishFolder fails 409 before folder exists on filesystem', fn () => $broker->finishFolder($plan['receiptId']), 409);
+	$denied('replaying consumed finishFolder fails 410', fn () => $broker->finishFolder($plan['receiptId']), 410);
+
+	// 13d. Successful conditional folder creation and verification
+	$condProp2 = $broker->proposeFolder($folderRef, 'CondVerified');
+	$broker->approveFolder($condProp2['id']);
+	$plan2 = $broker->commitFolder($condProp2['id'], 1);
+
+	// Simulate client WebDAV MKCOL 201
+	$createdFolderNode = $fixtureFolder->newFolder('CondVerified');
+	$verifiedOutcome = $broker->finishFolder($plan2['receiptId'], (string)$createdFolderNode->getId());
+	$assert('finishFolder returns verified outcome', ($verifiedOutcome['outcome'] ?? '') === 'verified');
+	$assert('verified outcome returns history not-integrated', ($verifiedOutcome['history'] ?? '') === 'not-integrated');
+	$assert('verified outcome binds created resourceId', $verifiedOutcome['resourceId'] === 'nextcloud:files:' . $createdFolderNode->getId());
+	$assert('verified outcome binds folder metadata', is_array($verifiedOutcome['folder']));
+	$assert('verified outcome observedState is directory', ($verifiedOutcome['observedState']['is_directory'] ?? false) === true);
+
+	// finishFolder cannot be replayed (fails 410)
+	$denied('replaying finishFolder fails 410', fn () => $broker->finishFolder($plan2['receiptId']), 410);
 
 	// 14. Expiration, configuration/session substitution and native Unicode bounds.
 	$expired = $broker->proposeFolder($folderRef, 'Expired');

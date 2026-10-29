@@ -144,7 +144,17 @@ class FilesController extends Controller {
 	}
 	#[NoAdminRequired]
 	#[UseSession]
-	public function commitFolder(string $id): Response {
-		return $this->run(fn () => $this->files->commitFolder($id), true);
+	public function cancelFolder(string $id): Response {
+		return $this->run(fn () => $this->files->cancelFolder($id), true);
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function commitFolder(string $id, int $folderProtocol = 0): Response {
+		return $this->run(fn () => $this->files->commitFolder($id, $folderProtocol), true);
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function finishFolder(string $receiptId = '', string $createdFileId = ''): Response {
+		return $this->run(fn () => $this->files->finishFolder($receiptId, $createdFileId), true);
 	}
 }

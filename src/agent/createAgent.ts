@@ -743,6 +743,23 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		part.allow()
 	}
 
+	async deny(part: ApprovalPart): Promise<void> {
+		if (part.toolName === 'nc_files_create_folder' && part.request.source === 'host') {
+			const proposal = this.#folderCreateProposals.get(part.request.callId)
+			this.#folderCreateProposals.delete(part.request.callId)
+			this.#folderCreateInputs.delete(part.request.callId)
+			this.#folderCreatePreviews.delete(part.request.callId)
+			this.#proposalViews.delete(part.request.callId)
+			if (proposal && this.files.cancelFolderCreate) {
+				try {
+					await this.files.cancelFolderCreate(proposal.id)
+				} catch {
+					// Ignore cancellation network errors
+				}
+			}
+		}
+	}
+
 	/** One exact, explicitly approved development action. Native production permits remain a release gate. */
 	private consumeExpandedApproval(callId: string, args: Readonly<Record<string, unknown>>): void {
 		const expected = this.#expandedInputs.get(callId)
@@ -1674,11 +1691,23 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#proposalParents.clear()
 	}
 
-	stop(): void { this.chat.stop() }
+	stop(): void {
+		for (const proposal of this.#folderCreateProposals.values()) {
+			this.files.cancelFolderCreate?.(proposal.id).catch(() => {})
+		}
+		this.#folderCreateProposals.clear()
+		this.#folderCreateInputs.clear()
+		this.#folderCreatePreviews.clear()
+		this.#proposalViews.clear()
+		this.chat.stop()
+	}
 
 	async dispose(): Promise<void> {
 		if (this.#closed) return
 		this.#closed = true
+		for (const proposal of this.#folderCreateProposals.values()) {
+			this.files.cancelFolderCreate?.(proposal.id).catch(() => {})
+		}
 		this.files.setCloudIdentity?.()
 		this.history.items = []
 		this.history.availability = undefined

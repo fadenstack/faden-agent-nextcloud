@@ -3,10 +3,11 @@ import axios from '@nextcloud/axios'
 import { FakeGateway } from '@fadenstack/testing'
 import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
+import { NextcloudFiles } from '../../src/integrations/nextcloud/files.ts'
 import { validateFolderName, filesFolderCreateTool } from '../../src/integrations/nextcloud/filesExtended.ts'
 import { fileCapability } from '../../src/platform/catalog.ts'
 import type { ScopePolicy } from '../../src/platform/scope.ts'
-import type { FileApi, FileContext, Identity, FolderCreateProposal, FolderCreateOutcome } from '../../src/integrations/nextcloud/types.ts'
+import type { FileApi, FileContext, Identity, FolderCreateProposal, FolderCreateOutcome, DavFolderCreatePlan } from '../../src/integrations/nextcloud/types.ts'
 import { WorkspaceCoordinator } from '../../src/workspace/coordinator.ts'
 import { folderOutcome } from '../../src/integrations/nextcloud/folderCreate.ts'
 
@@ -604,5 +605,264 @@ describe('Independent folder creation regressions', () => {
 		expect(JSON.stringify(projected)).not.toContain('synthetic-secret')
 		expect(JSON.stringify(projected)).not.toContain('unapproved.test')
 		expect(() => folderOutcome({ ...outcome, resourceId: 'nextcloud:files:50' }, proposal)).toThrow('Invalid native folder receipt')
+	})
+
+	it('dispatches conditional MKCOL with If-None-Match: * and finishes creation on 201', async () => {
+		const files = new NextcloudFiles(hostIdentity)
+		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
+		const plan: DavFolderCreatePlan = {
+			kind: 'dav-create-folder',
+			receiptId: 'receipt-123',
+			dav_path: '/files/alice/Team-Docs/NewFolder',
+			parent_resource_id: 'nextcloud:files:50',
+			parent_path: '/Team-Docs',
+			parent_etag: 'parent-etag-1',
+			name: 'NewFolder',
+			target: '/Team-Docs/NewFolder',
+		}
+		const finishOutcome: FolderCreateOutcome = {
+			outcome: 'verified',
+			history: 'not-integrated',
+			proposalId: 'receipt-123',
+			resourceId: 'nextcloud:files:999',
+			name: 'NewFolder',
+			parentResourceId: 'nextcloud:files:50',
+			parentPath: '/Team-Docs',
+			target: '/Team-Docs/NewFolder',
+			folder: {
+				id: 999,
+				name: 'NewFolder',
+				path: '/Team-Docs/NewFolder',
+				etag: 'folder-etag-999',
+				mime: 'httpd/unix-directory',
+				size: 0,
+				folder: true,
+				permissions: 31,
+				url: 'https://cloud.test/f/999',
+			},
+			observedState: {
+				id: 999,
+				name: 'NewFolder',
+				path: '/Team-Docs/NewFolder',
+				etag: 'folder-etag-999',
+				permissions: 31,
+				is_directory: true,
+			},
+		}
+
+		vi.mocked(axios.post).mockImplementation(async (url: string) => {
+			if (url.includes('/files/folder/folder-prop-1/commit')) {
+				return { data: plan } as never
+			}
+			if (url.includes('/search/resolve')) {
+				return {
+					data: [{
+						id: 50,
+						name: 'Team-Docs',
+						path: '/Team-Docs',
+						etag: 'parent-etag-1',
+						mime: 'httpd/unix-directory',
+						size: 0,
+						folder: true,
+						permissions: 31,
+						url: 'https://cloud.test/f/50',
+					}],
+				} as never
+			}
+			if (url.includes('/files/folder/finish')) {
+				return { data: finishOutcome } as never
+			}
+			throw new Error(`Unexpected POST url: ${url}`)
+		})
+
+		vi.mocked(axios.request).mockImplementation(async (config: any) => {
+			if (config.method === 'MKCOL') {
+				expect(config.headers['If-None-Match']).toBe('*')
+				expect(config.url).toContain('/remote.php/dav/files/alice/Team-Docs/NewFolder')
+				return { status: 201, headers: { 'oc-fileid': '999' } } as never
+			}
+			throw new Error(`Unexpected request config: ${JSON.stringify(config)}`)
+		})
+
+		const outcome = await files.commitFolderCreate('folder-prop-1')
+		expect(outcome.outcome).toBe('verified')
+		expect(outcome.history).toBe('not-integrated')
+		expect(outcome.resourceId).toBe('nextcloud:files:999')
+	})
+
+	it('refuses with not-dispatched when MKCOL returns 412 or 405 collision', async () => {
+		const files = new NextcloudFiles(hostIdentity)
+		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
+		const plan: DavFolderCreatePlan = {
+			kind: 'dav-create-folder',
+			receiptId: 'receipt-123',
+			dav_path: '/files/alice/Team-Docs/ExistingFolder',
+			parent_resource_id: 'nextcloud:files:50',
+			parent_path: '/Team-Docs',
+			parent_etag: 'parent-etag-1',
+			name: 'ExistingFolder',
+			target: '/Team-Docs/ExistingFolder',
+		}
+		vi.mocked(axios.post).mockImplementation(async (url: string) => {
+			if (url.includes('/commit')) return { data: plan } as never
+			if (url.includes('/search/resolve')) {
+				return {
+					data: [{
+						id: 50,
+						name: 'Team-Docs',
+						path: '/Team-Docs',
+						etag: 'parent-etag-1',
+						folder: true,
+						permissions: 31,
+					}],
+				} as never
+			}
+			throw new Error(`Unexpected POST url: ${url}`)
+		})
+		vi.mocked(axios.request).mockResolvedValue({ status: 412, headers: {} } as never)
+
+		const outcome = await files.commitFolderCreate('folder-prop-1')
+		expect(outcome.outcome).toBe('not-dispatched')
+		expect(outcome.message).toContain('already exists')
+	})
+
+	it('refuses with not-dispatched when MKCOL returns 423 locked', async () => {
+		const files = new NextcloudFiles(hostIdentity)
+		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
+		const plan: DavFolderCreatePlan = {
+			kind: 'dav-create-folder',
+			receiptId: 'receipt-123',
+			dav_path: '/files/alice/Team-Docs/BusyFolder',
+			parent_resource_id: 'nextcloud:files:50',
+			parent_path: '/Team-Docs',
+			parent_etag: 'parent-etag-1',
+			name: 'BusyFolder',
+			target: '/Team-Docs/BusyFolder',
+		}
+		vi.mocked(axios.post).mockImplementation(async (url: string) => {
+			if (url.includes('/commit')) return { data: plan } as never
+			if (url.includes('/search/resolve')) {
+				return {
+					data: [{
+						id: 50,
+						name: 'Team-Docs',
+						path: '/Team-Docs',
+						etag: 'parent-etag-1',
+						folder: true,
+						permissions: 31,
+					}],
+				} as never
+			}
+			throw new Error(`Unexpected POST url: ${url}`)
+		})
+		vi.mocked(axios.request).mockResolvedValue({ status: 423, headers: {} } as never)
+
+		const outcome = await files.commitFolderCreate('folder-prop-1')
+		expect(outcome.outcome).toBe('not-dispatched')
+		expect(outcome.message).toContain('busy or locked')
+	})
+
+	it('reports ambiguous and does not retry when MKCOL network request fails', async () => {
+		const files = new NextcloudFiles(hostIdentity)
+		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
+		const plan: DavFolderCreatePlan = {
+			kind: 'dav-create-folder',
+			receiptId: 'receipt-123',
+			dav_path: '/files/alice/Team-Docs/NetworkErrFolder',
+			parent_resource_id: 'nextcloud:files:50',
+			parent_path: '/Team-Docs',
+			parent_etag: 'parent-etag-1',
+			name: 'NetworkErrFolder',
+			target: '/Team-Docs/NetworkErrFolder',
+		}
+		vi.mocked(axios.post).mockImplementation(async (url: string) => {
+			if (url.includes('/commit')) return { data: plan } as never
+			if (url.includes('/search/resolve')) {
+				return {
+					data: [{
+						id: 50,
+						name: 'Team-Docs',
+						path: '/Team-Docs',
+						etag: 'parent-etag-1',
+						folder: true,
+						permissions: 31,
+					}],
+				} as never
+			}
+			throw new Error(`Unexpected POST url: ${url}`)
+		})
+		vi.mocked(axios.request).mockRejectedValue(new Error('Network disconnected') as never)
+
+		const outcome = await files.commitFolderCreate('folder-prop-1')
+		expect(outcome.outcome).toBe('ambiguous')
+		expect(outcome.message).toContain('could not be confirmed')
+	})
+
+	it('refuses to write when parent folder destination changed before MKCOL', async () => {
+		const files = new NextcloudFiles(hostIdentity)
+		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
+		vi.mocked(axios.request).mockClear()
+		const plan: DavFolderCreatePlan = {
+			kind: 'dav-create-folder',
+			receiptId: 'receipt-123',
+			dav_path: '/files/alice/Team-Docs/NewFolder',
+			parent_resource_id: 'nextcloud:files:50',
+			parent_path: '/Team-Docs',
+			parent_etag: 'parent-etag-1',
+			name: 'NewFolder',
+			target: '/Team-Docs/NewFolder',
+		}
+		vi.mocked(axios.post).mockImplementation(async (url: string) => {
+			if (url.includes('/commit')) return { data: plan } as never
+			if (url.includes('/search/resolve')) {
+				return {
+					data: [{
+						id: 50,
+						name: 'Team-Docs',
+						path: '/Team-Docs',
+						etag: 'changed-parent-etag-2',
+						folder: true,
+						permissions: 31,
+					}],
+				} as never
+			}
+			throw new Error(`Unexpected POST url: ${url}`)
+		})
+
+		await expect(files.commitFolderCreate('folder-prop-1')).rejects.toThrow('approved destination changed')
+		expect(axios.request).not.toHaveBeenCalled()
+	})
+
+	it('cancels pending folder proposals via cancelFolderCreate to recover quota', async () => {
+		const files = new NextcloudFiles(hostIdentity)
+		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
+		vi.mocked(axios.post).mockResolvedValue({ data: { cancelled: true } } as never)
+
+		await files.cancelFolderCreate('folder-prop-123')
+		expect(axios.post).toHaveBeenCalledWith(
+			expect.stringContaining('/files/folder/folder-prop-123/cancel'),
+			{},
+			expect.objectContaining({ headers: expect.any(Object) }),
+		)
+	})
+
+	it('calls cancelFolderCreate on server when user denies proposal', async () => {
+		const cancelMock = vi.fn(async () => {})
+		const flow = await folderFlow({ name: 'NewFolder' }, { cancelFolderCreate: cancelMock })
+		try {
+			const part = await pendingFolder(flow.agent)
+			await flow.agent.deny(part)
+			expect(cancelMock).toHaveBeenCalledWith('folder-prop-123')
+		} finally { await flow.agent.dispose() }
+	})
+
+	it('calls cancelFolderCreate on server when user stops agent with pending proposals', async () => {
+		const cancelMock = vi.fn(async () => {})
+		const flow = await folderFlow({ name: 'NewFolder' }, { cancelFolderCreate: cancelMock })
+		try {
+			await pendingFolder(flow.agent)
+			flow.agent.stop()
+			expect(cancelMock).toHaveBeenCalledWith('folder-prop-123')
+		} finally { await flow.agent.dispose() }
 	})
 })
