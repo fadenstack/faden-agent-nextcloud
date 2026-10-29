@@ -28,7 +28,7 @@ class FileService {
 	public const MAX_TEXT_BYTES = 2097152;
 	public const MAX_PDF_BYTES = 10485760;
 	public const MAX_WRITE_BYTES = 262144;
-	public const KEY = 'fadenstack_agent.state';
+	private const KEY = 'fadenstack_agent.state';
 	private ?VerifiedCloudPrincipal $principal = null;
 
 	public function __construct(
@@ -67,7 +67,7 @@ class FileService {
 		return JournalIdentity::forPrincipal($this->uid(), $scope, $binding, $principal);
 	}
 
-	public function assertProposalIdentity(array $proposal): void {
+	private function assertProposalIdentity(array $proposal): void {
 		$identity = $this->journalIdentity();
 		if (($proposal['identityScope'] ?? null) !== $identity->scopeHash || ($proposal['identitySession'] ?? null) !== $identity->sessionHash) {
 			throw new Problem('The account, device, profile or scope changed. Review a new proposal.', 409);
@@ -862,6 +862,7 @@ class FileService {
 				throw new Problem('Too many unfinished folder creations. Wait for them to expire.', 429);
 			}
 			$s['folderReceipts'][$p['id']] = [
+				'dispatchState' => 'ready',
 				'receiptId' => $p['id'],
 				'folderId' => $folder->getId(),
 				'folderPath' => '/' . ltrim($parentMetadata['path'], '/'),
@@ -904,6 +905,10 @@ class FileService {
 		$this->assertProposalIdentity($r);
 		unset($s['folderReceipts'][$receiptId]);
 		$this->session->set(self::KEY, $s);
+		if (($r['dispatchState'] ?? '') !== 'executed' || ($r['executed'] ?? false) !== true
+			|| !isset($r['createdNodeId'], $r['createdFileId']) || !hash_equals($r['createdFileId'], $createdFileId)) {
+			throw new Problem('No matching native guarded creation was recorded. Inspect the destination.', 409);
+		}
 
 		$folder = $this->node($r['folderId']);
 		if (!$folder instanceof Folder) {
@@ -922,7 +927,7 @@ class FileService {
 		if (!$createdNode instanceof Folder) {
 			throw new Problem('The created resource is not a directory.', 409);
 		}
-		if (!hash_equals(\OCP\Files\DavUtil::getDavFileId($createdNode->getId()), $createdFileId)) {
+		if ($createdNode->getId() !== $r['createdNodeId'] || !hash_equals(\OCP\Files\DavUtil::getDavFileId($createdNode->getId()), $createdFileId)) {
 			throw new Problem('The created folder identity does not match the creation response.', 409);
 		}
 		if (count($createdNode->getDirectoryListing()) !== 0) {
@@ -949,5 +954,45 @@ class FileService {
 				'is_directory' => true,
 			],
 		];
+	}
+
+	/** Called only inside an authenticated native DAV request, with its session reopened. */
+	public function claimFolderDispatch(string $id): array {
+		$s = $this->state();
+		$r = $s['folderReceipts'][$id] ?? null;
+		if (!$r || ($r['expires'] ?? 0) <= time() || ($r['dispatchState'] ?? '') !== 'ready') {
+			throw new Problem('The folder ticket is expired, missing or already attempted.', 403);
+		}
+		$s['folderReceipts'][$id]['dispatchState'] = 'claimed';
+		$this->session->set(self::KEY, $s);
+		$this->assertProposalIdentity($r);
+		$this->scope->assertFolderCreateTool();
+		if (!$this->config->folderDispatchSupported()) {
+			throw new Problem('Folder creation is unavailable for this locking configuration.', 403);
+		}
+		return $r;
+	}
+
+	public function completeFolderDispatch(string $id, int $createdId): void {
+		$s = $this->state();
+		$r = $s['folderReceipts'][$id] ?? null;
+		if (!$r || ($r['dispatchState'] ?? '') !== 'claimed' || ($r['expires'] ?? 0) <= time()) {
+			throw new Problem('The native creation ticket could not be completed.', 409);
+		}
+		$this->assertProposalIdentity($r);
+		$s['folderReceipts'][$id]['dispatchState'] = 'executed';
+		$s['folderReceipts'][$id]['executed'] = true;
+		$s['folderReceipts'][$id]['createdNodeId'] = $createdId;
+		$s['folderReceipts'][$id]['createdFileId'] = \OCP\Files\DavUtil::getDavFileId($createdId);
+		$this->session->set(self::KEY, $s);
+	}
+
+	/** A rejected replay must not destroy the first request's verified receipt. */
+	public function abandonFolderDispatch(string $id): void {
+		$s = $this->state();
+		if (($s['folderReceipts'][$id]['dispatchState'] ?? '') !== 'executed') {
+			unset($s['folderReceipts'][$id]);
+			$this->session->set(self::KEY, $s);
+		}
 	}
 }

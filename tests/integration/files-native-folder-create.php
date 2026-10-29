@@ -185,14 +185,23 @@ try {
 	// Dispatch ticketed MKCOL through native DAV guard
 	$davReq = new \Sabre\HTTP\Request('MKCOL', $plan['dav_path'], [
 		'If-None-Match' => '*',
+		'X-Fadenstack-Session' => $broker->identity()['binding'],
 		'X-Fadenstack-Folder-Ticket' => $plan['receiptId'],
 	]);
 	$davResp = new \Sabre\HTTP\Response();
 	$guardPlugin = Server::get(\OCA\FadenstackAgent\DAV\FolderCreateGuardPlugin::class);
 	$guardPlugin->beforeMkcol($davReq, $davResp);
+	$denied('an in-flight dispatch ticket cannot be claimed twice', fn () => $broker->claimFolderDispatch($plan['receiptId']), 403);
 	$childCond = $fixtureFolder->newFolder('CondFolder');
 	$davResp->setStatus(201);
 	$guardPlugin->afterMkcol($davReq, $davResp);
+	$executedReplayDenied = false;
+	try {
+		$guardPlugin->beforeMkcol($davReq, $davResp);
+	} catch (\Sabre\DAV\Exception\Forbidden) {
+		$executedReplayDenied = true;
+	}
+	$assert('executed ticket replay is refused before finalization', $executedReplayDenied);
 
 	// Finalize folder creation via finishFolder
 	$createdFileId = \OCP\Files\DavUtil::getDavFileId($childCond->getId());
@@ -215,6 +224,7 @@ try {
 	// Agent MKCOL arrives at original path with ticket for original folder ID
 	$raceReq = new \Sabre\HTTP\Request('MKCOL', $subPlan['dav_path'], [
 		'If-None-Match' => '*',
+		'X-Fadenstack-Session' => $broker->identity()['binding'],
 		'X-Fadenstack-Folder-Ticket' => $subPlan['receiptId'],
 	]);
 	$raceResp = new \Sabre\HTTP\Response();
@@ -235,6 +245,7 @@ try {
 	// 13e. Ticket replay rejection: consumed ticket is rejected
 	$replayReq = new \Sabre\HTTP\Request('MKCOL', $plan['dav_path'], [
 		'If-None-Match' => '*',
+		'X-Fadenstack-Session' => $broker->identity()['binding'],
 		'X-Fadenstack-Folder-Ticket' => $plan['receiptId'],
 	]);
 	$replayResp = new \Sabre\HTTP\Response();
@@ -257,10 +268,21 @@ try {
 		'identityScope' => $legacyProp['identityScope'], 'identitySession' => $legacyProp['identitySession']];
 	$state['folderReceipts'][$legacyProp['id']] = $legacy;
 	$nativeSession->set('fadenstack_agent.state', $state);
+	$denied('an independently created folder cannot finalize an unexecuted ticket', fn () => $broker->finishFolder($legacyProp['id'], \OCP\Files\DavUtil::getDavFileId($created->getId())), 409);
+	$legacy['dispatchState'] = 'executed';
+	$legacy['executed'] = true;
+	$legacy['createdNodeId'] = $created->getId();
+	$legacy['createdFileId'] = \OCP\Files\DavUtil::getDavFileId($created->getId());
+	$state['folderReceipts'][$legacyProp['id']] = $legacy;
+	$nativeSession->set('fadenstack_agent.state', $state);
 	$denied('missing creation response ID is refused', fn () => $broker->finishFolder($legacyProp['id']), 400);
 	$denied('invalid creation response ID is refused', fn () => $broker->finishFolder($legacyProp['id'], 'not-an-id'), 400);
 	$denied('numeric-prefix ID substitution is refused', fn () => $broker->finishFolder($legacyProp['id'], (string)$created->getId() . 'forged'), 409);
 	$state = $nativeSession->get('fadenstack_agent.state');
+	$legacy['dispatchState'] = 'executed';
+	$legacy['executed'] = true;
+	$legacy['createdNodeId'] = $created->getId();
+	$legacy['createdFileId'] = \OCP\Files\DavUtil::getDavFileId($created->getId());
 	$state['folderReceipts'][$legacyProp['id']] = $legacy;
 	$nativeSession->set('fadenstack_agent.state', $state);
 	$verified = $broker->finishFolder($legacyProp['id'], \OCP\Files\DavUtil::getDavFileId($created->getId()));

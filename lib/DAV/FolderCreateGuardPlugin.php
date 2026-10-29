@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\FadenstackAgent\DAV;
 
-use OCA\DAV\Connector\Sabre\Exception\FileLocked;
+use OCA\FadenstackAgent\Identity\CloudIdentityVerifier;
 use OCA\FadenstackAgent\Service\Configuration;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
@@ -16,19 +16,21 @@ use OCP\Files\IRootFolder;
 use OCP\ISession;
 use OCP\IUserSession;
 use OCP\Lock\ILockingProvider;
-use OCP\Lock\LockedException;
 use Sabre\DAV\Exception\BadRequest;
 use Sabre\DAV\Exception\Conflict;
 use Sabre\DAV\Exception\Forbidden;
-use Sabre\DAV\Exception\NotAuthenticated;
-use Sabre\DAV\Server as SabreServer;
+use Sabre\DAV\Server;
 use Sabre\DAV\ServerPlugin;
 use Sabre\HTTP\RequestInterface;
 use Sabre\HTTP\ResponseInterface;
 
+/** Development-only, local home storage / native DB locking acceptance. */
 class FolderCreateGuardPlugin extends ServerPlugin {
-	private ?Folder $lockedFolder = null;
-	private ?string $activeTicketId = null;
+	private ?Folder $parent = null;
+	private ?Folder $child = null;
+	private ?string $ticketId = null;
+	private ?array $ticket = null;
+	private bool $reopened = false;
 
 	public function __construct(
 		private IUserSession $userSession,
@@ -37,156 +39,138 @@ class FolderCreateGuardPlugin extends ServerPlugin {
 		private ScopePolicy $scopePolicy,
 		private Configuration $config,
 		private FileService $files,
+		private CloudIdentityVerifier $cloud,
 	) {
 	}
 
 	#[\Override]
-	public function initialize(SabreServer $server): void {
+	public function initialize(Server $server): void {
 		$server->on('beforeMethod:MKCOL', [$this, 'beforeMkcol'], 20);
 		$server->on('afterMethod:MKCOL', [$this, 'afterMkcol'], 20);
 		$server->on('exception', [$this, 'onException'], 20);
 	}
 
 	public function beforeMkcol(RequestInterface $request, ResponseInterface $response): void {
-		$ticketId = $request->getHeader('X-Fadenstack-Folder-Ticket');
-		if ($ticketId === null || $ticketId === '') {
-			return;
+		$id = $request->getHeader('X-Fadenstack-Folder-Ticket');
+		if ($id === null || $id === '') {
+			return; // Ordinary native DAV remains ordinary native DAV.
 		}
-		if (!preg_match('/^[a-zA-Z0-9_-]{1,128}$/D', $ticketId)) {
-			throw new BadRequest('Invalid folder creation ticket format.');
-		}
-
-		$user = $this->userSession->getUser();
-		if ($user === null) {
-			throw new NotAuthenticated('User is not authenticated.');
-		}
-		$uid = $user->getUID();
-
-		$state = $this->session->get(FileService::KEY) ?? [];
-		$ticket = $state['folderReceipts'][$ticketId] ?? null;
-		if (!$ticket || ($ticket['expires'] ?? 0) <= time()) {
-			throw new Forbidden('The folder creation ticket is expired, missing, or was already consumed.');
-		}
-
-		try {
-			$this->files->assertProposalIdentity($ticket);
-		} catch (Problem $e) {
-			throw new Forbidden($e->getMessage(), 0, $e);
-		}
-
-		if (!$this->config->folderCreateEnabled()) {
-			throw new Forbidden('Folder creation is not enabled.');
+		if (!preg_match('/^[a-zA-Z0-9_-]{1,128}$/D', $id)) {
+			throw new BadRequest('Invalid folder ticket.');
 		}
 		try {
-			$this->scopePolicy->assertFolderCreateTool();
-		} catch (Problem $e) {
-			throw new Forbidden($e->getMessage(), 0, $e);
-		}
-
-		$home = $this->rootFolder->getUserFolder($uid);
-		$nodes = $home->getById((int)$ticket['folderId']);
-		if (empty($nodes) || !($nodes[0] instanceof Folder)) {
-			throw new Conflict('Approved destination is no longer an available folder.');
-		}
-		$parentFolder = $nodes[0];
-
-		try {
-			$parentFolder->lock(ILockingProvider::LOCK_SHARED);
-			$this->lockedFolder = $parentFolder;
-			$this->activeTicketId = $ticketId;
-		} catch (LockedException $e) {
-			throw new FileLocked($e->getMessage(), 0, $e);
-		}
-
-		$currentParentPath = '/' . ltrim($home->getRelativePath($parentFolder->getPath()), '/');
-		if ($currentParentPath !== $ticket['folderPath']) {
-			throw new Conflict('Approved destination folder moved before creation.');
-		}
-
-		if ($parentFolder->getEtag() !== $ticket['parentEtag']) {
-			throw new Conflict('Approved destination folder revision changed before creation.');
-		}
-
-		if (!$parentFolder->isCreatable() || ($parentFolder->getPermissions() & Constants::PERMISSION_CREATE) === 0) {
-			throw new Forbidden('You do not have permission to create folders in this destination.');
-		}
-
-		try {
-			$this->scopePolicy->assertMovement($parentFolder, $parentFolder);
-		} catch (Problem $e) {
-			throw new Forbidden($e->getMessage(), 0, $e);
-		}
-
-		$requestPath = rtrim(rawurldecode($request->getPath()), '/');
-		$expectedPath = rtrim('files/' . $uid . ($ticket['folderPath'] === '/' ? '' : $ticket['folderPath']) . '/' . $ticket['name'], '/');
-		if ($requestPath !== $expectedPath) {
-			throw new Conflict('MKCOL request destination does not match approved ticket target.');
-		}
-
-		if ($parentFolder->nodeExists($ticket['name'])) {
-			throw new Conflict('A folder or file with this name already exists.');
+			// Native DAV authentication closes the session. Reopen before reading
+			// and claiming the ticket, so another request cannot claim a stale copy.
+			$this->reopened = $this->session->reopen();
+			$this->files->checkSession($request->getHeader('X-Fadenstack-Session') ?? '');
+			$this->ticketId = $id;
+			if ($request->getMethod() !== 'MKCOL' || $request->getHeader('If-None-Match') !== '*' || $request->getBodyAsString() !== '') {
+				throw new BadRequest('Only the approved conditional empty-folder request is allowed.');
+			}
+			$token = $request->getHeader('X-Fadenstack-Agent-Token') ?? '';
+			if ($this->config->historyEnabled() || $token !== '') {
+				$this->files->bindCloudPrincipal($this->cloud->verify($token));
+			}
+			$ticket = $this->files->claimFolderDispatch($id);
+			$this->ticket = $ticket;
+			$user = $this->userSession->getUser();
+			if ($user === null) {
+				throw new Forbidden('Sign in to Nextcloud.');
+			}
+			$home = $this->rootFolder->getUserFolder($user->getUID());
+			$parent = $home->getById($ticket['folderId'])[0] ?? null;
+			if (!$parent instanceof Folder) {
+				throw new Conflict('The approved parent is unavailable.');
+			}
+			if (!$parent->getStorage()->isLocal() || $parent->getStorage()->getId() !== $home->getStorage()->getId()
+				|| $parent->getOwner()?->getUID() !== $user->getUID()) {
+				throw new Forbidden('Folder creation is unavailable for this storage.');
+			}
+			$parent->lock(ILockingProvider::LOCK_SHARED);
+			$this->parent = $parent;
+			// The first node may already be stale when lock() returns. Resolve ID,
+			// path, revision and rights again while holding the actual path lock.
+			$fresh = $home->getById($ticket['folderId'])[0] ?? null;
+			if (!$fresh instanceof Folder || $fresh->getPath() !== $parent->getPath()
+				|| $fresh->getStorage()->getId() !== $parent->getStorage()->getId()
+				|| $fresh->getInternalPath() !== $parent->getInternalPath()
+				|| '/' . ltrim($home->getRelativePath($fresh->getPath()), '/') !== $ticket['folderPath']
+				|| $fresh->getEtag() !== $ticket['parentEtag']) {
+				throw new Conflict('The approved parent moved or changed before creation.');
+			}
+			if (!$fresh->isCreatable() || ($fresh->getPermissions() & Constants::PERMISSION_CREATE) === 0) {
+				throw new Forbidden('The destination is not writable.');
+			}
+			$this->scopePolicy->assertMovement($fresh, $fresh);
+			// Sabre already decoded getPath(); decoding again changes literal % names.
+			$expected = 'files/' . $user->getUID() . ($ticket['folderPath'] === '/' ? '' : $ticket['folderPath']) . '/' . $ticket['name'];
+			if ($request->getPath() !== $expected || $fresh->nodeExists($ticket['name'])) {
+				throw new Conflict('The request target changed or already exists.');
+			}
+		} catch (\Throwable $error) {
+			$this->onException($error);
+			if ($error instanceof Problem) {
+				throw new Forbidden($error->getMessage(), 0, $error);
+			}
+			throw $error;
 		}
 	}
 
 	public function afterMkcol(RequestInterface $request, ResponseInterface $response): void {
-		if ($this->lockedFolder !== null) {
-			try {
-				$this->lockedFolder->unlock(ILockingProvider::LOCK_SHARED);
-			} catch (\Throwable) {
-			} finally {
-				$this->lockedFolder = null;
-			}
-		}
-
-		$ticketId = $this->activeTicketId;
-		$this->activeTicketId = null;
-		if ($ticketId === null) {
+		if ($this->ticketId === null || $this->parent === null || $this->ticket === null) {
 			return;
 		}
+		try {
+			if ($response->getStatus() !== 201) {
+				$this->files->abandonFolderDispatch($this->ticketId);
+				return;
+			}
+			$child = $this->parent->get($this->ticket['name']);
+			if (!$child instanceof Folder) {
+				throw new Conflict('The created folder could not be confirmed.');
+			}
+			$child->lock(ILockingProvider::LOCK_SHARED);
+			$this->child = $child;
+			$fresh = $this->parent->get($this->ticket['name']);
+			$header = $response->getHeader('OC-FileId');
+			if (!$fresh instanceof Folder || $fresh->getId() !== $child->getId()
+				|| ($header !== null && $header !== DavUtil::getDavFileId($fresh->getId()))) {
+				throw new Conflict('The native creation identity changed.');
+			}
+			$this->files->completeFolderDispatch($this->ticketId, $fresh->getId());
+		} catch (\Throwable $error) {
+			$this->files->abandonFolderDispatch($this->ticketId);
+			throw $error;
+		} finally {
+			$this->release();
+		}
+	}
 
-		$status = $response->getStatus();
-		$state = $this->session->get(FileService::KEY) ?? [];
-		if ($status === 201) {
-			$user = $this->userSession->getUser();
-			if ($user !== null) {
-				$ticket = $state['folderReceipts'][$ticketId] ?? null;
-				if ($ticket !== null && !empty($ticket['folderId'])) {
-					$home = $this->rootFolder->getUserFolder($user->getUID());
-					$nodes = $home->getById((int)$ticket['folderId']);
-					if (!empty($nodes) && $nodes[0] instanceof Folder && $nodes[0]->nodeExists($ticket['name'])) {
-						$child = $nodes[0]->get($ticket['name']);
-						if ($child instanceof Folder) {
-							$davFileId = DavUtil::getDavFileId($child->getId());
-							$state['folderReceipts'][$ticketId]['executed'] = true;
-							$state['folderReceipts'][$ticketId]['createdFileId'] = $davFileId;
-							$state['folderReceipts'][$ticketId]['createdNodeId'] = $child->getId();
-							$this->session->set(FileService::KEY, $state);
-							return;
-						}
-					}
+	public function onException(\Throwable $error): void {
+		try {
+			if ($this->ticketId !== null) {
+				$this->files->abandonFolderDispatch($this->ticketId);
+			}
+		} finally {
+			$this->release();
+		}
+	}
+
+	private function release(): void {
+		foreach ([$this->child, $this->parent] as $node) {
+			if ($node !== null) {
+				try {
+					$node->unlock(ILockingProvider::LOCK_SHARED);
+				} catch (\Throwable) {
 				}
 			}
 		}
-
-		unset($state['folderReceipts'][$ticketId]);
-		$this->session->set(FileService::KEY, $state);
-	}
-
-	public function onException(\Throwable $e): void {
-		if ($this->lockedFolder !== null) {
-			try {
-				$this->lockedFolder->unlock(ILockingProvider::LOCK_SHARED);
-			} catch (\Throwable) {
-			} finally {
-				$this->lockedFolder = null;
-			}
-		}
-
-		if ($this->activeTicketId !== null) {
-			$state = $this->session->get(FileService::KEY) ?? [];
-			unset($state['folderReceipts'][$this->activeTicketId]);
-			$this->session->set(FileService::KEY, $state);
-			$this->activeTicketId = null;
+		$this->child = $this->parent = null;
+		$this->ticket = null;
+		$this->ticketId = null;
+		if ($this->reopened) {
+			$this->reopened = false;
+			$this->session->close();
 		}
 	}
 }

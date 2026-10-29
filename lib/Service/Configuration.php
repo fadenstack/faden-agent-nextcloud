@@ -57,7 +57,8 @@ class Configuration {
 
 	/** Release gate: backed by ticketed native DAV effect guard holding LOCK_SHARED. */
 	public function folderDispatchSupported(): bool {
-		return true;
+		return $this->config->getSystemValueBool('filelocking.enabled', true)
+			&& $this->config->getSystemValueString('memcache.locking', '') === '';
 	}
 
 	public function save(string $serverUrl, string $agent, bool $enabled, bool $development): array {

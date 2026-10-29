@@ -13,11 +13,13 @@ import { folderOutcome, folderDavPlan } from '../../src/integrations/nextcloud/f
 
 vi.mock('@nextcloud/axios', () => ({ default: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn(), request: vi.fn() } }))
 vi.mock('@nextcloud/router', () => ({
-	generateUrl: (path: string) => `https://cloud.test${path}`,
-	generateRemoteUrl: (name: string) => `https://cloud.test/remote.php/${name}/`,
+	generateUrl: (path: string) => `${location.origin}${path}`,
+	generateRemoteUrl: (name: string) => `${location.origin}/remote.php/${name}/`,
 }))
 vi.mock('@nextcloud/auth', () => ({ getRequestToken: () => 'token-test' }))
 vi.mock('@nextcloud/l10n', () => ({ t: (_app: string, text: string) => text }))
+
+const nativeFetch = vi.fn<typeof fetch>()
 
 const testPolicy: ScopePolicy = {
 	version: 'folder-create-v1',
@@ -609,7 +611,7 @@ describe('Independent folder creation regressions', () => {
 	})
 
 	it('dispatches conditional MKCOL with If-None-Match: * and finishes creation on 201', async () => {
-		const files = new NextcloudFiles(hostIdentity)
+		const files = new NextcloudFiles(hostIdentity, nativeFetch)
 		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
 		const plan: DavFolderCreatePlan = {
 			kind: 'dav-create-folder',
@@ -676,14 +678,13 @@ describe('Independent folder creation regressions', () => {
 			throw new Error(`Unexpected POST url: ${url}`)
 		})
 
-		vi.mocked(axios.request).mockImplementation(async (config: any) => {
-			if (config.method === 'MKCOL') {
-				expect(config.headers['If-None-Match']).toBe('*')
-				expect(config.headers['X-Fadenstack-Folder-Ticket']).toBe('folder-prop-1')
-				expect(config.url).toContain('/remote.php/dav/files/alice/Team-Docs/NewFolder')
-				return { status: 201, headers: { 'oc-fileid': '999' } } as never
-			}
-			throw new Error(`Unexpected request config: ${JSON.stringify(config)}`)
+		nativeFetch.mockImplementation(async (url, init) => {
+			expect(init?.method).toBe('MKCOL')
+			expect(init?.headers).toMatchObject({ 'If-None-Match': '*', 'X-Fadenstack-Folder-Ticket': 'folder-prop-1', 'X-Fadenstack-Session': hostIdentity.binding })
+			expect(init?.redirect).toBe('error')
+			expect(init?.credentials).toBe('same-origin')
+			expect(String(url)).toContain('/remote.php/dav/files/alice/Team-Docs/NewFolder')
+			return new Response(null, { status: 201, headers: { 'oc-fileid': '999' } })
 		})
 
 		const outcome = await files.commitFolderCreate('folder-prop-1')
@@ -693,7 +694,7 @@ describe('Independent folder creation regressions', () => {
 	})
 
 	it('does not infer absence of effects from an error after MKCOL dispatch', async () => {
-		const files = new NextcloudFiles(hostIdentity)
+		const files = new NextcloudFiles(hostIdentity, nativeFetch)
 		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
 		const plan: DavFolderCreatePlan = {
 			kind: 'dav-create-folder',
@@ -721,7 +722,7 @@ describe('Independent folder creation regressions', () => {
 			}
 			throw new Error(`Unexpected POST url: ${url}`)
 		})
-		vi.mocked(axios.request).mockResolvedValue({ status: 412, headers: {} } as never)
+		nativeFetch.mockResolvedValue(new Response(null, { status: 412 }))
 
 		const outcome = await files.commitFolderCreate('folder-prop-1')
 		expect(outcome.outcome).toBe('ambiguous')
@@ -729,7 +730,7 @@ describe('Independent folder creation regressions', () => {
 	})
 
 	it('keeps a dispatched 423 outcome uncertain without a verified receipt', async () => {
-		const files = new NextcloudFiles(hostIdentity)
+		const files = new NextcloudFiles(hostIdentity, nativeFetch)
 		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
 		const plan: DavFolderCreatePlan = {
 			kind: 'dav-create-folder',
@@ -757,7 +758,7 @@ describe('Independent folder creation regressions', () => {
 			}
 			throw new Error(`Unexpected POST url: ${url}`)
 		})
-		vi.mocked(axios.request).mockResolvedValue({ status: 423, headers: {} } as never)
+		nativeFetch.mockResolvedValue(new Response(null, { status: 423 }))
 
 		const outcome = await files.commitFolderCreate('folder-prop-1')
 		expect(outcome.outcome).toBe('ambiguous')
@@ -765,7 +766,7 @@ describe('Independent folder creation regressions', () => {
 	})
 
 	it('reports ambiguous and does not retry when MKCOL network request fails', async () => {
-		const files = new NextcloudFiles(hostIdentity)
+		const files = new NextcloudFiles(hostIdentity, nativeFetch)
 		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
 		const plan: DavFolderCreatePlan = {
 			kind: 'dav-create-folder',
@@ -793,18 +794,18 @@ describe('Independent folder creation regressions', () => {
 			}
 			throw new Error(`Unexpected POST url: ${url}`)
 		})
-		vi.mocked(axios.request).mockRejectedValue(new Error('Network disconnected') as never)
+		nativeFetch.mockRejectedValue(new Error('Network disconnected'))
 
 		const outcome = await files.commitFolderCreate('folder-prop-1')
 		expect(outcome.outcome).toBe('ambiguous')
 		expect(outcome.message).toContain('could not be confirmed')
-		expect(axios.request).toHaveBeenCalledTimes(1)
+		expect(nativeFetch).toHaveBeenCalledTimes(1)
 	})
 
 	it('refuses to write when parent folder destination changed before MKCOL', async () => {
-		const files = new NextcloudFiles(hostIdentity)
+		const files = new NextcloudFiles(hostIdentity, nativeFetch)
 		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
-		vi.mocked(axios.request).mockClear()
+		nativeFetch.mockClear()
 		const plan: DavFolderCreatePlan = {
 			kind: 'dav-create-folder',
 			receiptId: 'folder-prop-1',
@@ -833,11 +834,11 @@ describe('Independent folder creation regressions', () => {
 		})
 
 		await expect(files.commitFolderCreate('folder-prop-1')).rejects.toThrow('approved destination changed')
-		expect(axios.request).not.toHaveBeenCalled()
+		expect(nativeFetch).not.toHaveBeenCalled()
 	})
 
 	it('cancels pending folder proposals via cancelFolderCreate to recover quota', async () => {
-		const files = new NextcloudFiles(hostIdentity)
+		const files = new NextcloudFiles(hostIdentity, nativeFetch)
 		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
 		vi.mocked(axios.post).mockResolvedValue({ data: { cancelled: true } } as never)
 
@@ -925,7 +926,7 @@ describe('Independent folder creation regressions', () => {
 	})
 
 	it('cancels an aborted native preview by its known request nonce before any response', async () => {
-		const files = new NextcloudFiles(hostIdentity)
+		const files = new NextcloudFiles(hostIdentity, nativeFetch)
 		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
 		let finishPreview!: (response: unknown) => void
 		let nonce = ''
@@ -947,7 +948,7 @@ describe('Independent folder creation regressions', () => {
 	})
 
 	it.each([undefined, '../wrong-id'])('does not finalize a 201 without a valid creation identity: %s', async fileId => {
-		const files = new NextcloudFiles(hostIdentity)
+		const files = new NextcloudFiles(hostIdentity, nativeFetch)
 		vi.mocked(axios.get).mockResolvedValue({ data: hostIdentity } as never)
 		const plan: DavFolderCreatePlan = { kind: 'dav-create-folder', receiptId: 'p1', dav_path: '/files/alice/Team-Docs/NewFolder', parent_resource_id: 'nextcloud:files:50', parent_path: '/Team-Docs', parent_etag: 'e1', name: 'NewFolder', target: '/Team-Docs/NewFolder' }
 		vi.mocked(axios.post).mockImplementation(async (url) => {
@@ -955,9 +956,9 @@ describe('Independent folder creation regressions', () => {
 			if (String(url).includes('/search/resolve')) return { data: [{ ...folderContext.file, etag: 'e1' }] } as never
 			throw new Error('Unexpected finalization')
 		})
-		vi.mocked(axios.request).mockResolvedValue({ status: 201, headers: { 'oc-fileid': fileId } } as never)
+		nativeFetch.mockResolvedValue(new Response(null, { status: 201, headers: fileId ? { 'oc-fileid': fileId } : {} }))
 		expect((await files.commitFolderCreate('p1')).outcome).toBe('ambiguous')
 		expect(vi.mocked(axios.post).mock.calls.some(([url]) => String(url).endsWith('/finish'))).toBe(false)
-		expect(axios.request).toHaveBeenCalledTimes(1)
+		expect(nativeFetch).toHaveBeenCalledTimes(1)
 	})
 })

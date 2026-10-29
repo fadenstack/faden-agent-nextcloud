@@ -52,7 +52,7 @@ const HISTORY_CONFLICTS: Record<string, string> = {
 
 export class NextcloudFiles implements FileApi {
 
-	constructor(readonly initial: Identity) {}
+	constructor(readonly initial: Identity, private readonly nativeFetch: typeof fetch = globalThis.fetch.bind(globalThis)) {}
 	#cloudIdentity: ((signal?: AbortSignal) => Promise<string>) | undefined
 	setCloudIdentity(provider?: (signal?: AbortSignal) => Promise<string>): void { this.#cloudIdentity = provider }
 	readonly history: HistoryApi = {
@@ -649,18 +649,23 @@ export class NextcloudFiles implements FileApi {
 			throw new Error('Operation was cancelled before dispatch.')
 		}
 
-		let mkcolRes
+		const headers: Record<string, string> = { 'If-None-Match': '*', 'X-Fadenstack-Folder-Ticket': plan.receiptId, 'X-Fadenstack-Session': this.initial.binding, requesttoken: getRequestToken() ?? '' }
+		if (this.initial.historyEnabled) {
+			if (!this.#cloudIdentity) throw new Error('Sign in to Fadenstack again.')
+			headers['X-Fadenstack-Agent-Token'] = await this.#cloudIdentity(signal)
+		}
+		signal?.throwIfAborted()
+		const target = generateRemoteUrl('dav').replace(/\/$/, '') + '/' + plan.dav_path.replace(/^\//, '')
+		if (new URL(target, location.href).origin !== location.origin) throw new Error('The native DAV request origin changed.')
+		let mkcolRes: Response
 		try {
-			mkcolRes = await axios.request({
-				url: generateRemoteUrl('dav').replace(/\/$/, '') + '/' + plan.dav_path.replace(/^\//, ''),
+			mkcolRes = await this.nativeFetch(target, {
 				method: 'MKCOL',
-				headers: {
-					'If-None-Match': '*',
-					'X-Fadenstack-Folder-Ticket': plan.receiptId,
-				},
-				signal,
-				timeout: 20000,
-				validateStatus: () => true,
+				headers,
+				credentials: 'same-origin',
+				redirect: 'error',
+				cache: 'no-store',
+				signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000),
 			})
 		} catch {
 			return {
@@ -675,7 +680,7 @@ export class NextcloudFiles implements FileApi {
 		}
 
 		if (mkcolRes.status === 201) {
-			const ocFileId = mkcolRes.headers?.['oc-fileid'] || mkcolRes.headers?.['OC-FileId']
+			const ocFileId = mkcolRes.headers.get('oc-fileid')
 			if (typeof ocFileId !== 'string' || !/^[a-zA-Z0-9]{1,128}$/.test(ocFileId)) {
 				return { outcome: 'ambiguous', history: 'not-integrated', proposalId: plan.receiptId, name: plan.name, parentResourceId: plan.parent_resource_id, target: plan.target, message: 'Nextcloud did not provide a creation identity. Inspect the destination before trying again.' }
 			}
