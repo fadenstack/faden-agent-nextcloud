@@ -63,6 +63,15 @@ class ScopePolicy {
 		return $this->currentPolicy()['version'];
 	}
 
+	/** Server opt-in and native allowlist are mandatory even for direct HTTP requests. */
+	public function assertFilesReadTool(string $name): void {
+		if ($this->config->getAppValue(Application::APP_ID, 'files_reads_enabled', '0') !== '1'
+			|| !in_array($name, self::EXTENDED_READ_TOOLS, true)
+			|| !in_array($name, $this->currentPolicy()['tools'], true)) {
+			throw new Problem('This Files read tool is unavailable under the current native policy.', 403);
+		}
+	}
+
 	private function currentPolicy(): array {
 		return $this->getPolicy($this->uid(), $this->config->getAppValue(Application::APP_ID, 'server_url', ''));
 	}
@@ -97,6 +106,9 @@ class ScopePolicy {
 			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS]);
 			if (!$sources || !$tools || !is_string($value['revision'] ?? null) || strlen($value['revision']) < 1 || strlen($value['revision']) > 100) {
 				throw new \InvalidArgumentException();
+			}
+			if ($this->config->getAppValue(Application::APP_ID, 'files_reads_enabled', '0') !== '1') {
+				$tools = array_values(array_diff($tools, self::EXTENDED_READ_TOOLS));
 			}
 			$classes = $this->enumList($value['sourceClasses'] ?? ['standard'], self::CLASSES);
 			$audiences = $this->enumList($value['destinationAudiences'] ?? ['private'], self::AUDIENCES);

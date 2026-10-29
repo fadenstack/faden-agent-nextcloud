@@ -1,6 +1,7 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
 import type { FileApi, FileContext, ShareEntry } from './types.ts'
+import { fileReference } from '../../platform/scope.ts'
 
 export interface ExtendedProposal {
 	name: string
@@ -18,7 +19,7 @@ export interface ExtendedFilesHost {
 	resolvePath?(pathOrId: unknown, signal?: AbortSignal): Promise<{ path: string; etag: string; folder: boolean }>
 	proposeMutation?(name: string, args: Readonly<Record<string, unknown>>, callId: string, signal: AbortSignal): Promise<ExtendedProposal>
 	commitMutation?(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown>
-	authorizeSource?(reference: string, signal: AbortSignal, purpose?: 'read' | 'metadata'): Promise<void>
+	authorizeSource?(reference: string, signal: AbortSignal, purpose?: 'read' | 'metadata' | 'shares'): Promise<void>
 	rememberSource?(reference: string, signal: AbortSignal): Promise<void>
 }
 
@@ -60,6 +61,13 @@ export const EXTENDED_FILES_MUTATIONS = new Set([
 	'nc_files_share_readonly',
 ])
 
+function readRevision(args: Readonly<Record<string, unknown>>): string | undefined {
+	if (Object.keys(args).some(key => !['resource_id', 'expectedRevision'].includes(key))) throw new Error('Use a canonical resource_id and optional expectedRevision.')
+	const value = args.expectedRevision
+	if (value !== undefined && (typeof value !== 'string' || !value || value.length > 150 || /[\x00-\x1f\x7f]/.test(value))) throw new Error('A valid expectedRevision is required.')
+	return value as string | undefined
+}
+
 export function filesReadTools(host: ExtendedFilesHost) {
 	return [
 		defineTool({
@@ -69,16 +77,18 @@ export function filesReadTools(host: ExtendedFilesHost) {
 			parameters: {
 				type: 'object',
 				properties: {
-					resource_id: { type: 'string', description: 'Optional folder path or nextcloud:files:ID. If omitted, uses active folder.' },
+					resource_id: { type: 'string', description: 'A canonical nextcloud:files:ID for a known folder. If omitted, requires an included folder.' },
 					expectedRevision: { type: 'string', description: 'Optional expected folder ETag for optimistic concurrency.' },
 				},
 				additionalProperties: false,
 			},
 			run: async (args, c) => {
+				c.signal.throwIfAborted()
+				const expectedRevision = readRevision(args)
 				let targetId: string | undefined
-				if (args.resource_id !== undefined && args.resource_id !== null && String(args.resource_id).trim() !== '') {
-					const raw = String(args.resource_id).trim()
-					if (!/^nextcloud:files:[1-9][0-9]{0,14}$/.test(raw)) {
+				if (args.resource_id !== undefined) {
+					const raw = args.resource_id
+					if (typeof raw !== 'string' || !/^nextcloud:files:[1-9][0-9]{0,14}$/.test(raw)) {
 						throw new Error('Use a Nextcloud file resource ID, not a path or URL.')
 					}
 					targetId = raw
@@ -89,14 +99,16 @@ export function filesReadTools(host: ExtendedFilesHost) {
 					}
 					targetId = `nextcloud:files:${ctx.file.id}`
 				}
+				if (!targetId) throw new Error('Include a folder or provide a known folder resource_id.')
+				fileReference(targetId)
 				if (!host.files.organizeRead) throw new Error('Folder organization read is unavailable.')
 				if (targetId && host.authorizeSource) {
 					await host.authorizeSource(targetId, c.signal, 'read')
 				}
-				const expectedRevision = typeof args.expectedRevision === 'string' ? args.expectedRevision : undefined
 				const listing = expectedRevision !== undefined
 					? await host.files.organizeRead(targetId, expectedRevision, c.signal)
 					: await host.files.organizeRead(targetId, c.signal)
+				c.signal.throwIfAborted()
 				if (listing?.entries && host.rememberSource) {
 					for (const entry of listing.entries) {
 						if (entry.resourceId) {
@@ -104,46 +116,41 @@ export function filesReadTools(host: ExtendedFilesHost) {
 						}
 					}
 				}
+				c.signal.throwIfAborted()
 				return listing
 			},
 		}),
 		defineTool({
 			name: 'nc_files_shares_read',
 			toolClass: 'read',
-			description: 'Inspect access and existing shares for a file or folder. Returns share IDs, recipient user/group names and permissions. Reusable share passwords and secrets are never returned.',
+			description: 'Inspect current-user user/group/public-link shares for a known file or folder, including inherited and expired shares. Coverage is partial; this is not a complete access inventory. Reusable link tokens and passwords are never returned.',
 			parameters: {
 				type: 'object',
 				properties: {
-					resource_id: { type: 'string', description: 'The file or folder path or nextcloud:files:ID to inspect.' },
-					filename: { type: 'string', description: 'Alternative simple filename in the current directory.' },
+					resource_id: { type: 'string', description: 'A canonical nextcloud:files:ID for a known file or folder. If omitted, uses the included resource.' },
 					expectedRevision: { type: 'string', description: 'Optional expected resource ETag for optimistic concurrency.' },
 				},
 				additionalProperties: false,
 			},
 			run: async (args, c) => {
-				let target = String(args.resource_id ?? args.filename ?? '').trim()
-				if (!target && host.context) {
-					target = `nextcloud:files:${host.context().file.id}`
-				}
-				if (!target) throw new Error('A target file or folder is required.')
-				if (target.startsWith('nextcloud:files:')) {
-					if (!/^nextcloud:files:[1-9][0-9]{0,14}$/.test(target)) {
-						throw new Error('Use a Nextcloud file resource ID, not a path or URL.')
-					}
-					if (host.authorizeSource) {
-						await host.authorizeSource(target, c.signal, 'read')
-					}
-				} else if (/^[a-zA-Z0-9_.-]+$/.test(target)) {
-					// legacy/test simple filename support
-				} else {
+				c.signal.throwIfAborted()
+				const expectedRevision = readRevision(args)
+				const target = args.resource_id !== undefined ? args.resource_id : (host.context ? `nextcloud:files:${host.context().file.id}` : undefined)
+				if (typeof target !== 'string' || !/^nextcloud:files:[1-9][0-9]{0,14}$/.test(target)) {
 					throw new Error('Use a Nextcloud file resource ID, not a path or URL.')
 				}
+				fileReference(target)
+				await host.authorizeSource?.(target, c.signal, 'shares')
 				if (!host.files.sharesRead) throw new Error('Share inspection is unavailable.')
-				const expectedRevision = typeof args.expectedRevision === 'string' ? args.expectedRevision : undefined
-				const shares = expectedRevision !== undefined
+				const listing = expectedRevision !== undefined
 					? await host.files.sharesRead(target, expectedRevision, c.signal)
 					: await host.files.sharesRead(target, c.signal)
-				return shares.map(s => {
+				c.signal.throwIfAborted()
+				if (listing.resourceId !== target || !listing.etag || !Array.isArray(listing.shares) || listing.shares.length > 50
+					|| typeof listing.complete !== 'boolean' || typeof listing.coverage !== 'string') throw new Error('Invalid native share response.')
+				const shares = listing.shares.map(s => {
+					if (!Number.isSafeInteger(s.id) || s.id < 1 || ![0, 1, 3].includes(s.shareType)
+						|| !Number.isInteger(s.permissions) || s.permissions < 0 || s.permissions > 31) throw new Error('Invalid native share metadata.')
 					const sanitized: ShareEntry = {
 						id: Number(s.id),
 						shareType: Number(s.shareType),
@@ -151,13 +158,18 @@ export function filesReadTools(host: ExtendedFilesHost) {
 						path: s.path,
 						mailSend: s.mailSend === true,
 					}
-					if (s.shareWith !== undefined) sanitized.shareWith = String(s.shareWith)
-					if (s.shareWithDisplayName !== undefined) sanitized.shareWithDisplayName = String(s.shareWithDisplayName)
-					if (s.fileTarget !== undefined) sanitized.fileTarget = String(s.fileTarget)
+					if (s.shareType === 3) {
+						sanitized.shareWith = 'public-link'
+						sanitized.shareWithDisplayName = 'Public link'
+					} else {
+						if (s.shareWith !== undefined) sanitized.shareWith = String(s.shareWith)
+						if (s.shareWithDisplayName !== undefined) sanitized.shareWithDisplayName = String(s.shareWithDisplayName)
+					}
 					if (s.expiration !== undefined) sanitized.expiration = s.expiration
 					if (s.inherited !== undefined) sanitized.inherited = s.inherited
 					return sanitized
 				})
+				return { resourceId: target, etag: listing.etag, shares, complete: listing.complete, coverage: listing.coverage }
 			},
 		}),
 	]

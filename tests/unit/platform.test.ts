@@ -13,18 +13,31 @@ const userFiles: FileSourceScope = { kind: 'user-files' }
 
 function fixture(change: Partial<ScopePolicy> = {}, identityChange: Partial<ScopeIdentity> = {}) {
 	let identity: ScopeIdentity = {
-		nextcloudOrigin: 'https://cloud.example.test', nextcloudUser: 'alice', nextcloudBinding: 'native-binding',
-		fadenstackOrigin: 'https://assistant.example.test', fadenstackPrincipal: { kind: 'session', id: 'sdk-sign-in-device' },
-		agent: 'published-files', agentVersion: 3, schemaVersion: 'files-1', contractVersion: 'contract-3', policyVersion: 'policy-1',
+		nextcloudOrigin: 'https://cloud.example.test',
+		nextcloudUser: 'alice',
+		nextcloudBinding: 'native-binding',
+		fadenstackOrigin: 'https://assistant.example.test',
+		fadenstackPrincipal: { kind: 'session', id: 'sdk-sign-in-device' },
+		agent: 'published-files',
+		agentVersion: 3,
+		schemaVersion: 'files-1',
+		contractVersion: 'contract-3',
+		policyVersion: 'policy-1',
 		...identityChange,
 	}
 	const policy: ScopePolicy = {
-		version: 'policy-1', sources: [userFiles], destinations: [userFiles],
-		tools: FILE_CAPABILITIES.map(tool => tool.name), gatewayOrigin: 'https://assistant.example.test', sourceClasses: ['standard'],
-		downstreamPolicy: 'unverified', destinationAudiences: ['private'], movements: [{ source: 'standard', destination: 'private' }],
+		version: 'policy-1',
+		sources: [userFiles],
+		destinations: [userFiles],
+		tools: FILE_CAPABILITIES.map(tool => tool.name),
+		gatewayOrigin: 'https://assistant.example.test',
+		sourceClasses: ['standard'],
+		downstreamPolicy: 'unverified',
+		destinationAudiences: ['private'],
+		movements: [{ source: 'standard', destination: 'private' }],
 		...change,
 	}
-	let resources = new Map<string, NativeResource>([
+	const resources = new Map<string, NativeResource>([
 		[a, { resourceId: a, revision: 'revision-a', sourceClass: 'standard', audience: 'private', scope: policy.sources[0] }],
 		[b, { resourceId: b, revision: 'revision-b', sourceClass: 'standard', audience: 'private', scope: policy.sources[0] }],
 		[folder, { resourceId: folder, revision: 'folder-revision', sourceClass: 'standard', audience: 'private', scope: policy.destinations[0] ?? policy.sources[0] }],
@@ -32,7 +45,12 @@ function fixture(change: Partial<ScopePolicy> = {}, identityChange: Partial<Scop
 	const resolve = vi.fn(async (reference: string) => resources.get(reference))
 	const published = FILE_CAPABILITIES.map(tool => ({ name: tool.name, risk: tool.risk }))
 	const guard = new TurnScope(identity, policy, published, () => identity, resolve)
-	return { guard, resolve, policy, published, identity: () => identity,
+	return {
+		guard,
+		resolve,
+		policy,
+		published,
+		identity: () => identity,
 		changeIdentity: (change: Partial<ScopeIdentity>) => { identity = { ...identity, ...change } },
 		changeResource: (reference: string, change: Partial<NativeResource>) => { resources.set(reference, { ...resources.get(reference)!, ...change }) },
 		revoke: (reference: string) => { resources.delete(reference) },
@@ -81,6 +99,17 @@ describe('reviewed host capability inventory', () => {
 })
 
 describe('conversation source classification', () => {
+	it('retains share inspection purpose across read refreshes and conversation copies', () => {
+		const ledger = new SourceLedger()
+		const resource: NativeResource = { resourceId: a, revision: 'r1', sourceClass: 'standard', audience: 'private', scope: userFiles }
+		ledger.record(resource, 'shares')
+		ledger.record(resource, 'read')
+		expect(ledger.purpose(a)).toBe('shares')
+		const copy = new SourceLedger(ledger)
+		ledger.clear()
+		expect(copy.purpose(a)).toBe('shares')
+		expect(ledger.purpose(a)).toBe('read')
+	})
 	it('retains protected classification after a move or native downgrade', () => {
 		const f = fixture()
 		const ledger = new SourceLedger()
@@ -89,8 +118,12 @@ describe('conversation source classification', () => {
 		ledger.record({ ...resource, revision: 'new', sourceClass: 'standard' })
 		expect(() => ledger.assertProcessing(f.policy)).toThrow('Earlier conversation content')
 		expect(() => ledger.assertMovement(f.policy, 'private')).toThrow('Earlier conversation content')
-		const permitted = { ...f.policy, sourceClasses: ['standard', 'protected'] as const, downstreamPolicy: 'configured' as const,
-			movements: [...f.policy.movements, { source: 'protected' as const, destination: 'private' as const }] }
+		const permitted = {
+			...f.policy,
+			sourceClasses: ['standard', 'protected'] as const,
+			downstreamPolicy: 'configured' as const,
+			movements: [...f.policy.movements, { source: 'protected' as const, destination: 'private' as const }],
+		}
 		expect(() => ledger.assertProcessing(permitted)).not.toThrow()
 		expect(() => ledger.assertMovement(permitted, 'private')).not.toThrow()
 	})

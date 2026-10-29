@@ -18,9 +18,11 @@ use OCA\FadenstackAgent\AppInfo\Application;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
 use OCA\FadenstackAgent\Service\ScopePolicy;
+use OCP\App\IAppManager;
 use OCP\Constants;
 use OCP\Files\IRootFolder;
 use OCP\IConfig;
+use OCP\IGroupManager;
 use OCP\IUserManager;
 use OCP\IUserSession;
 use OCP\Server;
@@ -72,11 +74,17 @@ $oldPolicy = $config->getAppValue(Application::APP_ID, ScopePolicy::CONFIG_KEY, 
 $oldReadsEnabled = $config->getAppValue(Application::APP_ID, 'files_reads_enabled', '0');
 
 $createdShares = [];
+$createdGroups = [];
 
 try {
 	// Enable files reads opt-in
 	$config->setAppValue(Application::APP_ID, 'files_reads_enabled', '1');
 	$config->setAppValue(Application::APP_ID, ScopePolicy::CONFIG_KEY, '');
+	$denied('omitted folder cannot fall back to root', fn () => $broker->organizeRead(), 400);
+	$config->setAppValue(Application::APP_ID, 'files_reads_enabled', '0');
+	$denied('native folder endpoint opt-in is required', fn () => $broker->organizeRead($folderRef), 403);
+	$denied('native share endpoint opt-in is required', fn () => $broker->sharesRead($fileRef), 403);
+	$config->setAppValue(Application::APP_ID, 'files_reads_enabled', '1');
 
 	// 1. OrganizeRead on folder returns canonical references, entries and metadata
 	$listing = $broker->organizeRead($folderRef);
@@ -116,6 +124,17 @@ try {
 
 	// Denied root outside configured sources fails 404
 	$denied('organizeRead outside configured source roots is denied (404)', fn () => $broker->organizeRead($folderRef), 404);
+	$restricted['tools'] = ['nc_read_file'];
+	$config->setAppValue(Application::APP_ID, ScopePolicy::CONFIG_KEY, json_encode($restricted, JSON_THROW_ON_ERROR));
+	$denied('native tool allowlist enforced before folder lookup', fn () => $broker->organizeRead($subFolderRef), 403);
+	$denied('native tool allowlist enforced before share lookup', fn () => $broker->sharesRead($fileRef), 403);
+	$restricted['sources'] = [['kind' => 'folder', 'resourceId' => $folderRef]];
+	$restricted['tools'] = ScopePolicy::EXTENDED_READ_TOOLS;
+	$restricted['classificationRules'] = [['scope' => ['kind' => 'file', 'resourceId' => $fileRef], 'class' => 'protected']];
+	$config->setAppValue(Application::APP_ID, ScopePolicy::CONFIG_KEY, json_encode($restricted, JSON_THROW_ON_ERROR));
+	$filtered = $broker->organizeRead($folderRef);
+	$assert('protected child metadata is excluded before disclosure', !in_array('Contract-2026.md', array_column($filtered['entries'], 'filename'), true));
+	$assert('filtered listing explicitly reports partial coverage', $filtered['partial'] === true);
 
 	// Reset policy to legacy default
 	$config->setAppValue(Application::APP_ID, ScopePolicy::CONFIG_KEY, '');
@@ -156,6 +175,9 @@ try {
 
 	// Call sharesRead as User A
 	$inspected = $broker->sharesRead($fileRef);
+	$assert('sharesRead explicitly reports partial provider coverage', $inspected['complete'] === false && str_contains($inspected['coverage'], 'Other providers'));
+	$assert('sharesRead binds target and native revision', $inspected['resourceId'] === $fileRef && $inspected['etag'] !== '');
+	$inspected = $inspected['shares'];
 	$assert('sharesRead returns direct and inherited shares', count($inspected) >= 3);
 
 	// Verify distinction between direct and inherited
@@ -179,10 +201,48 @@ try {
 
 	// 7. Privilege check: User B (recipient without share permissions) attempting to inspect shares
 	$session->setUser($userB);
+	\OC_Util::tearDownFS();
+	\OC_Util::setupFS($userB->getUID());
 	$denied('non-owner without share permissions is denied share inspection (403)', fn () => $broker->sharesRead($fileRef), 403);
+	$denied('cached share lineage rechecks inspection permission', fn () => $broker->scopeResource($fileRef, 'shares'), 403);
+	$assert('recipient can retain file READ while share inspection is denied', $broker->scopeResource($fileRef, 'read')['resourceId'] === $fileRef);
 
 	// Switch back to User A
 	$session->setUser($userA);
+	\OC_Util::tearDownFS();
+	\OC_Util::setupFS($userA->getUID());
+	$shares->deleteShare($userShare);
+	$shares->deleteShare($parentShare);
+	$session->setUser($userB);
+	\OC_Util::tearDownFS();
+	\OC_Util::setupFS($userB->getUID());
+	$denied('revoked recipient loses file metadata read', fn () => $broker->scopeResource($fileRef, 'read'), 404);
+	$session->setUser($userA);
+	\OC_Util::tearDownFS();
+	\OC_Util::setupFS($userA->getUID());
+	for ($index = 0; $index < 102; $index++) {
+		$subFolder->newFile('bounded-' . $index . '.txt', 'Synthetic content');
+	}
+	$bounded = $broker->organizeRead($subFolderRef);
+	$assert('native listing record cap leaves room for its parent lineage', count($bounded['entries']) === 100 && $bounded['partial'] === true);
+	$groupManager = Server::get(IGroupManager::class);
+	$prefix = 'native-read-bound-' . bin2hex(random_bytes(4)) . '-';
+	for ($index = 0; $index < 51; $index++) {
+		$group = $groupManager->createGroup($prefix . $index);
+		$createdGroups[] = $group;
+		$share = $shares->newShare()->setNode($fileA)->setShareType(IShare::TYPE_GROUP)->setSharedWith($group->getGID())
+			->setSharedBy($userA->getUID())->setShareOwner($userA->getUID())->setPermissions(Constants::PERMISSION_READ);
+		$createdShares[] = $shares->createShare($share);
+	}
+	$boundedShares = $broker->sharesRead($fileRef);
+	$assert('native share enumeration caps records and never claims a full inventory', count($boundedShares['shares']) === 50 && $boundedShares['complete'] === false);
+	$apps = Server::get(IAppManager::class);
+	$apps->disableApp('files_sharing');
+	try {
+		$denied('disabled sharing app fails closed', fn () => $broker->sharesRead($fileRef), 503);
+	} finally {
+		$apps->enableApp('files_sharing');
+	}
 
 	$assert('all native checks completed successfully', true);
 } finally {
@@ -193,6 +253,9 @@ try {
 		} catch (\Throwable $e) {
 			// ignore cleanup error
 		}
+	}
+	foreach ($createdGroups as $group) {
+		$group->delete();
 	}
 	// Cleanup files and folders
 	try {
@@ -210,4 +273,3 @@ echo json_encode([
 	'checks' => $checks,
 	'summary' => count($checks) . ' native checks verified',
 ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . "\n";
-

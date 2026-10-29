@@ -98,7 +98,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (new URL(String(input)).pathname.endsWith('/chat/completions') && config.scopePolicy) {
 				this.#sources.assertProcessing(config.scopePolicy)
 				if (!files.scopeResource) throw new Error('The native scope service is unavailable.')
-				for (const reference of this.#sources.references) this.#sources.record(await files.scopeResource(reference, 'read', signal))
+				for (const reference of this.#sources.references) this.#sources.record(await files.scopeResource(reference, this.#sources.purpose(reference), signal))
 				this.#sources.assertProcessing(config.scopePolicy)
 			}
 			signal.throwIfAborted()
@@ -112,7 +112,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.tokens = new AgentTokenProvider({ apiUrl: config.serverUrl, agent: config.agent, store: new MemoryTokenStore(), fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const experimental = experimentalAdaptersAllowed(config)
-		const filesReadsActive = (config.filesReadsEnabled === true || (experimental && config.extendedFilesEnabled === true)) && !!files.organizeRead && !!files.sharesRead
+		const filesReadsActive = config.filesReadsEnabled === true && !!config.scopePolicy && !!files.organizeRead && !!files.sharesRead
 		const extendedFilesMutations = experimental && config.extendedFilesEnabled === true && !!files.createFolder
 		const tablesEnabled = experimental && config.tablesEnabled === true && !!files.tables
 		const deckEnabled = experimental && config.deckEnabled === true && !!files.deck
@@ -236,7 +236,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						const target = await this.writeContext(request.toolName, request.arguments.resource_id, signal)
 						if (this.#scope) {
 							const destination = await this.#scope.bindDestination(`nextcloud:files:${request.toolName === 'nc_create_text_file' ? target.parentId : target.file.id}`, signal)
-							const sources = await Promise.all(this.#sources.references.map(reference => this.#scope!.authorize(reference, 'read', signal)))
+							const sources = await Promise.all(this.#sources.references.map(reference => this.#scope!.authorize(reference, this.#sources.purpose(reference), signal)))
 							await this.#scope.assertMovement(sources, destination, signal)
 							this.#sources.assertMovement(this.#scope.policy, destination.audience)
 						}
@@ -409,9 +409,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#sources.record(await this.#scope.bindSource(reference, signal))
 	}
 
-	async authorizeSource(reference: string, signal: AbortSignal, purpose: 'read' | 'metadata' = 'read'): Promise<void> {
+	async authorizeSource(reference: string, signal: AbortSignal, purpose: 'read' | 'metadata' | 'shares' = 'read'): Promise<void> {
 		if (!this.#scope) return
-		this.#sources.record(await this.#scope.authorize(reference, purpose, signal))
+		this.#sources.record(await this.#scope.authorize(reference, purpose, signal), purpose)
 	}
 
 	recordResult(callId: string, value: unknown): void {
@@ -463,6 +463,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#proposalResources.delete(call.callId)
 		this.#proposalParents.delete(call.callId)
 		await this.files.assertIdentity(call.signal)
+		// An approved text change may contain share metadata read earlier in this turn.
+		// READ on the underlying file is insufficient after inspection rights are revoked.
+		for (const reference of this.#sources.references) {
+			if (this.#sources.purpose(reference) === 'shares') await this.authorizeSource(reference, call.signal, 'shares')
+		}
 		call.signal.throwIfAborted()
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
 		try {
@@ -1484,7 +1489,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					() => ({ ...identity, fadenstackPrincipal: { kind: 'session', id: this.tokens.deviceId ?? '' }, contractVersion: JSON.stringify(this.agent.profile) === frozen ? identity.contractVersion : 'changed' }),
 					(reference, purpose, _scopes, innerSignal) => this.files.scopeResource!(reference, purpose, innerSignal))
 				this.#sources.assertProcessing(this.#scope.policy)
-				for (const reference of this.#sources.references) this.#sources.record(await this.#scope.bindSource(reference, stopped))
+				for (const reference of this.#sources.references) {
+					this.#sources.record(await this.#scope.bindSource(reference, stopped))
+					if (this.#sources.purpose(reference) === 'shares') await this.authorizeSource(reference, stopped, 'shares')
+				}
 				if (this.#active) await this.rememberSource(`nextcloud:files:${this.#active.file.id}`, stopped)
 			}
 			stopped.throwIfAborted()
@@ -1561,6 +1569,7 @@ function resultRecords(result: unknown): number {
 		if ('results' in result && Array.isArray(result.results)) return result.results.length
 		if ('files' in result && Array.isArray(result.files)) return result.files.length + 1
 		if ('entries' in result && Array.isArray(result.entries)) return result.entries.length + 1
+		if ('shares' in result && Array.isArray(result.shares)) return result.shares.length + 1
 		if (Array.isArray(result)) return result.length
 	}
 	return 1

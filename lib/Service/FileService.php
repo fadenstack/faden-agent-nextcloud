@@ -157,6 +157,13 @@ class FileService {
 	}
 
 	public function scopeResource(string $reference, string $purpose = 'metadata'): array {
+		if ($purpose === 'shares') {
+			$this->scope->assertFilesReadTool('nc_files_shares_read');
+			$node = $this->filesReadNode($reference);
+			$grant = $this->scope->describeNode($node, 'read');
+			$this->assertShareInspection($node);
+			return $grant;
+		}
 		return $this->scope->resolve($reference, $purpose);
 	}
 
@@ -318,14 +325,8 @@ class FileService {
 	}
 
 	public function organizeRead(string $resourceId = '', ?string $expectedRevision = null): array {
-		if ($resourceId !== '') {
-			if (!preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $resourceId, $match)) {
-				throw new Problem('Use a Nextcloud file resource ID, not a path or URL.');
-			}
-			$node = $this->node((int)$match[1]);
-		} else {
-			$node = $this->root->getUserFolder($this->uid());
-		}
+		$this->scope->assertFilesReadTool('nc_files_organize_read');
+		$node = $this->filesReadNode($resourceId);
 		if (!$node instanceof Folder) {
 			throw new Problem('Folder organization read requires a folder, not a file.', 415);
 		}
@@ -336,15 +337,23 @@ class FileService {
 		$home = $this->root->getUserFolder($this->uid());
 		$entries = [];
 		$partial = false;
+		$bytes = 0;
 		foreach ($node->getDirectoryListing() as $child) {
-			if (!$child->isReadable()) {
+			try {
+				// Metadata also requires processing/classification approval, before disclosure.
+				$this->scope->describeNode($child, 'read', false);
+			} catch (Problem $error) {
+				if (!in_array($error->status, [403, 404], true)) {
+					throw $error;
+				}
+				$partial = true;
 				continue;
 			}
-			if (count($entries) >= 200) {
+			if (count($entries) >= 100) {
 				$partial = true;
 				break;
 			}
-			$entries[] = [
+			$entry = [
 				'resourceId' => 'nextcloud:files:' . $child->getId(),
 				'filename' => $child->getName(),
 				'etag' => $child->getEtag(),
@@ -354,6 +363,12 @@ class FileService {
 				'permissions' => $child->getPermissions(),
 				'href' => $this->urls->linkToRouteAbsolute('files.viewcontroller.showFile', ['fileid' => $child->getId()]),
 			];
+			$bytes += strlen(json_encode($entry, JSON_THROW_ON_ERROR));
+			if ($bytes > 65536) {
+				$partial = true;
+				break;
+			}
+			$entries[] = $entry;
 		}
 		$relPath = $home->getRelativePath($node->getPath());
 		return [
@@ -366,73 +381,68 @@ class FileService {
 	}
 
 	public function sharesRead(string $resourceId, ?string $expectedRevision = null): array {
-		if (!preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $resourceId, $match)) {
-			throw new Problem('Use a Nextcloud file resource ID, not a path or URL.');
-		}
-		$node = $this->node((int)$match[1]);
+		$this->scope->assertFilesReadTool('nc_files_shares_read');
+		$node = $this->filesReadNode($resourceId);
 		$this->scope->describeNode($node, 'read');
 		if ($expectedRevision !== null && $expectedRevision !== '' && $node->getEtag() !== $expectedRevision) {
 			throw new Problem('The resource revision changed. Inspect the resource before continuing.', 409);
 		}
-		if (!$this->apps->isEnabledForUser('files_sharing')) {
-			throw new Problem('The Nextcloud sharing app is unavailable.', 503);
-		}
-		$isOwner = $node->getOwner()?->getUID() === $this->uid();
-		$canShare = ($node->getPermissions() & Constants::PERMISSION_SHARE) !== 0;
-		if (!$isOwner && !$canShare) {
-			throw new Problem('Permission denied to inspect shares for this resource.', 403);
-		}
+		$this->assertShareInspection($node);
 		$home = $this->root->getUserFolder($this->uid());
-		$rawShares = [];
-		foreach ($this->shares->getSharesByNode($node) as $s) {
-			$rawShares[] = ['share' => $s, 'inherited' => false];
-		}
-		$current = $node;
-		while ($current->getId() !== $home->getId()) {
-			$parent = $current->getParent();
-			if ($parent === null || $parent->getId() === $home->getId()) {
-				break;
-			}
-			foreach ($this->shares->getSharesByNode($parent) as $s) {
-				$rawShares[] = ['share' => $s, 'inherited' => true];
-			}
-			$current = $parent;
-		}
 		$sanitized = [];
 		$seenIds = [];
-		foreach ($rawShares as $item) {
-			/** @var IShare $s */
-			$s = $item['share'];
-			$shareId = (int)$s->getId();
-			if (isset($seenIds[$shareId])) {
-				continue;
+		$bytes = 0;
+		$current = $node;
+		for ($depth = 0; $depth < 16; $depth++) {
+			foreach ([IShare::TYPE_USER, IShare::TYPE_GROUP, IShare::TYPE_LINK] as $type) {
+				// Public, bounded API. onlyValid=false avoids its expired-share deletion side effect.
+				foreach ($this->shares->getSharesBy($this->uid(), $type, $current, false, 51, 0, false) as $share) {
+					$id = $share->getId();
+					if (!ctype_digit($id) || isset($seenIds[$id])) {
+						continue;
+					}
+					$seenIds[$id] = true;
+					$expiration = $share->getExpirationDate();
+					$entry = [
+						'id' => (int)$id, 'shareType' => $type,
+						'shareWith' => $type === IShare::TYPE_LINK ? 'public-link' : $share->getSharedWith(),
+						'shareWithDisplayName' => $type === IShare::TYPE_LINK ? 'Public link' : $share->getSharedWithDisplayName(),
+						'permissions' => $share->getPermissions(),
+						'path' => '/' . ltrim($home->getRelativePath($node->getPath()), '/'),
+						'expiration' => $expiration?->format(\DateTimeInterface::ATOM),
+						'inherited' => $depth > 0,
+					];
+					$bytes += strlen(json_encode($entry, JSON_THROW_ON_ERROR));
+					if (count($sanitized) >= 50 || $bytes > 65536) {
+						break 3;
+					}
+					$sanitized[] = $entry;
+				}
 			}
-			$seenIds[$shareId] = true;
-			$shareType = $s->getShareType();
-			$shareWith = $s->getSharedWith();
-			$shareWithDisplayName = $s->getSharedWithDisplayName();
-			if ($shareType === IShare::TYPE_LINK) {
-				$shareWith = 'public-link';
-				$shareWithDisplayName = 'Public link';
-			}
-			$expiration = $s->getExpirationDate();
-			$sanitized[] = [
-				'id' => $shareId,
-				'shareType' => $shareType,
-				'shareWith' => $shareWith,
-				'shareWithDisplayName' => $shareWithDisplayName,
-				'permissions' => (int)$s->getPermissions(),
-				'path' => '/' . ltrim($home->getRelativePath($node->getPath()), '/'),
-				'fileTarget' => $s->getTarget() ?: $node->getName(),
-				'expiration' => $expiration instanceof \DateTimeInterface ? $expiration->format(\DateTimeInterface::ATOM) : null,
-				'mailSend' => (bool)$s->getMailSend(),
-				'inherited' => $item['inherited'],
-			];
-			if (count($sanitized) >= 50) {
+			if ($current->getId() === $home->getId()) {
 				break;
 			}
+			$current = $current->getParent();
 		}
-		return $sanitized;
+		// This deliberately does not claim a complete ACL inventory across all share providers.
+		return ['resourceId' => $resourceId, 'etag' => $node->getEtag(), 'shares' => $sanitized, 'complete' => false,
+			'coverage' => 'Current-user user/group/public-link shares, including expired and inherited shares; up to 50 records and 16 ancestor levels. Other providers and shares initiated by other users are excluded.'];
+	}
+
+	private function filesReadNode(string $resourceId): Node {
+		if (!preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $resourceId, $match)) {
+			throw new Problem('Use a Nextcloud file resource ID, not a path or URL.');
+		}
+		return $this->node((int)$match[1]);
+	}
+
+	private function assertShareInspection(Node $node): void {
+		if (!$this->apps->isEnabledForUser('files_sharing', $this->users->getUser())) {
+			throw new Problem('The Nextcloud sharing app is unavailable.', 503);
+		}
+		if ($node->getOwner()?->getUID() !== $this->uid() && ($node->getPermissions() & Constants::PERMISSION_SHARE) === 0) {
+			throw new Problem('Permission denied to inspect shares for this resource.', 403);
+		}
 	}
 
 	public static function filename(string $name): void {

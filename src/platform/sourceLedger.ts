@@ -5,14 +5,18 @@ import type { DestinationAudience, NativeResource, ScopePolicy, SourceClass } fr
 export class SourceLedger {
 
 	readonly #classes = new Map<string, Set<SourceClass>>()
+	readonly #shareSources = new Set<string>()
 
 	constructor(previous?: SourceLedger) {
 		if (previous) for (const [reference, classes] of previous.#classes) this.#classes.set(reference, new Set(classes))
+		if (previous) for (const reference of previous.#shareSources) this.#shareSources.add(reference)
 	}
 
 	get references(): readonly string[] { return [...this.#classes.keys()] }
+	/** Share metadata requires current inspection permission even when file READ remains. */
+	purpose(reference: string): 'read' | 'shares' { return this.#shareSources.has(reference) ? 'shares' : 'read' }
 
-	record(resource: NativeResource): void {
+	record(resource: NativeResource, purpose: 'read' | 'metadata' | 'shares' = 'read'): void {
 		let classes = this.#classes.get(resource.resourceId)
 		if (!classes) {
 			if (this.#classes.size >= 200) throw new ScopeViolation('resource_limit', 'Start a new conversation to use more sources.')
@@ -20,6 +24,7 @@ export class SourceLedger {
 			this.#classes.set(resource.resourceId, classes)
 		}
 		classes.add(resource.sourceClass)
+		if (purpose === 'shares') this.#shareSources.add(resource.resourceId)
 	}
 
 	assertProcessing(policy: ScopePolicy): void {
@@ -39,6 +44,6 @@ export class SourceLedger {
 		}
 	}
 
-	clear(): void { this.#classes.clear() }
+	clear(): void { this.#classes.clear(); this.#shareSources.clear() }
 
 }

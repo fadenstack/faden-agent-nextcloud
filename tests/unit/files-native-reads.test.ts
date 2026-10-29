@@ -6,7 +6,20 @@ import { NextcloudFiles } from '../../src/integrations/nextcloud/files.ts'
 import { filesReadTools, type ExtendedFilesHost } from '../../src/integrations/nextcloud/filesExtended.ts'
 import { TurnScope, type ScopePolicy, type ScopeIdentity } from '../../src/platform/scope.ts'
 import { ScopeViolation } from '../../src/platform/limits.ts'
-import type { FileApi, FileContext, Identity, ShareEntry, FolderListing } from '../../src/integrations/nextcloud/types.ts'
+import type { FileApi, FileContext, Identity, ShareEntry, ShareListing, FolderListing } from '../../src/integrations/nextcloud/types.ts'
+
+const readPolicy: ScopePolicy = {
+	version: 'native-reads-v1',
+	gatewayOrigin: 'https://faden.test',
+	sources: [{ kind: 'user-files' }],
+	destinations: [],
+	tools: ['nc_files_organize_read', 'nc_files_shares_read'],
+	sourceClasses: ['standard'],
+	downstreamPolicy: 'unverified',
+	destinationAudiences: ['private'],
+	movements: [],
+}
+const shareListing = (shares: ShareEntry[], resourceId = 'nextcloud:files:101'): ShareListing => ({ resourceId, etag: 'r1', shares, complete: false, coverage: 'Current-user shares only.' })
 
 vi.mock('@nextcloud/axios', () => ({ default: { get: vi.fn(), put: vi.fn(), post: vi.fn(), delete: vi.fn(), request: vi.fn() } }))
 vi.mock('@nextcloud/router', () => ({
@@ -77,7 +90,7 @@ function mockFilesApi(overrides: Partial<FileApi> = {}): FileApi {
 			],
 			partial: false,
 		})),
-		sharesRead: vi.fn(async (resourceId, expectedRevision) => [
+		sharesRead: vi.fn(async resourceId => shareListing([
 			{
 				id: 1,
 				shareType: 0,
@@ -102,7 +115,7 @@ function mockFilesApi(overrides: Partial<FileApi> = {}): FileApi {
 				mailSend: false,
 				inherited: true,
 			},
-		]),
+		], resourceId)),
 		...overrides,
 	}
 }
@@ -179,15 +192,16 @@ describe('NC08 native read-only Files integration: argument validation & referen
 		await expect(tool.invoke({ resource_id: 'https://cloud.test/f/101' }, { callId: 'c2', signal: new AbortController().signal }))
 			.rejects.toThrow('Use a Nextcloud file resource ID, not a path or URL.')
 
-		const result = await tool.invoke({ resource_id: 'nextcloud:files:101' }, { callId: 'c3', signal: new AbortController().signal }) as ShareEntry[]
-		expect(authorizeSource).toHaveBeenCalledWith('nextcloud:files:101', expect.any(Object), 'read')
+		const result = await tool.invoke({ resource_id: 'nextcloud:files:101' }, { callId: 'c3', signal: new AbortController().signal }) as ShareListing
+		expect(authorizeSource).toHaveBeenCalledWith('nextcloud:files:101', expect.any(Object), 'shares')
 		expect(files.sharesRead).toHaveBeenCalledWith('nextcloud:files:101', expect.any(Object))
-		expect(result).toHaveLength(2)
+		expect(result.shares).toHaveLength(2)
+		expect(result.complete).toBe(false)
 	})
 
 	it('nc_files_shares_read strips reusable tokens, passwords, and token links', async () => {
 		const files = mockFilesApi({
-			sharesRead: vi.fn(async () => [
+			sharesRead: vi.fn(async () => shareListing([
 				{
 					id: 10,
 					shareType: 3, // Link share
@@ -201,19 +215,20 @@ describe('NC08 native read-only Files integration: argument validation & referen
 					mailSend: false,
 					inherited: true,
 				} as unknown as ShareEntry,
-			]),
+			])),
 		})
 		const tools = filesReadTools({ files, recordResult: () => {} })
 		const tool = tools.find(t => t.name === 'nc_files_shares_read')!
 
-		const result = await tool.invoke({ resource_id: 'nextcloud:files:101' }, { callId: 'c1', signal: new AbortController().signal }) as ShareEntry[]
-		expect(result).toHaveLength(1)
-		const share = result[0]!
+		const result = await tool.invoke({ resource_id: 'nextcloud:files:101' }, { callId: 'c1', signal: new AbortController().signal }) as ShareListing
+		expect(result.shares).toHaveLength(1)
+		const share = result.shares[0]!
 		expect(share.id).toBe(10)
 		expect(share.shareType).toBe(3)
 		expect(share.inherited).toBe(true)
 		// Secret stripping verification
-		expect(share.shareWith).toBe('secret-token-12345')
+		expect(share.shareWith).toBe('public-link')
+		expect(JSON.stringify(result)).not.toContain('secret-token-12345')
 		expect(JSON.stringify(result)).not.toContain('LEAKED_TOKEN')
 		expect(JSON.stringify(result)).not.toContain('LEAKED_PASSWORD')
 		expect((share as Record<string, unknown>).token).toBeUndefined()
@@ -232,6 +247,52 @@ describe('NC08 native read-only Files integration: argument validation & referen
 
 		await sharesTool.invoke({ resource_id: 'nextcloud:files:101', expectedRevision: 'rev-def' }, { callId: 'c2', signal: new AbortController().signal })
 		expect(files.sharesRead).toHaveBeenCalledWith('nextcloud:files:101', 'rev-def', expect.any(Object))
+	})
+
+	it('refuses missing context, legacy names, null references and malformed revisions before transport', async () => {
+		const files = mockFilesApi()
+		for (const tool of filesReadTools({ files, recordResult: () => {} })) {
+			for (const args of [{}, { resource_id: null }, { resource_id: 'Contract.md' }, { filename: 'Contract.md' }, { resource_id: 'nextcloud:files:101', expectedRevision: 42 }]) {
+				await expect(tool.invoke(args, { callId: 'invalid', signal: new AbortController().signal })).rejects.toThrow()
+			}
+		}
+		expect(files.organizeRead).not.toHaveBeenCalled()
+		expect(files.sharesRead).not.toHaveBeenCalled()
+	})
+
+	it('propagates Stop before dispatch and rejects a late result before binding or disclosure', async () => {
+		const files = mockFilesApi()
+		const stop = new AbortController()
+		stop.abort()
+		for (const tool of filesReadTools({ files, recordResult: () => {} })) {
+			await expect(tool.invoke({ resource_id: 'nextcloud:files:202' }, { callId: 'stop', signal: stop.signal })).rejects.toThrow()
+		}
+		expect(files.organizeRead).not.toHaveBeenCalled()
+		expect(files.sharesRead).not.toHaveBeenCalled()
+		const late = new AbortController()
+		const original = files.organizeRead!
+		files.organizeRead = vi.fn(async (...args) => { const result = await original(...args); late.abort(); return result })
+		const rememberSource = vi.fn()
+		await expect(filesReadTools({ files, recordResult: () => {}, rememberSource })[0]!.invoke({ resource_id: 'nextcloud:files:202' }, { callId: 'late', signal: late.signal })).rejects.toThrow()
+		expect(rememberSource).not.toHaveBeenCalled()
+	})
+
+	it('refuses unauthorized known references before invoking the native read adapter', async () => {
+		const files = mockFilesApi()
+		const authorizeSource = vi.fn(async () => { throw new Error('Unknown scoped reference') })
+		for (const tool of filesReadTools({ files, recordResult: () => {}, authorizeSource })) {
+			await expect(tool.invoke({ resource_id: 'nextcloud:files:202' }, { callId: 'unknown', signal: new AbortController().signal })).rejects.toThrow('Unknown scoped reference')
+		}
+		expect(files.organizeRead).not.toHaveBeenCalled()
+		expect(files.sharesRead).not.toHaveBeenCalled()
+	})
+
+	it('rejects a share envelope for another resource and malformed native numeric fields', async () => {
+		const files = mockFilesApi({ sharesRead: vi.fn(async () => shareListing([], 'nextcloud:files:999')) })
+		const tool = filesReadTools({ files, recordResult: () => {} })[1]!
+		await expect(tool.invoke({ resource_id: 'nextcloud:files:101' }, { callId: 'wrong', signal: new AbortController().signal })).rejects.toThrow('Invalid native share response')
+		vi.mocked(files.sharesRead!).mockResolvedValue(shareListing([{ id: NaN, shareType: 3, permissions: 1, path: '/file' }]))
+		await expect(tool.invoke({ resource_id: 'nextcloud:files:101' }, { callId: 'bad', signal: new AbortController().signal })).rejects.toThrow('Invalid native share metadata')
 	})
 })
 
@@ -258,6 +319,7 @@ describe('NC08 server-controlled read opt-in and tool offering', () => {
 			agent: 'nc-agent',
 			development: false, // NOT development / NOT experimental!
 			filesReadsEnabled: true, // Server-controlled opt-in enabled!
+			scopePolicy: readPolicy,
 			extendedFilesEnabled: true, // Should remain gated because development=false
 		}
 		const host = new NextcloudAgent(config, files, gateway.fetch)
@@ -405,7 +467,7 @@ describe('NextcloudFiles native HTTP transport for organizeRead and sharesRead',
 		}
 		vi.mocked(axios.get).mockResolvedValueOnce({ data: initial } as never)
 		vi.mocked(axios.post).mockResolvedValueOnce({
-			data: [
+			data: shareListing([
 				{
 					id: 1,
 					shareType: 0,
@@ -418,7 +480,7 @@ describe('NextcloudFiles native HTTP transport for organizeRead and sharesRead',
 					mailSend: false,
 					inherited: false,
 				},
-			],
+			]),
 		} as never)
 
 		const files = new NextcloudFiles(initial)
@@ -431,7 +493,8 @@ describe('NextcloudFiles native HTTP transport for organizeRead and sharesRead',
 				headers: { 'X-Fadenstack-Session': 'session-xyz' },
 			}),
 		)
-		expect(shares).toHaveLength(1)
-		expect(shares[0]!.id).toBe(1)
+		expect(shares.shares).toHaveLength(1)
+		expect(shares.shares[0]!.id).toBe(1)
+		expect(shares.complete).toBe(false)
 	})
 })

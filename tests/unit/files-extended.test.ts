@@ -53,9 +53,15 @@ function createMockFilesApi(overrides: Partial<FileApi> = {}): FileApi {
 		createFolder: vi.fn(async (folderPath, name) => ({ path: `${folderPath}/${name}`, name })),
 		copyFile: vi.fn(async (source, destination) => ({ operation: 'copy', source, destination, etag: 'new-etag-copy' })),
 		moveFile: vi.fn(async (source, destination) => ({ operation: 'move', source, destination, etag: 'new-etag-move' })),
-		sharesRead: vi.fn(async path => [
-			{ id: 101, shareType: 0, shareWith: 'bob', shareWithDisplayName: 'Bob', permissions: 1, path, mailSend: false },
-		]),
+		sharesRead: vi.fn(async path => ({
+			resourceId: path,
+			etag: 'r1',
+			complete: false,
+			coverage: 'Current-user shares only.',
+			shares: [
+				{ id: 101, shareType: 0, shareWith: 'bob', shareWithDisplayName: 'Bob', permissions: 1, path, mailSend: false },
+			],
+		})),
 		shareReadonly: vi.fn(async (path, recipientUserId) => ({
 			id: 102, shareType: 0, shareWith: recipientUserId, shareWithDisplayName: 'Bob User', permissions: 1, path, mailSend: false,
 		})),
@@ -188,7 +194,7 @@ describe('NC08: Extended Files tool execution and approval flow', () => {
 		const tools = filesExtendedTools({ files, recordResult: () => {} })
 		const organizeTool = tools.find(t => t.name === 'nc_files_organize_read')!
 
-		const result = await organizeTool.invoke({}, { callId: 'c1', signal: new AbortController().signal }) as FolderListing
+		const result = await organizeTool.invoke({ resource_id: 'nextcloud:files:10' }, { callId: 'c1', signal: new AbortController().signal }) as FolderListing
 		expect(files.organizeRead).toHaveBeenCalled()
 		expect(result.entries).toHaveLength(2)
 		expect(result.entries[0]!.filename).toBe('Readme.txt')
@@ -197,7 +203,12 @@ describe('NC08: Extended Files tool execution and approval flow', () => {
 
 	it('reads existing shares and strips any credential/secret data', async () => {
 		const files = createMockFilesApi({
-			sharesRead: vi.fn(async () => [
+			sharesRead: vi.fn(async () => ({
+				resourceId: 'nextcloud:files:10',
+				etag: 'r1',
+				complete: false,
+				coverage: 'Current-user shares only.',
+				shares: [
 				{
 					id: 55,
 					shareType: 0,
@@ -208,15 +219,16 @@ describe('NC08: Extended Files tool execution and approval flow', () => {
 					token: 'SECRET_TOKEN_SHOULD_BE_EXCLUDED',
 					share_pass: 'SECRET_PASS_SHOULD_BE_EXCLUDED',
 				} as unknown as ShareEntry,
-			]),
+				],
+			})),
 		})
 		const tools = filesExtendedTools({ files, recordResult: () => {} })
 		const sharesTool = tools.find(t => t.name === 'nc_files_shares_read')!
 
-		const result = await sharesTool.invoke({ filename: 'Readme.txt' }, { callId: 'c2', signal: new AbortController().signal }) as ShareEntry[]
-		expect(files.sharesRead).toHaveBeenCalledWith('Readme.txt', expect.any(Object))
-		expect(result[0]!.id).toBe(55)
-		expect(result[0]!.permissions).toBe(1)
+		const result = await sharesTool.invoke({ resource_id: 'nextcloud:files:10' }, { callId: 'c2', signal: new AbortController().signal }) as { shares: ShareEntry[] }
+		expect(files.sharesRead).toHaveBeenCalledWith('nextcloud:files:10', expect.any(Object))
+		expect(result.shares[0]!.id).toBe(55)
+		expect(result.shares[0]!.permissions).toBe(1)
 		expect(JSON.stringify(result)).not.toContain('SECRET_TOKEN')
 		expect(JSON.stringify(result)).not.toContain('SECRET_PASS')
 	})
@@ -233,13 +245,15 @@ describe('NC08: Extended Files tool execution and approval flow', () => {
 				],
 			}],
 			users: [{ email: 'alice', password: 'test', agents: ['nc-extended'] }],
-			model: () => ++round === 1 ? ({
-				toolCalls: [{
-					id: 'call-create-folder',
-					name: 'nc_files_create_folder',
-					arguments: { name: 'Approved-Folder' },
-				}],
-			}) : ({ text: 'Created folder' }),
+			model: () => ++round === 1
+				? ({
+					toolCalls: [{
+						id: 'call-create-folder',
+						name: 'nc_files_create_folder',
+						arguments: { name: 'Approved-Folder' },
+					}],
+				})
+				: ({ text: 'Created folder' }),
 		})
 
 		const agent = new NextcloudAgent(hostIdentity, files, gateway.fetch)
@@ -323,13 +337,15 @@ describe('NC08: Extended Files tool execution and approval flow', () => {
 				],
 			}],
 			users: [{ email: 'alice', password: 'test', agents: ['nc-extended'] }],
-			model: () => ++round === 1 ? ({
-				toolCalls: [{
-					id: 'call-share',
-					name: 'nc_files_share_readonly',
-					arguments: { path: '/Copilot-tool-lab/Readme.txt', recipientUserId: 'bob', expectedEtag: 'readme-etag-1' },
-				}],
-			}) : ({ text: 'Shared' }),
+			model: () => ++round === 1
+				? ({
+					toolCalls: [{
+						id: 'call-share',
+						name: 'nc_files_share_readonly',
+						arguments: { path: '/Copilot-tool-lab/Readme.txt', recipientUserId: 'bob', expectedEtag: 'readme-etag-1' },
+					}],
+				})
+				: ({ text: 'Shared' }),
 		})
 
 		const agent = new NextcloudAgent(hostIdentity, files, gateway.fetch)

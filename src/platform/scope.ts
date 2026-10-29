@@ -2,7 +2,7 @@ import { fileCapability, stricterRisk, type FileToolName, type NextcloudToolName
 import { ScopeViolation, TurnBudget, type TurnLimits } from './limits.ts'
 
 export type SourceClass = 'standard' | 'protected' | 'unknown'
-export type ResourcePurpose = 'metadata' | 'read' | 'write' | 'history'
+export type ResourcePurpose = 'metadata' | 'read' | 'write' | 'history' | 'shares'
 export type DestinationAudience = 'private' | 'shared' | 'public' | 'unknown'
 export type FileSourceScope = Readonly<{ kind: 'user-files' } | { kind: 'file' | 'folder'; resourceId: string }>
 

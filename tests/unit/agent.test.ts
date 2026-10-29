@@ -16,17 +16,30 @@ vi.mock('../../src/components/HeaderButton.vue', () => ({ default: { template: '
 
 const identity: Identity = { userId: 'alice', binding: 'binding', enabled: true, serverUrl: 'https://faden.test', agent: 'nc', development: false }
 const selected: FileContext = { id: 'opaque-context', parentId: 1, expires: 9999999999, file: { id: 2, name: 'source.md', path: '/source.md', etag: 'revision-1', mime: 'text/markdown', size: 11, folder: false, permissions: 31, url: 'https://cloud.test/f/2' } }
-function fixture(options: ConstructorParameters<typeof FakeGateway>[0] = {}, hostIdentity: Identity = identity) {
-	const gateway = new FakeGateway({ agents: [{ slug: 'nc', version: 1, contract: [
-		{ name: 'nc_get_selected_file', risk: 'read' }, { name: 'nc_read_file', risk: 'read' }, { name: 'nc_list_folder', risk: 'read' },
-		{ name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' },
-	] }], users: [{ email: 'alice', password: 'test', agents: ['nc'] }], ...options })
+function fixture(options: ConstructorParameters<typeof FakeGateway>[0] = {}, hostIdentity: Identity = identity, fileChanges: Partial<FileApi> = {}) {
+	const gateway = new FakeGateway({
+		agents: [{
+			slug: 'nc',
+			version: 1,
+			contract: [
+				{ name: 'nc_get_selected_file', risk: 'read' }, { name: 'nc_read_file', risk: 'read' }, { name: 'nc_list_folder', risk: 'read' },
+				{ name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' },
+			],
+		}],
+		users: [{ email: 'alice', password: 'test', agents: ['nc'] }],
+		...options,
+	})
 	const files: FileApi = {
-		identity: vi.fn(async () => hostIdentity), assertIdentity: vi.fn(async () => {}), select: vi.fn(async () => selected),
+		identity: vi.fn(async () => hostIdentity),
+		assertIdentity: vi.fn(async () => {}),
+		select: vi.fn(async () => selected),
 		read: vi.fn(async () => ({ file: selected.file, text: 'Source text', partial: false, totalCharacters: 11, processedCharacters: 11 })),
-		pdf: vi.fn(async () => new Uint8Array()), list: vi.fn(async () => ({ folder: { ...selected.file, folder: true }, files: [], partial: false })),
+		pdf: vi.fn(async () => new Uint8Array()),
+		list: vi.fn(async () => ({ folder: { ...selected.file, folder: true }, files: [], partial: false })),
 		propose: vi.fn(async (contextId, args) => ({ id: 'proposal', contextId, ...args, target: '/summary.md', before: null }) satisfies Proposal),
-		approve: vi.fn(async () => {}), commit: vi.fn(async () => ({ operation: 'create', file: { ...selected.file, id: 3, name: 'summary.md' } })),
+		approve: vi.fn(async () => {}),
+		commit: vi.fn(async () => ({ operation: 'create', file: { ...selected.file, id: 3, name: 'summary.md' } })),
+		...fileChanges,
 	}
 	return { gateway, files, host: new NextcloudAgent(hostIdentity, files, gateway.fetch) }
 }
@@ -40,10 +53,82 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('SDK integration and file boundary', () => {
+	it('refuses a pending text commit if its earlier share source loses inspection permission', async () => {
+		const policy: ScopePolicy = { version: 'native-shares-write', sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }], destinations: [{ kind: 'user-files' }],
+			tools: ['nc_files_shares_read', 'nc_create_text_file'], sourceClasses: ['standard'], gatewayOrigin: identity.serverUrl, downstreamPolicy: 'unverified',
+			destinationAudiences: ['private'], movements: [{ source: 'standard', destination: 'private' }], developmentLoopback: true }
+		let round = 0
+		let canInspect = true
+		const { host, files } = fixture({ agents: [{ slug: 'nc', version: 1, contract: [{ name: 'nc_files_shares_read', risk: 'read' }, { name: 'nc_create_text_file', risk: 'destructive' }] }],
+			model: () => ++round === 1 ? { toolCalls: [{ id: 'shares', name: 'nc_files_shares_read', arguments: { resource_id: 'nextcloud:files:2' } }] }
+				: round === 2 ? { toolCalls: [{ id: 'summary', name: 'nc_create_text_file', arguments: { filename: 'sharing-summary.md', content: 'Partial share details' } }] } : { text: 'Stopped.' } },
+		{ ...identity, filesReadsEnabled: true, scopePolicy: policy }, {
+			scopeResource: vi.fn(async (reference, purpose) => {
+				if (purpose === 'shares' && !canInspect) throw new Error('Share inspection revoked')
+				return { resourceId: reference, revision: 'revision-1', sourceClass: 'standard', audience: 'private', scope: purpose === 'write' ? policy.destinations[0] : policy.sources[0] }
+			}), organizeRead: vi.fn(), sharesRead: vi.fn(async () => ({ resourceId: 'nextcloud:files:2', etag: 'revision-1', shares: [], complete: false, coverage: 'Current-user shares only.' })),
+		})
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		const sending = host.send('Inspect sharing and save a private summary')
+		const approval = await pending(host)
+		canInspect = false
+		await host.approve(approval)
+		await sending
+		expect(files.commit).not.toHaveBeenCalled()
+		await host.dispose()
+	})
+	it('reauthorizes cached share inspection before every model replay even while file READ remains', async () => {
+		const policy: ScopePolicy = {
+			version: 'native-shares',
+			sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }],
+			destinations: [],
+			tools: ['nc_files_shares_read'],
+			sourceClasses: ['standard'],
+			gatewayOrigin: identity.serverUrl,
+			downstreamPolicy: 'unverified',
+			destinationAudiences: ['private'],
+			movements: [],
+			developmentLoopback: true,
+		}
+		let round = 0
+		let canInspect = true
+		const scopeResource: NonNullable<FileApi['scopeResource']> = vi.fn(async (reference, purpose) => {
+			if (purpose === 'shares' && !canInspect) throw new Error('Share inspection revoked')
+			return { resourceId: reference, revision: 'revision-1', sourceClass: 'standard', audience: 'private', scope: policy.sources[0] }
+		})
+		const { host, files, gateway } = fixture({
+			agents: [{ slug: 'nc', version: 1, contract: [{ name: 'nc_files_shares_read', risk: 'read' }] }],
+			model: () => ++round === 1 ? { toolCalls: [{ id: 'shares', name: 'nc_files_shares_read', arguments: { resource_id: 'nextcloud:files:2' } }] } : { text: 'Partial share metadata.' },
+		},
+		{ ...identity, filesReadsEnabled: true, scopePolicy: policy }, {
+			scopeResource,
+			organizeRead: vi.fn(),
+			sharesRead: vi.fn(async () => ({ resourceId: 'nextcloud:files:2', etag: 'revision-1', shares: [], complete: false, coverage: 'Current-user shares only.' })),
+		})
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(2))
+		await host.send('Inspect this file sharing')
+		expect(files.sharesRead).toHaveBeenCalledOnce()
+		expect(gateway.modelCalls).toHaveLength(2)
+		canInspect = false
+		await expect(host.send('Continue with those share details', false)).rejects.toThrow('Share inspection revoked')
+		expect(gateway.modelCalls).toHaveLength(2)
+		await host.dispose()
+	})
 	it('Stop aborts native egress scope checks before a model request is sent', async () => {
-		const policy: ScopePolicy = { version: 'native-1', sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }], destinations: [],
-			tools: ['nc_read_file'], sourceClasses: ['standard'], gatewayOrigin: identity.serverUrl, downstreamPolicy: 'unverified',
-			destinationAudiences: ['private'], movements: [], developmentLoopback: true }
+		const policy: ScopePolicy = {
+			version: 'native-1',
+			sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }],
+			destinations: [],
+			tools: ['nc_read_file'],
+			sourceClasses: ['standard'],
+			gatewayOrigin: identity.serverUrl,
+			downstreamPolicy: 'unverified',
+			destinationAudiences: ['private'],
+			movements: [],
+			developmentLoopback: true,
+		}
 		const { host, files, gateway } = fixture({ model: () => ({ text: 'Never dispatched' }) }, { ...identity, scopePolicy: policy })
 		const grant = { resourceId: 'nextcloud:files:2', revision: 'revision-1', sourceClass: 'standard' as const, audience: 'private' as const, scope: policy.sources[0] }
 		let revalidating = false
@@ -66,9 +151,18 @@ describe('SDK integration and file boundary', () => {
 		await host.dispose()
 	})
 	it('narrows the real SDK tool manifest and reauthorizes prior conversation sources before replay', async () => {
-		const policy: ScopePolicy = { version: 'native-1', sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }], destinations: [],
-			tools: ['nc_read_file'], sourceClasses: ['standard'], gatewayOrigin: identity.serverUrl, downstreamPolicy: 'unverified',
-			destinationAudiences: ['private'], movements: [], developmentLoopback: true }
+		const policy: ScopePolicy = {
+			version: 'native-1',
+			sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }],
+			destinations: [],
+			tools: ['nc_read_file'],
+			sourceClasses: ['standard'],
+			gatewayOrigin: identity.serverUrl,
+			downstreamPolicy: 'unverified',
+			destinationAudiences: ['private'],
+			movements: [],
+			developmentLoopback: true,
+		}
 		const { host, files, gateway } = fixture({ model: () => ({ text: 'Read source' }) }, { ...identity, scopePolicy: policy })
 		files.scopeResource = vi.fn(async reference => ({ resourceId: reference, revision: 'revision-1', sourceClass: 'standard', audience: 'private', scope: policy.sources[0] }))
 		await host.signIn('alice', 'test')
@@ -84,9 +178,18 @@ describe('SDK integration and file boundary', () => {
 	})
 	it('blocks a forged model reference at the actual host boundary', async () => {
 		let round = 0
-		const policy: ScopePolicy = { version: 'native-1', sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }], destinations: [],
-			tools: ['nc_read_file'], sourceClasses: ['standard'], gatewayOrigin: identity.serverUrl, downstreamPolicy: 'unverified',
-			destinationAudiences: ['private'], movements: [], developmentLoopback: true }
+		const policy: ScopePolicy = {
+			version: 'native-1',
+			sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }],
+			destinations: [],
+			tools: ['nc_read_file'],
+			sourceClasses: ['standard'],
+			gatewayOrigin: identity.serverUrl,
+			downstreamPolicy: 'unverified',
+			destinationAudiences: ['private'],
+			movements: [],
+			developmentLoopback: true,
+		}
 		const { host, files } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ id: 'forged', name: 'nc_read_file', arguments: { resource_id: 'nextcloud:files:3' } }] } : { text: 'Unavailable' } }, { ...identity, scopePolicy: policy })
 		files.scopeResource = vi.fn(async reference => ({ resourceId: reference, revision: 'revision-1', sourceClass: 'standard', audience: 'private', scope: policy.sources[0] }))
 		await host.signIn('alice', 'test')
@@ -133,25 +236,38 @@ describe('SDK integration and file boundary', () => {
 		await host.dispose()
 	})
 	it('renders native search cards, adds context lazily, finds a passage and gates a searched-file write', async () => {
-		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		vi.stubGlobal('ResizeObserver', class {
+
+			observe() {} disconnect() {}
+
+		})
 		let round = 0
-		const { host, files } = fixture({ agents: [{ slug: 'nc', version: 1, contract: [
-			...['nc_search_files', 'nc_get_file_metadata', 'nc_search_in_file', 'nc_search_content', 'nc_get_selected_file', 'nc_read_file', 'nc_list_folder'].map(name => ({ name, risk: 'read' as const })),
-			{ name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' },
-		] }], model: () => {
-			round++
-			if (round === 1) return { toolCalls: [{ name: 'nc_search_files', arguments: { query: 'source' }, id: 'search-call' }] }
-			if (round === 3) return { toolCalls: [{ name: 'nc_search_in_file', arguments: { query: 'termination' }, id: 'passage-call' }] }
-			if (round === 5) return { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: '# Summary\n30 days notice.', resource_id: 'nextcloud:files:2' }, id: 'searched-write' }] }
-			return { text: round === 2 ? 'Found the file.' : round === 4 ? '30 days written notice.' : 'Created summary.' }
-		} })
+		const { host, files } = fixture({
+			agents: [{
+				slug: 'nc',
+				version: 1,
+				contract: [
+					...['nc_search_files', 'nc_get_file_metadata', 'nc_search_in_file', 'nc_search_content', 'nc_get_selected_file', 'nc_read_file', 'nc_list_folder'].map(name => ({ name, risk: 'read' as const })),
+					{ name: 'nc_create_text_file', risk: 'write' }, { name: 'nc_update_text_file', risk: 'write' },
+				],
+			}],
+			model: () => {
+				round++
+				if (round === 1) return { toolCalls: [{ name: 'nc_search_files', arguments: { query: 'source' }, id: 'search-call' }] }
+				if (round === 3) return { toolCalls: [{ name: 'nc_search_in_file', arguments: { query: 'termination' }, id: 'passage-call' }] }
+				if (round === 5) return { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: '# Summary\n30 days notice.', resource_id: 'nextcloud:files:2' }, id: 'searched-write' }] }
+				return { text: round === 2 ? 'Found the file.' : round === 4 ? '30 days written notice.' : 'Created summary.' }
+			},
+		})
 		const source = { ...selected, file: { ...selected.file, url: new URL('/f/2', location.origin).href, modified: 1791797400 } }
 		vi.mocked(files.select).mockResolvedValue(source)
 		vi.mocked(files.read).mockResolvedValue({ file: source.file, text: 'Termination notice: 30 days written notice.', partial: false, totalCharacters: 42, processedCharacters: 42 })
 		files.searchTransport = {
 			plan: vi.fn(async () => ({ filters: { query: 'source', scope: 'all', limit: 20, sort_by: 'relevance', sort_direction: 'desc' }, queries: ['native query'], backend: 'webdav-search' })),
 			dav: vi.fn(async () => '<d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:response><d:propstat><d:prop><oc:fileid>2</oc:fileid></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>'),
-			resolve: vi.fn(async () => [source.file]), capabilities: vi.fn(), content: vi.fn(),
+			resolve: vi.fn(async () => [source.file]),
+			capabilities: vi.fn(),
+			content: vi.fn(),
 		}
 		await host.signIn('alice', 'test')
 		const root = document.createElement('div')
@@ -189,7 +305,11 @@ describe('SDK integration and file boundary', () => {
 		} finally { app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals() }
 	})
 	it('sends from the Vue composer and gates real SDK writes through its approval buttons', async () => {
-		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		vi.stubGlobal('ResizeObserver', class {
+
+			observe() {} disconnect() {}
+
+		})
 		let round = 0
 		const { host, files, gateway } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ name: 'nc_create_text_file', arguments: { filename: 'summary.md', content: '# Summary' }, id: 'composer-write' }] } : { text: 'Approved result' } })
 		await host.signIn('alice', 'test')
@@ -368,7 +488,11 @@ describe('SDK integration and file boundary', () => {
 })
 describe('The SDK panel in Nextcloud', () => {
 	it('labels the frozen source for a busy response and then follows the next selection', async () => {
-		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		vi.stubGlobal('ResizeObserver', class {
+
+			observe() {} disconnect() {}
+
+		})
 		let finish!: (reply: { text: string }) => void
 		const response = new Promise<{ text: string }>(resolve => { finish = resolve })
 		const { host, files, gateway } = fixture({ model: () => response })
@@ -412,7 +536,11 @@ describe('The SDK panel in Nextcloud', () => {
 	})
 
 	it('reflects an excluded implicit attachment without reading it or claiming it grounds a response', async () => {
-		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		vi.stubGlobal('ResizeObserver', class {
+
+			observe() {} disconnect() {}
+
+		})
 		let finish!: (reply: { text: string }) => void
 		const response = new Promise<{ text: string }>(resolve => { finish = resolve })
 		const { host, files, gateway } = fixture({ model: () => response })
@@ -450,7 +578,11 @@ describe('The SDK panel in Nextcloud', () => {
 	})
 
 	it('opens and closes real native Details without reading files or asking the model', async () => {
-		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		vi.stubGlobal('ResizeObserver', class {
+
+			observe() {} disconnect() {}
+
+		})
 		const { host, files, gateway } = fixture()
 		await host.signIn('alice', 'test')
 		host.offerSelection(await host.selection.select(2))
@@ -479,7 +611,11 @@ describe('The SDK panel in Nextcloud', () => {
 	})
 
 	it('keeps Esc in the panel and has the account in its settings', async () => {
-		vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+		vi.stubGlobal('ResizeObserver', class {
+
+			observe() {} disconnect() {}
+
+		})
 		const { host } = fixture()
 		await host.signIn('alice', 'test')
 		const drawer = document.createElement('div')

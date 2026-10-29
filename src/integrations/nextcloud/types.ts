@@ -155,6 +155,14 @@ export interface ShareEntry {
 	inherited?: boolean
 }
 
+export interface ShareListing {
+	resourceId: string
+	etag: string
+	shares: ShareEntry[]
+	complete: boolean
+	coverage: string
+}
+
 export interface FolderListingEntry {
 	resourceId?: string
 	href: string
@@ -395,7 +403,7 @@ export interface FileApi {
 	createFolder?(folderPath: string, name: string, signal?: AbortSignal): Promise<FolderCreateResult>
 	copyFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>
 	moveFile?(sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult>
-	sharesRead?(resourceId: string, expectedRevisionOrSignal?: string | AbortSignal, signal?: AbortSignal): Promise<ShareEntry[]>
+	sharesRead?(resourceId: string, expectedRevisionOrSignal?: string | AbortSignal, signal?: AbortSignal): Promise<ShareListing>
 	shareReadonly?(path: string, recipientUserId: string, expectedEtag: string, signal?: AbortSignal): Promise<ShareEntry>
 	organizeRead?(resourceId?: string, expectedRevisionOrSignal?: string | AbortSignal, signal?: AbortSignal): Promise<FolderListing>
 	getAppCapabilities?(signal?: AbortSignal): Promise<AppCapabilities>
