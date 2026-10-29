@@ -2,6 +2,7 @@ import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
 import type { FileApi, FileContext, ShareEntry, FolderOverviewResults, ShareOverviewResults } from './types.ts'
 import { fileReference } from '../../platform/scope.ts'
+import { folderReadResult } from './fileReadResults.ts'
 
 export interface ExtendedProposal {
 	name: string
@@ -15,7 +16,7 @@ export interface ExtendedProposal {
 export interface ExtendedFilesHost {
 	files: FileApi
 	context?(): FileContext
-	recordResult(callId: string, value: unknown): void
+	recordResult(callId: string, value: unknown, context: ToolCallContext): void
 	resolvePath?(pathOrId: unknown, signal?: AbortSignal): Promise<{ path: string; etag: string; folder: boolean }>
 	proposeMutation?(name: string, args: Readonly<Record<string, unknown>>, callId: string, signal: AbortSignal): Promise<ExtendedProposal>
 	commitMutation?(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown>
@@ -105,10 +106,11 @@ export function filesReadTools(host: ExtendedFilesHost) {
 				if (targetId && host.authorizeSource) {
 					await host.authorizeSource(targetId, c.signal, 'read')
 				}
-				const listing = expectedRevision !== undefined
+				const raw = expectedRevision !== undefined
 					? await host.files.organizeRead(targetId, expectedRevision, c.signal)
 					: await host.files.organizeRead(targetId, c.signal)
 				c.signal.throwIfAborted()
+				const listing = folderReadResult(raw, targetId)
 				if (listing?.entries && host.rememberSource) {
 					for (const entry of listing.entries) {
 						if (entry.resourceId) {
@@ -122,10 +124,10 @@ export function filesReadTools(host: ExtendedFilesHost) {
 					directory: listing.directory,
 					resourceId: targetId,
 					etag: listing.etag,
-					entries: listing.entries ?? [],
-					partial: listing.partial ?? false,
+					entries: listing.entries,
+					partial: listing.partial!,
 				}
-				host.recordResult(c.callId, result)
+				host.recordResult(c.callId, result, c)
 				return result
 			},
 		}),
@@ -187,7 +189,7 @@ export function filesReadTools(host: ExtendedFilesHost) {
 					coverage: listing.coverage,
 				}
 				c.signal.throwIfAborted()
-				host.recordResult(c.callId, result)
+				host.recordResult(c.callId, result, c)
 				return result
 			},
 		}),

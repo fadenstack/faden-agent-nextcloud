@@ -12,7 +12,7 @@ export interface ToolHost {
 	metadata(resourceId: unknown, signal: AbortSignal): Promise<unknown>
 	inFile(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
 	contentSearch(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
-	recordResult(callId: string, value: unknown): void
+	recordResult(callId: string, value: unknown, context: ToolCallContext): void
 	reverse?(direction: HistoryDirection, actionId: unknown, call: ToolCallContext): Promise<unknown>
 }
 export function writeArguments(name: string, args: Readonly<Record<string, unknown>>): WriteArguments {
@@ -53,7 +53,7 @@ export function historyTools(host: ToolHost) {
 export function nextcloudTools(host: ToolHost) {
 	const capture = async (operation: Promise<unknown>, call: ToolCallContext) => {
 		const value = await operation
-		host.recordResult(call.callId, value)
+		host.recordResult(call.callId, value, call)
 		return value
 	}
 	const empty: JsonSchema = { type: 'object', properties: {}, additionalProperties: false }

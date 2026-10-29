@@ -5,22 +5,13 @@ import type { ShareOverviewResults, ShareEntry } from '../integrations/nextcloud
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { Icon } from '@fadenstack/ui-vue'
 import { useObservable } from '../agent/useObservable.ts'
+import { nativeFileLink } from '../integrations/nextcloud/fileReadResults.ts'
 
 const props = defineProps<{ result: ShareOverviewResults; host: NextcloudAgent }>()
 const version = typeof props.host?.chat?.subscribe === 'function' ? useObservable(props.host.chat) : ref(0)
 
 function linkTarget(resourceId?: string): string | undefined {
-	if (!resourceId) return undefined
-	const m = resourceId.match(/^nextcloud:files:([1-9][0-9]*)$/)
-	if (m) {
-		try {
-			const url = new URL(`/f/${m[1]}`, location.origin)
-			return url.origin === location.origin && /^https?:$/.test(url.protocol) ? url.href : undefined
-		} catch {
-			return undefined
-		}
-	}
-	return undefined
+	return nativeFileLink(resourceId)
 }
 
 function shareRecipient(share: ShareEntry): string {
@@ -37,8 +28,9 @@ function shareTypeLabel(type: number): string {
 
 function formatPermissions(perm: number): string {
 	if (perm === 1) return t('fadenstack_agent', 'Read only')
-	if ((perm & 2) !== 0 || perm === 31) return t('fadenstack_agent', 'Read & write')
-	return t('fadenstack_agent', 'Custom permissions')
+	const labels = [[1, t('fadenstack_agent', 'Read')], [2, t('fadenstack_agent', 'Edit')], [4, t('fadenstack_agent', 'Create')],
+		[8, t('fadenstack_agent', 'Delete')], [16, t('fadenstack_agent', 'Share')]] as const
+	return labels.filter(([bit]) => (perm & bit) !== 0).map(([, label]) => label).join(', ') || t('fadenstack_agent', 'No permissions')
 }
 </script>
 
@@ -50,17 +42,20 @@ function formatPermissions(perm: number): string {
 				<a v-if="linkTarget(result.resourceId)"
 					:href="linkTarget(result.resourceId)"
 					target="_blank"
-					rel="noopener noreferrer">{{ result.resourceId }}</a>
-				<span v-else>{{ result.resourceId }}</span>
+					rel="noopener noreferrer">{{ t('fadenstack_agent', 'Open in Nextcloud') }}</a>
 			</span>
 		</header>
 
 		<p class="fdn-muted fdn-shares-coverage" role="status">
 			{{ t('fadenstack_agent', "Covers supported shares initiated by the current user. May include expired shares; this is not a complete access inventory.") }}
 		</p>
+		<details v-if="result.coverage" class="fdn-muted">
+			<summary>{{ t('fadenstack_agent', 'Coverage details') }}</summary>
+			<p>{{ result.coverage }}</p>
+		</details>
 
 		<p v-if="!result.shares.length" class="fdn-muted">
-			{{ t('fadenstack_agent', 'No shares found for current user on this resource.') }}
+			{{ t('fadenstack_agent', 'No supported shares were returned within this coverage.') }}
 		</p>
 
 		<article v-for="share in result.shares" :key="share.id" class="fdn-search-file fdn-shares-entry">

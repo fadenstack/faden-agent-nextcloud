@@ -309,10 +309,17 @@ class FileService {
 		if (!$folder instanceof Folder) {
 			throw new Problem('The folder is unavailable.', 404);
 		}
+		$this->scope->describeNode($folder, 'read', false);
 		$files = [];
 		$partial = false;
 		foreach ($folder->getDirectoryListing() as $n) {
-			if (!$n->isReadable()) {
+			try {
+				$this->scope->describeNode($n, 'read', false);
+			} catch (Problem $error) {
+				if (!in_array($error->status, [403, 404], true)) {
+					throw $error;
+				}
+				$partial = true;
 				continue;
 			}
 			if (count($files) >= 200) {
@@ -394,6 +401,9 @@ class FileService {
 		$bytes = 0;
 		$current = $node;
 		for ($depth = 0; $depth < 16; $depth++) {
+			if ($current->getId() === $home->getId()) {
+				break;
+			}
 			foreach ([IShare::TYPE_USER, IShare::TYPE_GROUP, IShare::TYPE_LINK] as $type) {
 				// Public, bounded API. onlyValid=false avoids its expired-share deletion side effect.
 				foreach ($this->shares->getSharesBy($this->uid(), $type, $current, false, 51, 0, false) as $share) {
@@ -419,10 +429,21 @@ class FileService {
 					$sanitized[] = $entry;
 				}
 			}
-			if ($current->getId() === $home->getId()) {
+			// A shared node's getParent() can point into the owner's physical tree.
+			// Resolve ancestry only through the recipient's visible user folder.
+			$relative = $home->getRelativePath($current->getPath());
+			if (!is_string($relative)) {
+				throw new Problem('The share ancestry changed. Inspect the resource again.', 409);
+			}
+			$parentPath = dirname(ltrim($relative, '/'));
+			if ($parentPath === '.' || $parentPath === '' || $parentPath === '/') {
 				break;
 			}
-			$current = $current->getParent();
+			$parent = $home->get($parentPath);
+			if (!$parent instanceof Folder || !$parent->isReadable()) {
+				throw new Problem('The share ancestry is unavailable.', 404);
+			}
+			$current = $parent;
 		}
 		// This deliberately does not claim a complete ACL inventory across all share providers.
 		return ['resourceId' => $resourceId, 'etag' => $node->getEtag(), 'shares' => $sanitized, 'complete' => false,

@@ -83,7 +83,7 @@ function mockFilesApi(overrides: Partial<FileApi> = {}): FileApi {
 		organizeRead: vi.fn(async (resourceId, expectedRevision) => ({
 			directory: '/Projects',
 			resourceId: resourceId ?? 'nextcloud:files:202',
-			etag: expectedRevision ?? 'folder-etag-1',
+			etag: typeof expectedRevision === 'string' ? expectedRevision : 'folder-etag-1',
 			entries: [
 				{ resourceId: 'nextcloud:files:101', filename: 'Contract.md', etag: 'file-etag-1', folder: false, size: 2048, modified: 1700000000, permissions: 31, href: 'https://cloud.test/f/101' },
 				{ resourceId: 'nextcloud:files:203', filename: 'Subfolder', etag: 'sub-etag', folder: true, size: 0, modified: 1700000000, permissions: 31, href: 'https://cloud.test/f/203' },

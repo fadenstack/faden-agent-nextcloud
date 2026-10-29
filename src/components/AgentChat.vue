@@ -61,7 +61,7 @@ const renderers: PartRenderer[] = [
 			return h(NextcloudApproval, { part, strings, host: props.host })
 		}
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
-			const result = props.host.toolResult(part.callId)
+			const result = props.host.toolResult(part)
 			if (result) {
 				if (result.kind === 'nextcloud-folder-overview') {
 					return [h(FolderResultsCard, { result, host: props.host }), h(ToolCallView, { part, strings })]

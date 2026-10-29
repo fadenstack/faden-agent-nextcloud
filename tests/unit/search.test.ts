@@ -31,6 +31,29 @@ describe('literal passages and trustworthy source locations', () => {
 	})
 })
 describe('authorized discovery and cache boundaries', () => {
+	it('resolves native-discovered references without fabricating metadata and forgets revoked references', async () => {
+		const resolve = vi.fn(async () => [context.file])
+		const files = { assertIdentity: vi.fn(async () => {}), searchTransport: { resolve } } as unknown as FileApi
+		const service = new NextcloudSearchService(files)
+		const signal = new AbortController().signal
+		await expect(service.metadata('nextcloud:files:2', signal)).rejects.toThrow('returned by search')
+		expect(resolve).not.toHaveBeenCalled()
+		service.rememberReference('nextcloud:files:2')
+		expect(service.issued.size).toBe(0)
+		expect(await service.metadata('nextcloud:files:2', signal)).toEqual(context.file)
+		expect(resolve).toHaveBeenCalledOnce()
+		resolve.mockResolvedValue([])
+		await expect(service.metadata('nextcloud:files:2', signal)).rejects.toThrow('revoked')
+		await expect(service.metadata('nextcloud:files:2', signal)).rejects.toThrow('returned by search')
+		expect(resolve).toHaveBeenCalledTimes(2)
+	})
+	it('rejects a different resource returned for a known native reference', async () => {
+		const files = { assertIdentity: vi.fn(async () => {}), searchTransport: { resolve: vi.fn(async () => [{ ...context.file, id: 3 }]) } } as unknown as FileApi
+		const service = new NextcloudSearchService(files)
+		service.rememberReference('nextcloud:files:2')
+		await expect(service.metadata('nextcloud:files:2', new AbortController().signal)).rejects.toThrow('different resource')
+		expect(service.issued.size).toBe(0)
+	})
 	it('bounds multilingual metadata by UTF-8 bytes without splitting a file result', () => {
 		const bounded = boundedResults([{ name: 'ü'.repeat(20000) }, { name: 'ü'.repeat(20000) }])
 		expect(bounded.rows).toHaveLength(1)

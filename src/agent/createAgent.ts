@@ -1,6 +1,6 @@
 import { FadenstackClient, AgentTokenProvider, MemoryTokenStore, loginWithPassword, type FetchLike } from '@fadenstack/client'
 import { FadenstackAgent, MemorySessionStore, MemoryApprovalStore, StageOrder, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
-import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore } from '@fadenstack/ui'
+import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore, type ToolCallPart } from '@fadenstack/ui'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
@@ -41,7 +41,8 @@ import type { FileApi, FileContext, Identity, Proposal, WriteArguments, ToolView
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 import type { MutationBinding, WorkspaceCoordinator } from '../workspace/coordinator.ts'
 import { TurnScope, type ScopeIdentity } from '../platform/scope.ts'
-import type { ToolRisk } from '../platform/catalog.ts'
+import { fileCapability, type ToolRisk } from '../platform/catalog.ts'
+import { interruptibleRead } from '../platform/cancellation.ts'
 import { SourceLedger } from '../platform/sourceLedger.ts'
 import { shallowReactive } from 'vue'
 import { commandChat } from './commands.ts'
@@ -139,8 +140,17 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				invoke: async (invocation, next) => {
 					this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
-					const result = await next(invocation)
-					try { this.#scope?.budget.consumeResult(result, resultRecords(result)) } catch (error) { if (WRITE_TOOLS.has(invocation.tool.name) || HISTORY_TOOLS.has(invocation.tool.name) || EXTENDED_FILES_MUTATIONS.has(invocation.tool.name) || TABLES_MUTATIONS.has(invocation.tool.name) || DECK_MUTATIONS.has(invocation.tool.name) || CALENDAR_MUTATIONS.has(invocation.tool.name) || TASKS_MUTATIONS.has(invocation.tool.name) || CONTACTS_MUTATIONS.has(invocation.tool.name)) this.#writeBlocked = true; throw error }
+					const result = fileCapability(invocation.tool.name)?.risk === 'read'
+						? await interruptibleRead(() => next(invocation), invocation.context.signal)
+						: await next(invocation)
+					try {
+						invocation.context.signal.throwIfAborted()
+						this.#scope?.budget.consumeResult(result, resultRecords(result))
+					} catch (error) {
+						this.#toolResults.delete(this.resultKey(invocation.context))
+						if (WRITE_TOOLS.has(invocation.tool.name) || HISTORY_TOOLS.has(invocation.tool.name) || EXTENDED_FILES_MUTATIONS.has(invocation.tool.name) || TABLES_MUTATIONS.has(invocation.tool.name) || DECK_MUTATIONS.has(invocation.tool.name) || CALENDAR_MUTATIONS.has(invocation.tool.name) || TASKS_MUTATIONS.has(invocation.tool.name) || CONTACTS_MUTATIONS.has(invocation.tool.name)) this.#writeBlocked = true
+						throw error
+					}
 					return result
 				},
 			})
@@ -407,6 +417,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	async rememberSource(reference: string, signal: AbortSignal): Promise<void> {
 		if (!this.#scope) return
 		this.#sources.record(await this.#scope.bindSource(reference, signal))
+		this.discovery.rememberReference(reference)
 	}
 
 	async authorizeSource(reference: string, signal: AbortSignal, purpose: 'read' | 'metadata' | 'shares' = 'read'): Promise<void> {
@@ -414,13 +425,24 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#sources.record(await this.#scope.authorize(reference, purpose, signal), purpose)
 	}
 
-	recordResult(callId: string, value: unknown): void {
+	private resultKey(context: Pick<ToolCallContext, 'sessionId' | 'turnId' | 'callId'>): string {
+		return JSON.stringify([context.sessionId, context.turnId, context.callId])
+	}
+
+	recordResult(callId: string, value: unknown, context: ToolCallContext): void {
+		context.signal.throwIfAborted()
+		if (!context.sessionId || !context.turnId || context.callId !== callId || context.sessionId !== this.chat.currentSessionId) return
 		if (!value || typeof value !== 'object' || !('kind' in value) || !['nextcloud-search-results', 'nextcloud-document-search', 'nextcloud-folder-overview', 'nextcloud-share-overview'].includes(String((value as Record<string, unknown>).kind))) return
-		this.#toolResults.set(callId, value as ToolViewResults)
+		this.#toolResults.set(this.resultKey(context), value as ToolViewResults)
 		while (this.#toolResults.size > 100) this.#toolResults.delete(this.#toolResults.keys().next().value!)
 	}
 
-	toolResult(callId: string): ToolViewResults | undefined { return this.#toolResults.get(callId) }
+	toolResult(part: ToolCallPart): ToolViewResults | undefined {
+		const sessionId = this.chat.currentSessionId
+		const turnId = this.chat.turns.find(turn => turn.parts.includes(part))?.id
+		return sessionId && turnId ? this.#toolResults.get(this.resultKey({ sessionId, turnId, callId: part.callId })) : undefined
+	}
+
 	async addSearchContext(id: string): Promise<void> {
 		await this.discovery.metadata(id, this.#stop.signal)
 		const context = await this.selection.select(resourceId(id))

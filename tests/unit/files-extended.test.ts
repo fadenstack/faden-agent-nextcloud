@@ -66,10 +66,13 @@ function createMockFilesApi(overrides: Partial<FileApi> = {}): FileApi {
 			id: 102, shareType: 0, shareWith: recipientUserId, shareWithDisplayName: 'Bob User', permissions: 1, path, mailSend: false,
 		})),
 		organizeRead: vi.fn(async folderPath => ({
-			directory: folderPath ?? '/Copilot-tool-lab',
+			directory: '/Copilot-tool-lab',
+			resourceId: folderPath,
+			etag: 'folder-rev',
+			partial: false,
 			entries: [
-				{ href: '/remote.php/dav/files/alice/Copilot-tool-lab/Readme.txt', filename: 'Readme.txt', etag: 'readme-etag', folder: false },
-				{ href: '/remote.php/dav/files/alice/Copilot-tool-lab/Subfolder', filename: 'Subfolder', etag: 'sub-etag', folder: true },
+				{ resourceId: 'nextcloud:files:11', href: '/f/11', filename: 'Readme.txt', etag: 'readme-etag', folder: false },
+				{ resourceId: 'nextcloud:files:12', href: '/f/12', filename: 'Subfolder', etag: 'sub-etag', folder: true },
 			],
 		})),
 		getAppCapabilities: vi.fn(async () => ({

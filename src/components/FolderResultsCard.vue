@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { t } from '@nextcloud/l10n'
 import type { FolderOverviewResults, FolderListingEntry } from '../integrations/nextcloud/types.ts'
+import { nativeFileLink } from '../integrations/nextcloud/fileReadResults.ts'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { Icon } from '@fadenstack/ui-vue'
@@ -13,30 +14,11 @@ const problem = ref('')
 const adding = ref('')
 
 function link(entry: FolderListingEntry): string | undefined {
-	if (entry.resourceId) {
-		const m = entry.resourceId.match(/^nextcloud:files:([1-9][0-9]*)$/)
-		if (m) {
-			try {
-				const url = new URL(`/f/${m[1]}`, location.origin)
-				return url.origin === location.origin && /^https?:$/.test(url.protocol) ? url.href : undefined
-			} catch {
-				return undefined
-			}
-		}
-	}
-	if (entry.href) {
-		try {
-			const url = new URL(entry.href, location.origin)
-			return url.origin === location.origin && /^https?:$/.test(url.protocol) ? url.href : undefined
-		} catch {
-			return undefined
-		}
-	}
-	return undefined
+	return nativeFileLink(entry.resourceId)
 }
 
 function formatSize(bytes?: number): string {
-	if (bytes === undefined || bytes === null || !Number.isFinite(bytes)) return ''
+	if (bytes === undefined || bytes === null || !Number.isFinite(bytes) || bytes < 0) return ''
 	if (bytes < 1024) return `${bytes} B`
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -49,6 +31,12 @@ function formatTime(timestamp?: number): string {
 	} catch {
 		return ''
 	}
+}
+
+function dateValue(timestamp?: number): string | undefined {
+	if (!timestamp || !Number.isFinite(timestamp)) return undefined
+	const date = new Date(timestamp * 1000)
+	return Number.isFinite(date.getTime()) ? date.toISOString() : undefined
 }
 
 async function attach(entry: FolderListingEntry) {
@@ -73,7 +61,7 @@ async function attach(entry: FolderListingEntry) {
 		</header>
 
 		<p v-if="!result.entries.length" class="fdn-muted">
-			{{ t('fadenstack_agent', 'Folder is empty.') }}
+			{{ result.partial ? t('fadenstack_agent', 'No entries returned within this listing’s coverage.') : t('fadenstack_agent', 'Folder is empty.') }}
 		</p>
 
 		<article v-for="entry in result.entries" :key="entry.resourceId ?? entry.href ?? entry.filename" class="fdn-search-file fdn-folder-entry">
@@ -91,9 +79,9 @@ async function attach(entry: FolderListingEntry) {
 				<template v-if="!entry.folder && entry.size !== undefined">
 					{{ formatSize(entry.size) }}
 				</template>
-				<template v-if="entry.modified">
+				<template v-if="dateValue(entry.modified)">
 					<span v-if="!entry.folder && entry.size !== undefined">&nbsp;·&nbsp;</span>
-					<time :datetime="new Date(entry.modified * 1000).toISOString()">{{ formatTime(entry.modified) }}</time>
+					<time :datetime="dateValue(entry.modified)">{{ formatTime(entry.modified) }}</time>
 				</template>
 			</p>
 			<div v-if="!entry.folder && entry.resourceId" class="fdn-search-actions">

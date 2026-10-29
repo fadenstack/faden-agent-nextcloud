@@ -135,6 +135,9 @@ try {
 	$filtered = $broker->organizeRead($folderRef);
 	$assert('protected child metadata is excluded before disclosure', !in_array('Contract-2026.md', array_column($filtered['entries'], 'filename'), true));
 	$assert('filtered listing explicitly reports partial coverage', $filtered['partial'] === true);
+	$legacyContext = $broker->select($fixtureFolder->getId());
+	$legacyListing = $broker->listing($legacyContext['id']);
+	$assert('implicit folder attachments filter protected child metadata before processing', $legacyListing['partial'] === true && !in_array('Contract-2026.md', array_column($legacyListing['files'], 'name'), true));
 
 	// Reset policy to legacy default
 	$config->setAppValue(Application::APP_ID, ScopePolicy::CONFIG_KEY, '');
@@ -217,6 +220,17 @@ try {
 	\OC_Util::tearDownFS();
 	\OC_Util::setupFS($userB->getUID());
 	$denied('revoked recipient loses file metadata read', fn () => $broker->scopeResource($fileRef, 'read'), 404);
+	$session->setUser($userA);
+	\OC_Util::tearDownFS();
+	\OC_Util::setupFS($userA->getUID());
+	$resharable = $shares->createShare($shares->newShare()->setNode($fileA)->setShareType(IShare::TYPE_USER)->setSharedWith($userB->getUID())
+		->setSharedBy($userA->getUID())->setShareOwner($userA->getUID())->setPermissions(Constants::PERMISSION_READ | Constants::PERMISSION_SHARE));
+	$createdShares[] = $resharable;
+	$session->setUser($userB);
+	\OC_Util::tearDownFS();
+	\OC_Util::setupFS($userB->getUID());
+	$recipientShares = $broker->sharesRead($fileRef);
+	$assert('recipient with SHARE can inspect without following owner-only parents', $recipientShares['resourceId'] === $fileRef && $recipientShares['complete'] === false && $recipientShares['shares'] === []);
 	$session->setUser($userA);
 	\OC_Util::tearDownFS();
 	\OC_Util::setupFS($userA->getUID());

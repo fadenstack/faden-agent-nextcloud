@@ -54,6 +54,7 @@ export function davResourceIds(xml: string): string[] {
 export class NextcloudSearchService {
 
 	readonly issued = new Map<string, FileMetadata>()
+	readonly #nativeReferences = new Set<string>()
 	readonly cache = new Map<string, { context: FileContext; document: DocumentText; expires: number }>()
 	constructor(readonly files: FileApi, readonly extract: (context: FileContext, signal: AbortSignal) => Promise<DocumentText> = async (context, signal) => {
 		if (context.file.mime !== 'application/pdf') return files.read(context.id, signal)
@@ -104,22 +105,36 @@ export class NextcloudSearchService {
 	}
 
 	remember(file: FileMetadata) {
+		this.rememberReference(`nextcloud:files:${file.id}`)
 		this.issued.set(`nextcloud:files:${file.id}`, file)
-		while (this.issued.size > 150) this.issued.delete(this.issued.keys().next().value!)
+	}
+
+	/** Introduced only by native user selection or scope-validated discovery; still re-resolve before use. */
+	rememberReference(reference: string) {
+		resourceId(reference)
+		this.#nativeReferences.add(reference)
+		while (this.#nativeReferences.size > 150) {
+			const first = this.#nativeReferences.values().next().value!
+			this.#nativeReferences.delete(first)
+			this.issued.delete(first)
+			this.cache.delete(first)
+		}
 	}
 
 	async metadata(id: unknown, signal: AbortSignal, selected?: FileContext, content = false): Promise<FileMetadata> {
 		const number = resourceId(id)
 		if (selected?.file.id === number) this.remember(selected.file)
-		if (!this.issued.has(String(id))) throw new Error('Use a resource returned by search or explicitly attached by the user first.')
+		if (!this.issued.has(String(id)) && !this.#nativeReferences.has(String(id))) throw new Error('Use a resource returned by search or explicitly attached by the user first.')
 		await this.authorize()
 		signal.throwIfAborted()
 		const found = this.files.searchTransport
 			? (await this.files.searchTransport.resolve([String(id)], 'all', signal, content))[0]
 			: (await this.files.select(number, signal)).file
-		if (!found) { this.cache.delete(String(id)); this.issued.delete(String(id)); throw new Error('This file was deleted, moved out of your access, or permission was revoked.') }
-		const old = this.issued.get(String(id))!
-		if (found.etag !== old.etag || found.path !== old.path) this.cache.delete(String(id))
+		signal.throwIfAborted()
+		if (found && found.id !== number) throw new Error('The native resolver returned a different resource.')
+		if (!found) { this.cache.delete(String(id)); this.issued.delete(String(id)); this.#nativeReferences.delete(String(id)); throw new Error('This file was deleted, moved out of your access, or permission was revoked.') }
+		const old = this.issued.get(String(id))
+		if (!old || found.etag !== old.etag || found.path !== old.path) this.cache.delete(String(id))
 		this.remember(found)
 		return found
 	}
@@ -193,6 +208,6 @@ export class NextcloudSearchService {
 		}
 	}
 
-	clear() { this.issued.clear(); this.cache.clear() }
+	clear() { this.issued.clear(); this.#nativeReferences.clear(); this.cache.clear() }
 
 }

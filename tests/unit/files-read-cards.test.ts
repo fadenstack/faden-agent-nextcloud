@@ -10,6 +10,7 @@ import type { FileApi, FileContext, Identity, FolderOverviewResults, ShareOvervi
 import type { ScopePolicy } from '../../src/platform/scope.ts'
 
 vi.mock('../../src/components/HeaderButton.vue', () => ({ default: { template: '<button>Fadenstack Agent</button>' } }))
+vi.mock('@nextcloud/router', () => ({ generateUrl: (path: string) => new URL(path, location.origin).href, generateRemoteUrl: () => `${location.origin}/remote.php/` }))
 
 const readPolicy: ScopePolicy = {
 	version: 'native-reads-v1',
@@ -106,6 +107,52 @@ function fixture(modelFn: ConstructorParameters<typeof FakeGateway>[0]['model'],
 }
 
 describe('Typed Files read-result rendering and composed UI path', () => {
+	it('rejects a result beyond a narrow native record budget without rendering a card', async () => {
+		let round = 0
+		const source = fixture(() => ++round === 1 ? { toolCalls: [{ id: 'limited', name: 'nc_files_organize_read', arguments: { resource_id: 'nextcloud:files:202' } }] } : { text: 'Narrow the request.' })
+		const host = new NextcloudAgent({ ...identity, scopePolicy: { ...readPolicy, limits: { records: 1 } } }, source.files, source.gateway.fetch)
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(202))
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(AgentChat, { host: markRaw(host) })
+		app.mount(root)
+		try {
+			await host.send('List this folder')
+			await nextTick()
+			expect(source.files.organizeRead).toHaveBeenCalledOnce()
+			expect(root.querySelector('.fdn-folder-results')).toBeNull()
+			expect(JSON.stringify(source.gateway.modelCalls)).not.toContain('Contract.md')
+		} finally { app.unmount(); root.remove(); await host.dispose(); await source.host.dispose() }
+	})
+	it('keeps earlier cards unchanged when the model reuses a call ID in a later turn', async () => {
+		let reads = 0
+		const { host } = fixture(request => request.messages.at(-1)?.role === 'tool' ? { text: 'Listed.' }
+			: { toolCalls: [{ id: 'reused-call', name: 'nc_files_organize_read', arguments: { resource_id: 'nextcloud:files:202' } }] }, {
+			organizeRead: vi.fn(async () => ({ directory: '/Projects', resourceId: 'nextcloud:files:202', etag: 'folder-rev', partial: false,
+				entries: [{ resourceId: `nextcloud:files:${101 + reads}`, filename: ++reads === 1 ? 'first-only.md' : 'second-only.md', folder: false, etag: 'r1', href: '/f/101' }] })),
+		})
+		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(202))
+		const root = document.createElement('div')
+		document.body.append(root)
+		let app = createApp(AgentChat, { host: markRaw(host) })
+		app.mount(root)
+		try {
+			await host.send('First listing')
+			await host.send('Second listing')
+			// Reopening the view must reconstruct the earlier card from its own turn.
+			app.unmount()
+			app = createApp(AgentChat, { host: markRaw(host) })
+			app.mount(root)
+			await nextTick()
+			const cards = root.querySelectorAll('.fdn-folder-results')
+			expect(cards).toHaveLength(2)
+			expect(cards[0]!.textContent).toContain('first-only.md')
+			expect(cards[0]!.textContent).not.toContain('second-only.md')
+			expect(cards[1]!.textContent).toContain('second-only.md')
+		} finally { app.unmount(); root.remove(); await host.dispose() }
+	})
 	it('FolderResultsCard renders folder overview with compact rows, icons, native links, and partial note', () => {
 		const mockHost = {
 			chat: { isBusy: false },
@@ -217,7 +264,7 @@ describe('Typed Files read-result rendering and composed UI path', () => {
 		// Group share (inherited, read & write)
 		expect(root.textContent).toContain('QA Group')
 		expect(root.textContent).toContain('Group')
-		expect(root.textContent).toContain('Read & write')
+		expect(root.textContent).toContain('Read, Edit, Create, Delete, Share')
 		expect(root.textContent).toContain('(Inherited)')
 
 		// Public link share with expiration
@@ -250,7 +297,7 @@ describe('Typed Files read-result rendering and composed UI path', () => {
 		const app = createApp(SharesResultsCard, { result, host: mockHost })
 		app.mount(root)
 
-		expect(root.textContent).toContain('No shares found for current user on this resource.')
+		expect(root.textContent).toContain('No supported shares were returned within this coverage.')
 		expect(root.textContent).toContain('Covers supported shares initiated by the current user.')
 		expect(root.textContent).not.toContain('Nobody has access')
 
@@ -342,7 +389,7 @@ describe('Typed Files read-result rendering and composed UI path', () => {
 		})
 
 		let pendingResolve: () => void = () => {}
-		const { host } = fixture(() => ({
+		const { host, files } = fixture(() => ({
 			toolCalls: [{
 				id: 'slow-read-call',
 				name: 'nc_files_organize_read',
@@ -353,13 +400,15 @@ describe('Typed Files read-result rendering and composed UI path', () => {
 				pendingResolve = () => resolve({
 					directory: '/Projects',
 					resourceId: 'nextcloud:files:202',
-					entries: [{ href: '/Projects/Confidential.md', filename: 'Confidential.md', etag: 'sec', folder: false }],
+					etag: 'folder-rev',
+					entries: [{ resourceId: 'nextcloud:files:101', href: '/f/101', filename: 'Confidential.md', etag: 'sec', folder: false }],
 					partial: false,
 				})
 			})),
 		})
 
 		await host.signIn('alice', 'test')
+		host.offerSelection(await host.selection.select(202))
 		const root = document.createElement('div')
 		document.body.append(root)
 		const app = createApp(AgentChat, { host: markRaw(host) })
@@ -372,7 +421,7 @@ describe('Typed Files read-result rendering and composed UI path', () => {
 			await nextTick()
 			root.querySelector<HTMLButtonElement>('.fdn-send')!.click()
 
-			await vi.waitFor(() => expect(host.chat.isBusy).toBe(true))
+			await vi.waitFor(() => expect(files.organizeRead).toHaveBeenCalledOnce())
 
 			// User stops during execution
 			host.stop()
