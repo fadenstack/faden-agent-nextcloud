@@ -1,4 +1,10 @@
-/** Nextcloud CalDAV and CardDAV adapter and tools (NC10) */
+/**
+ * Nextcloud CalDAV and CardDAV adapter and tools (NC10)
+ *
+ * Uses ical.js (MPL-2.0, Philipp Kewisch & contributors) for structured RFC 5545 (iCalendar)
+ * and RFC 6350 (vCard) component parsing and structured property manipulation.
+ */
+import ICAL from 'ical.js'
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
 
@@ -109,57 +115,153 @@ function validUtc(value: string): boolean {
 	try { validateAllDayDate(value.slice(0, 10)); return true } catch { return false }
 }
 
-/** Parse top-level properties and parameters of a specified component (e.g. VEVENT, VTODO, VCARD). */
+type JCalData = ConstructorParameters<typeof ICAL.Component>[0]
+
+/** Parse top-level properties and parameters of a specified component using structured ical.js. */
 export function parseDavProperties(raw: string, component: string): ParsedComponent {
-	const lines = unfold(raw).split(/\r?\n/)
-	let depth = 0
+	try {
+		let jcal: unknown
+		try {
+			jcal = ICAL.parse(raw)
+		} catch {
+			return { values: {}, parameters: {}, instances: 0, allLines: [], counts: {} }
+		}
+		if (!Array.isArray(jcal) || typeof jcal[0] !== 'string') {
+			return { values: {}, parameters: {}, instances: 0, allLines: [], counts: {} }
+		}
+		const root = new ICAL.Component(jcal as unknown as JCalData)
+		let target: ICAL.Component | undefined
+		let instances = 0
+		if (component.toUpperCase() === 'VCARD') {
+			if (root.name === 'vcard') {
+				target = root
+				instances = 1
+			}
+		} else {
+			if (root.name === 'vcalendar') {
+				const subcomps = root.getAllSubcomponents(component.toLowerCase())
+				instances = subcomps.length
+				if (instances > 0) {
+					target = subcomps[0]
+				}
+			}
+		}
+		if (!target) {
+			return { values: {}, parameters: {}, instances, allLines: [], counts: {} }
+		}
+		const values: Record<string, string> = {}
+		const parameters: Record<string, string> = {}
+		const counts: Record<string, number> = {}
+		const allLines: string[] = []
+		for (const prop of target.getAllProperties()) {
+			const key = prop.name.toUpperCase()
+			counts[key] = (counts[key] ?? 0) + 1
+			const line = prop.toICALString()
+			allLines.push(line)
+			const propInfo = contentProperty(line)
+			if (propInfo) {
+				values[key] = propInfo.value
+				parameters[key] = propInfo.header
+			}
+		}
+		return { values, parameters, instances, allLines, counts }
+	} catch {
+		return { values: {}, parameters: {}, instances: 0, allLines: [], counts: {} }
+	}
+}
+
+/** Bounded private editor only; rejects recurrence, attendees, scheduling, and malformed structures. */
+export function assertPrivateComponent(raw: string, component: string): ParsedComponent & { root: ICAL.Component; target: ICAL.Component } {
+	if (typeof raw !== 'string' || !raw.trim()) {
+		throw new Error('Malformed component nesting; no write sent.')
+	}
+	const lines = unfold(raw).split(/\r?\n/).filter(Boolean)
+	const stack: string[] = []
+	let roots = 0
+	for (const line of lines) {
+		const upper = line.toUpperCase()
+		if (upper.startsWith('BEGIN:')) {
+			if (!stack.length) roots++
+			stack.push(upper.slice(6))
+		} else if (upper.startsWith('END:')) {
+			if (stack.pop() !== upper.slice(4)) {
+				throw new Error('Malformed component nesting; no write sent.')
+			}
+		}
+	}
+	if (stack.length > 0 || roots !== 1) {
+		throw new Error('Malformed component nesting; no write sent.')
+	}
+
+	let jcal: unknown
+	try {
+		jcal = ICAL.parse(raw)
+	} catch {
+		throw new Error('Malformed component nesting; no write sent.')
+	}
+	if (!Array.isArray(jcal) || typeof jcal[0] !== 'string') {
+		throw new Error('Malformed component nesting; no write sent.')
+	}
+	const root = new ICAL.Component(jcal as unknown as JCalData)
+	let target: ICAL.Component | undefined
+	let instances = 0
+
+	if (component.toUpperCase() === 'VCARD') {
+		if (root.name !== 'vcard') {
+			throw new Error('Malformed component nesting; no write sent.')
+		}
+		const version = root.getFirstPropertyValue('version')
+		if (version !== '3.0' && version !== '4.0') {
+			throw new Error(`Unsupported vCard version: ${version}; only 3.0 and 4.0 are supported.`)
+		}
+		target = root
+		instances = 1
+	} else {
+		if (root.name !== 'vcalendar') {
+			throw new Error('Malformed component nesting; no write sent.')
+		}
+		const version = root.getFirstPropertyValue('version')
+		if (version !== '2.0') {
+			throw new Error(`Unsupported iCalendar version: ${version}; only 2.0 is supported.`)
+		}
+		if (root.getFirstProperty('method')) {
+			throw new Error('Attendee notifications and scheduling require a separate explicitly approved operation.')
+		}
+		const subcomps = root.getAllSubcomponents(component.toLowerCase())
+		instances = subcomps.length
+		if (instances !== 1) {
+			throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
+		}
+		target = subcomps[0]
+		const recurrenceProps = ['rrule', 'recurrence-id', 'rdate', 'exdate']
+		for (const rk of recurrenceProps) {
+			if (target.getFirstProperty(rk) || root.getFirstProperty(rk)) {
+				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
+			}
+		}
+		if (target.getFirstProperty('attendee') || target.getFirstProperty('organizer')) {
+			throw new Error('Attendee notifications and scheduling require a separate explicitly approved operation.')
+		}
+	}
+
 	const values: Record<string, string> = {}
 	const parameters: Record<string, string> = {}
 	const counts: Record<string, number> = {}
-	let instances = 0
-	const componentLines: string[] = []
+	const allLines: string[] = []
 
-	for (const line of lines) {
-		const upper = line.toUpperCase()
-		if (upper === `BEGIN:${component}`) {
-			depth = 1
-			instances++
-			continue
-		}
-		if (!depth) continue
-		if (upper.startsWith('BEGIN:')) {
-			depth++
-			continue
-		}
-		if (upper.startsWith('END:')) {
-			depth--
-			continue
-		}
-		if (depth !== 1) continue
-		componentLines.push(line)
-		const property = contentProperty(line)
-		if (property) {
-			values[property.key] = property.value
-			parameters[property.key] = property.header
-			counts[property.key] = (counts[property.key] ?? 0) + 1
+	for (const prop of target.getAllProperties()) {
+		const key = prop.name.toUpperCase()
+		counts[key] = (counts[key] ?? 0) + 1
+		const line = prop.toICALString()
+		allLines.push(line)
+		const propInfo = contentProperty(line)
+		if (propInfo) {
+			values[key] = propInfo.value
+			parameters[key] = propInfo.header
 		}
 	}
-	return { values, parameters, instances, allLines: componentLines, counts }
-}
 
-/** Bounded private editor only; a maintained full RFC parser remains a release dependency. */
-export function assertPrivateComponent(raw: string, component: string): ParsedComponent {
-	const p = parseDavProperties(raw, component)
-	const stack: string[] = []
-	let roots = 0
-	for (const line of unfold(raw).split(/\r?\n/).filter(Boolean)) {
-		const upper = line.toUpperCase()
-		if (upper.startsWith('BEGIN:')) { if (!stack.length) roots++; stack.push(upper.slice(6)) } else if (upper.startsWith('END:') && stack.pop() !== upper.slice(4)) throw new Error('Malformed component nesting; no write sent.')
-	}
-	if (stack.length || roots !== 1) throw new Error('Malformed component nesting; no write sent.')
-	if (p.instances !== 1 || ['RRULE', 'RECURRENCE-ID', 'RDATE', 'EXDATE'].some(key => Object.hasOwn(p.values, key))) throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
-	if (['ATTENDEE', 'ORGANIZER'].some(key => Object.hasOwn(p.values, key)) || /(?:^|\r?\n)METHOD[;:]/i.test(unfold(raw))) throw new Error('Attendee notifications and scheduling require a separate explicitly approved operation.')
-	return p
+	return { values, parameters, instances, allLines, counts, root, target }
 }
 
 /**
@@ -167,49 +269,65 @@ export function assertPrivateComponent(raw: string, component: string): ParsedCo
  * unknown properties, parameters, timezones and alarms.
  */
 export function patchIcs(raw: string, component: string, changes: Record<string, string | null>): string {
-	const p = assertPrivateComponent(raw, component)
-	for (const key of Object.keys(changes)) if ((p.counts[key] ?? 0) > 1) throw new Error('Repeated properties are ambiguous; choose a specialized editor.')
-	const remaining = { ...changes }
-	const edited = (key: string, value: string, header = key): string => {
-		if (key === 'DUE' && /^\d{8}$/.test(value)) return `DUE;VALUE=DATE:${value}`
-		return `${header}:${['SUMMARY', 'DESCRIPTION', 'LOCATION'].includes(key) ? escapeCalendarText(value) : value}`
+	const { root, target, counts } = assertPrivateComponent(raw, component)
+	for (const key of Object.keys(changes)) {
+		if ((counts[key.toUpperCase()] ?? 0) > 1) {
+			throw new Error('Repeated properties are ambiguous; choose a specialized editor.')
+		}
 	}
-	let depth = 0
-	const lines = unfold(raw).split(/\r?\n/).filter(Boolean).map(line => {
-		const upper = line.toUpperCase()
-		if (upper === `BEGIN:${component}`) {
-			depth = 1
-			return line
+	for (const [rawKey, rawValue] of Object.entries(changes)) {
+		const propName = rawKey.toLowerCase()
+		if (rawValue === null) {
+			target.removeAllProperties(propName)
+			continue
 		}
-		if (upper === `END:${component}` && depth === 1) {
-			depth = 0
-			const additions = Object.entries(remaining)
-				.filter(([, v]) => v !== null)
-				.map(([k, v]) => edited(k, v!))
-			return [...additions, line].join('\n')
+		const normalized = typeof rawValue === 'string' ? rawValue.replace(/\r\n|\r/g, '\n') : rawValue
+		if (typeof normalized === 'string') {
+			if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(normalized)) {
+				throw new Error('Control characters are unavailable in calendar/contact text.')
+			}
+			if (['summary', 'location'].includes(propName) && normalized.length > 120) {
+				throw new Error(`Use text up to 120 characters for ${rawKey}.`)
+			}
+			if (propName === 'description' && normalized.length > 2000) {
+				throw new Error('Use text up to 2000 characters.')
+			}
 		}
-		if (!depth) return line
-		if (upper.startsWith('BEGIN:')) {
-			depth++
-			return line
+		if (rawKey.toUpperCase() === 'DUE') {
+			target.removeAllProperties('due')
+			let dateStr = String(rawValue)
+			if (/^\d{8}$/.test(dateStr)) {
+				dateStr = `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`
+			}
+			validateAllDayDate(dateStr)
+			const dueTime = ICAL.Time.fromData({
+				year: Number(dateStr.slice(0, 4)),
+				month: Number(dateStr.slice(5, 7)),
+				day: Number(dateStr.slice(8, 10)),
+				isDate: true,
+			})
+			const dueProp = new ICAL.Property('due')
+			dueProp.setValue(dueTime)
+			target.addProperty(dueProp)
+			continue
 		}
-		if (upper.startsWith('END:')) {
-			depth--
-			return line
+		let valueToSet: string | ICAL.Time = normalized
+		if (typeof normalized === 'string' && /^\d{8}T\d{6}Z$/.test(normalized)) {
+			const iso = `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}T${normalized.slice(9, 11)}:${normalized.slice(11, 13)}:${normalized.slice(13, 15)}Z`
+			valueToSet = ICAL.Time.fromDateTimeString(iso)
 		}
-		if (depth !== 1) return line
-		const property = contentProperty(line)
-		if (!property) return line
-		const { key } = property
-		if (Object.hasOwn(remaining, key)) {
-			const value = remaining[key]
-			delete remaining[key]
-			return value === null ? '' : edited(key, value, property.header)
+		const existing = target.getFirstProperty(propName)
+		if (existing) {
+			existing.setValue(valueToSet)
+		} else {
+			const prop = new ICAL.Property(propName)
+			prop.setValue(valueToSet)
+			target.addProperty(prop)
 		}
-		return line
-	}).join('\n').split('\n').filter(Boolean)
-
-	return lines.map(fold).join('\r\n') + '\r\n'
+	}
+	let output = root.toString()
+	if (!output.endsWith('\r\n')) output += '\r\n'
+	return output
 }
 
 /**
@@ -217,38 +335,54 @@ export function patchIcs(raw: string, component: string, changes: Record<string,
  * unknown properties, repeated lines, categories, photo, notes and UID.
  */
 export function patchVcard(raw: string, changes: Record<string, string | null>): string {
-	const p = parseDavProperties(raw, 'VCARD')
-	if (p.instances !== 1) {
-		throw new Error('Multi-vCard streams are not supported for single-contact patch.')
+	const { root, target, counts } = assertPrivateComponent(raw, 'VCARD')
+	for (const key of Object.keys(changes)) {
+		if ((counts[key.toUpperCase()] ?? 0) > 1) {
+			throw new Error('Repeated contact properties are ambiguous; choose one in the native editor.')
+		}
 	}
-	for (const key of Object.keys(changes)) if ((p.counts[key] ?? 0) > 1) throw new Error('Repeated contact properties are ambiguous; choose one in the native editor.')
-	const remaining = { ...changes }
-	let inVcard = false
-	const lines = unfold(raw).split(/\r?\n/).filter(Boolean).map(line => {
-		if (line.toUpperCase() === 'BEGIN:VCARD') {
-			inVcard = true
-			return line
+	for (const [rawKey, rawValue] of Object.entries(changes)) {
+		const propName = rawKey.toLowerCase()
+		if (rawValue === null) {
+			target.removeAllProperties(propName)
+			continue
 		}
-		if (line.toUpperCase() === 'END:VCARD' && inVcard) {
-			inVcard = false
-			const additions = Object.entries(remaining)
-				.filter(([, v]) => v !== null)
-				.map(([k, v]) => `${k}:${escapeCalendarText(v!)}`)
-			return [...additions, line].join('\n')
+		const normalized = typeof rawValue === 'string' ? rawValue.replace(/\r\n|\r/g, '\n') : rawValue
+		if (typeof normalized === 'string') {
+			if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(normalized)) {
+				throw new Error('Control characters are unavailable in calendar/contact text.')
+			}
+			const limit = propName === 'note' ? 2000 : propName === 'tel' ? 50 : 120
+			if (normalized.length > limit) {
+				throw new Error(`Use text up to ${limit} characters for ${rawKey}.`)
+			}
 		}
-		if (!inVcard) return line
-		const property = contentProperty(line)
-		if (!property) return line
-		const { key } = property
-		if (Object.hasOwn(remaining, key)) {
-			const value = remaining[key]
-			delete remaining[key]
-			return value === null ? '' : `${property.header}:${escapeCalendarText(value)}`
+		if (propName === 'n') {
+			target.removeAllProperties('n')
+			const nProp = new ICAL.Property('n')
+			const parts = typeof normalized === 'string' ? normalized.split(';') : [String(normalized)]
+			nProp.setValue(parts)
+			target.addProperty(nProp)
+			continue
 		}
-		return line
-	}).join('\n').split('\n').filter(Boolean)
-
-	return lines.map(fold).join('\r\n') + '\r\n'
+		if (propName === 'categories') {
+			target.removeAllProperties('categories')
+			const catProp = new ICAL.Property('categories')
+			const parts = typeof normalized === 'string' && normalized.includes(',') ? normalized.split(',') : [String(normalized)]
+			catProp.setValues(parts)
+			target.addProperty(catProp)
+			continue
+		}
+		const existing = target.getFirstProperty(propName)
+		if (existing) {
+			existing.setValue(normalized)
+		} else {
+			target.addPropertyWithValue(propName, normalized)
+		}
+	}
+	let output = root.toString()
+	if (!output.endsWith('\r\n')) output += '\r\n'
+	return output
 }
 
 export function buildEventIcs(params: {
@@ -259,31 +393,37 @@ export function buildEventIcs(params: {
 	startUtc: string
 	endUtc: string
 }): string {
-	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
 	const start = Date.parse(params.startUtc)
 	const end = Date.parse(params.endUtc)
 	if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end || !validUtc(params.startUtc) || !validUtc(params.endUtc)) {
 		throw new Error('Explicit UTC start/end timestamps ending in Z are required.')
 	}
-	const formatDate = (n: number) => new Date(n).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
-	const lines = [
-		'BEGIN:VCALENDAR',
-		'VERSION:2.0',
-		'PRODID:-//Fadenstack//Nextcloud Agent//EN',
-		'BEGIN:VEVENT',
-		`UID:${params.uid}`,
-		`DTSTAMP:${stamp}`,
-		`SUMMARY:${escapeCalendarText(params.summary)}`,
-		`DTSTART:${formatDate(start)}`,
-		`DTEND:${formatDate(end)}`,
-		'CLASS:PRIVATE',
-		'TRANSP:OPAQUE',
-		'X-FADENSTACK-AI-GENERATED:TRUE',
-	]
-	if (params.description) lines.push(`DESCRIPTION:${escapeCalendarText(params.description)}`)
-	if (params.location) lines.push(`LOCATION:${escapeCalendarText(params.location)}`)
-	lines.push('END:VEVENT', 'END:VCALENDAR')
-	return lines.map(fold).join('\r\n') + '\r\n'
+	const cal = new ICAL.Component('vcalendar')
+	cal.addPropertyWithValue('version', '2.0')
+	cal.addPropertyWithValue('prodid', '-//Fadenstack//Nextcloud Agent//EN')
+
+	const vevent = new ICAL.Component('vevent')
+	vevent.addPropertyWithValue('uid', params.uid)
+	vevent.addPropertyWithValue('dtstamp', ICAL.Time.now())
+	vevent.addPropertyWithValue('summary', params.summary.replace(/\r\n|\r/g, '\n'))
+
+	const startTime = ICAL.Time.fromDateTimeString(params.startUtc)
+	vevent.addPropertyWithValue('dtstart', startTime)
+
+	const endTime = ICAL.Time.fromDateTimeString(params.endUtc)
+	vevent.addPropertyWithValue('dtend', endTime)
+
+	vevent.addPropertyWithValue('class', 'PRIVATE')
+	vevent.addPropertyWithValue('transp', 'OPAQUE')
+	vevent.addPropertyWithValue('x-fadenstack-ai-generated', 'TRUE')
+
+	if (params.description) vevent.addPropertyWithValue('description', params.description.replace(/\r\n|\r/g, '\n'))
+	if (params.location) vevent.addPropertyWithValue('location', params.location.replace(/\r\n|\r/g, '\n'))
+
+	cal.addSubcomponent(vevent)
+	let output = cal.toString()
+	if (!output.endsWith('\r\n')) output += '\r\n'
+	return output
 }
 
 export function buildTaskIcs(params: {
@@ -297,27 +437,38 @@ export function buildTaskIcs(params: {
 	if (!/^\d{4}-\d{2}-\d{2}$/.test(params.dueDate)) {
 		throw new Error('Use an all-day YYYY-MM-DD due date.')
 	}
-	const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
-	const dueCompact = params.dueDate.replace(/-/g, '')
-	const lines = [
-		'BEGIN:VCALENDAR',
-		'VERSION:2.0',
-		'PRODID:-//Fadenstack//Nextcloud Agent//EN',
-		'BEGIN:VTODO',
-		`UID:${params.uid}`,
-		`DTSTAMP:${stamp}`,
-		`SUMMARY:${escapeCalendarText(params.summary)}`,
-		`DUE;VALUE=DATE:${dueCompact}`,
-		'STATUS:NEEDS-ACTION',
-		'PERCENT-COMPLETE:0',
-		'X-FADENSTACK-AI-GENERATED:TRUE',
-	]
-	if (params.description) lines.push(`DESCRIPTION:${escapeCalendarText(params.description)}`)
+	const cal = new ICAL.Component('vcalendar')
+	cal.addPropertyWithValue('version', '2.0')
+	cal.addPropertyWithValue('prodid', '-//Fadenstack//Nextcloud Agent//EN')
+
+	const vtodo = new ICAL.Component('vtodo')
+	vtodo.addPropertyWithValue('uid', params.uid)
+	vtodo.addPropertyWithValue('dtstamp', ICAL.Time.now())
+	vtodo.addPropertyWithValue('summary', params.summary.replace(/\r\n|\r/g, '\n'))
+
+	const dueTime = ICAL.Time.fromData({
+		year: Number(params.dueDate.slice(0, 4)),
+		month: Number(params.dueDate.slice(5, 7)),
+		day: Number(params.dueDate.slice(8, 10)),
+		isDate: true,
+	})
+	const dueProp = new ICAL.Property('due')
+	dueProp.setValue(dueTime)
+	vtodo.addProperty(dueProp)
+
+	vtodo.addPropertyWithValue('status', 'NEEDS-ACTION')
+	vtodo.addPropertyWithValue('percent-complete', 0)
+	vtodo.addPropertyWithValue('x-fadenstack-ai-generated', 'TRUE')
+
+	if (params.description) vtodo.addPropertyWithValue('description', params.description.replace(/\r\n|\r/g, '\n'))
 	if (params.priority !== undefined && params.priority >= 0 && params.priority <= 9) {
-		lines.push(`PRIORITY:${params.priority}`)
+		vtodo.addPropertyWithValue('priority', params.priority)
 	}
-	lines.push('END:VTODO', 'END:VCALENDAR')
-	return lines.map(fold).join('\r\n') + '\r\n'
+
+	cal.addSubcomponent(vtodo)
+	let output = cal.toString()
+	if (!output.endsWith('\r\n')) output += '\r\n'
+	return output
 }
 
 export function buildContactVcard(params: {
@@ -331,21 +482,31 @@ export function buildContactVcard(params: {
 	if (!params.fn || typeof params.fn !== 'string' || params.fn.trim().length === 0) {
 		throw new Error('A contact name (fn) is required.')
 	}
-	const lines = [
-		'BEGIN:VCARD',
-		'VERSION:3.0',
-		'PRODID:-//Fadenstack//Nextcloud Agent//EN',
-		`UID:${params.uid}`,
-		`FN:${escapeCalendarText(params.fn)}`,
-		`N:${escapeCalendarText(params.fn)};;;;`,
-		'X-FADENSTACK-AI-GENERATED:TRUE',
-	]
-	if (params.email) lines.push(`EMAIL:${escapeCalendarText(params.email)}`)
-	if (params.tel) lines.push(`TEL;TYPE=VOICE:${escapeCalendarText(params.tel)}`)
-	if (params.note) lines.push(`NOTE:${escapeCalendarText(params.note)}`)
-	if (params.categories) lines.push(`CATEGORIES:${escapeCalendarText(params.categories)}`)
-	lines.push('END:VCARD')
-	return lines.map(fold).join('\r\n') + '\r\n'
+	const vcard = new ICAL.Component('vcard')
+	vcard.addPropertyWithValue('version', '3.0')
+	vcard.addPropertyWithValue('prodid', '-//Fadenstack//Nextcloud Agent//EN')
+	vcard.addPropertyWithValue('uid', params.uid)
+	vcard.addPropertyWithValue('fn', params.fn.trim().replace(/\r\n|\r/g, '\n'))
+	const nProp = new ICAL.Property('n')
+	nProp.setValue([params.fn.trim(), '', '', '', ''])
+	vcard.addProperty(nProp)
+	vcard.addPropertyWithValue('x-fadenstack-ai-generated', 'TRUE')
+	if (params.email) vcard.addPropertyWithValue('email', params.email.trim())
+	if (params.tel) {
+		const telProp = new ICAL.Property('tel')
+		telProp.setParameter('type', 'VOICE')
+		telProp.setValue(params.tel.trim())
+		vcard.addProperty(telProp)
+	}
+	if (params.note) vcard.addPropertyWithValue('note', params.note.replace(/\r\n|\r/g, '\n'))
+	if (params.categories) {
+		const catProp = new ICAL.Property('categories')
+		catProp.setValues(params.categories.split(','))
+		vcard.addProperty(catProp)
+	}
+	let output = vcard.toString()
+	if (!output.endsWith('\r\n')) output += '\r\n'
+	return output
 }
 
 export function validateCalendarCreateArgs(args: Readonly<Record<string, unknown>>) {

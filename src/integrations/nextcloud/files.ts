@@ -1,11 +1,14 @@
 import axios from '@nextcloud/axios'
 import { getRequestToken } from '@nextcloud/auth'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
+import ICAL from 'ical.js'
 import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderListingEntry, FolderCreateResult, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, TableColumn, TableRow, DeckApi, DeckBoardSnapshot, DeckBoard, DeckStack, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
 import { sha256Hex } from './tables.ts'
 import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './adapterGuards.ts'
-import { parseDavProperties, unescapeCalendarText } from './caldav.ts'
+import { parseDavProperties } from './caldav.ts'
+
+const MAX_DAV_RESPONSE_BYTES = 512 * 1024
 
 function resolveRouteTableId(): number | undefined {
 	if (typeof location === 'undefined') return undefined
@@ -171,6 +174,26 @@ export class NextcloudFiles implements FileApi {
 		return generateRemoteUrl('dav').replace(/\/?$/, '/')
 	}
 
+	private calendarHomeUrl(): URL {
+		const baseHref = typeof location !== 'undefined' ? location.href : 'https://localhost/'
+		return new URL(`${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/`, baseHref)
+	}
+
+	private calendarCollectionUrl(calendarId: string): URL {
+		const baseHref = typeof location !== 'undefined' ? location.href : 'https://localhost/'
+		return new URL(`${this.davBase()}calendars/${encodeURIComponent(this.initial.userId)}/${davSegment(calendarId)}/`, baseHref)
+	}
+
+	private addressBookHomeUrl(): URL {
+		const baseHref = typeof location !== 'undefined' ? location.href : 'https://localhost/'
+		return new URL(`${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/`, baseHref)
+	}
+
+	private addressBookCollectionUrl(bookId: string): URL {
+		const baseHref = typeof location !== 'undefined' ? location.href : 'https://localhost/'
+		return new URL(`${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/${davSegment(bookId)}/`, baseHref)
+	}
+
 	readonly calendar: CalendarApi = {
 		listCalendars: async (signal?: AbortSignal): Promise<DavCalendar[]> => {
 			await this.assertIdentity(signal)
@@ -185,7 +208,10 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			return parseCalendarsXml(res.data)
+			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
+				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
+			}
+			return parseCalendarsXml(res.data, this.calendarHomeUrl())
 		},
 		readEvents: async (calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]> => {
 			await this.assertIdentity(signal)
@@ -200,7 +226,10 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			return parseCalendarObjectsXml(res.data, 'VEVENT')
+			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
+				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
+			}
+			return parseCalendarObjectsXml(res.data, 'VEVENT', this.calendarCollectionUrl(calendarId))
 		},
 		getEvent: async (calendarId: string, filename: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
@@ -211,7 +240,11 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '')
+			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
+				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
+			}
+			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '').trim()
+			if (!etag || etag === '*') throw new Error('Missing revision metadata from calendar response.')
 			const raw = res.data
 			const values = parseDavProperties(raw, 'VEVENT').values
 			return { etag, raw, values }
@@ -269,7 +302,10 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			return parseCalendarObjectsXml(res.data, 'VTODO')
+			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
+				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
+			}
+			return parseCalendarObjectsXml(res.data, 'VTODO', this.calendarCollectionUrl(calendarId))
 		},
 		getTask: async (calendarId: string, filename: string, signal?: AbortSignal) => {
 			await this.assertIdentity(signal)
@@ -280,7 +316,11 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '')
+			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
+				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
+			}
+			const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '').trim()
+			if (!etag || etag === '*') throw new Error('Missing revision metadata from task response.')
 			const raw = res.data
 			const values = parseDavProperties(raw, 'VTODO').values
 			return { etag, raw, values }
@@ -334,7 +374,10 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			return parseAddressBooksXml(res.data)
+			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
+				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
+			}
+			return parseAddressBooksXml(res.data, this.addressBookHomeUrl())
 		},
 		findContacts: async (query: string, signal?: AbortSignal): Promise<{ contacts: DavContact[]; complete: boolean }> => {
 			await this.assertIdentity(signal)
@@ -342,8 +385,9 @@ export class NextcloudFiles implements FileApi {
 			const found: DavContact[] = []
 			for (const book of books.slice(0, 10)) {
 				const body = `<c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop><c:filter><c:prop-filter name="FN"><c:text-match collation="i;unicode-casemap" match-type="contains">${escapeXml(query)}</c:text-match></c:prop-filter></c:filter></c:addressbook-query>`
+				const bookTargetUrl = this.addressBookHref(book.href)
 				const res = await axios.request<string>({
-					url: this.addressBookHref(book.href),
+					url: bookTargetUrl,
 					method: 'REPORT',
 					data: body,
 					headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
@@ -351,10 +395,14 @@ export class NextcloudFiles implements FileApi {
 					signal,
 					timeout: 15000,
 				})
-				const contacts = parseContactsXml(res.data, book.title)
+				if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
+					throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
+				}
+				const expectedBookUrl = new URL(bookTargetUrl, typeof location !== 'undefined' ? location.href : 'https://localhost/')
+				const contacts = parseContactsXml(res.data, book.title, expectedBookUrl)
 				for (const c of contacts) {
 					found.push(c)
-					if (found.length >= 20) return { contacts: found, complete: false }
+					if (found.length >= 20) return { contacts: found.slice(0, 20), complete: false }
 				}
 			}
 			return { contacts: found, complete: books.length <= 10 }
@@ -369,7 +417,11 @@ export class NextcloudFiles implements FileApi {
 					signal,
 					timeout: 15000,
 				})
-				const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '')
+				if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
+					throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
+				}
+				const etag = (res.headers.etag ?? '').replace(/^"|"$/g, '').trim()
+				if (!etag || etag === '*') throw new Error('Missing revision metadata from contact response.')
 				const raw = res.data
 				const values = parseDavProperties(raw, 'VCARD').values
 				return { etag, raw, values }
@@ -385,7 +437,10 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			const contacts = parseContactsXml(res.data, bookId)
+			if (typeof res.data === 'string' && res.data.length > MAX_DAV_RESPONSE_BYTES) {
+				throw new Error('DAV response exceeds maximum allowed size; operation truncated.')
+			}
+			const contacts = parseContactsXml(res.data, bookId, this.addressBookCollectionUrl(bookId))
 			return { etag: '', raw: '', values: {}, contacts: contacts.slice(0, 50), complete: contacts.length <= 50 }
 		},
 		createContact: async (bookId: string, filename: string, vcardData: string, signal?: AbortSignal) => {
@@ -424,8 +479,8 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	private addressBookHref(href: string): string {
-		const base = new URL(`${this.davBase()}addressbooks/users/${encodeURIComponent(this.initial.userId)}/`, location.href)
-		const target = new URL(href, location.href)
+		const base = this.addressBookHomeUrl()
+		const target = new URL(href, base)
 		if (target.origin !== base.origin || target.username || target.password || target.search || target.hash || !target.pathname.startsWith(base.pathname)) throw new Error('The native address-book path is unavailable.')
 		return target.href
 	}
@@ -768,109 +823,321 @@ function escapeXml(value: string): string {
 	}[ch]!))
 }
 
-function parseCalendarsXml(xmlText: string): DavCalendar[] {
+function validateDavHref(href: string, expectedParentUrl?: URL): string {
+	if (!href || typeof href !== 'string') throw new Error('Missing or invalid DAV href.')
+	const base = expectedParentUrl ?? (typeof location !== 'undefined' ? new URL(location.href) : new URL('https://localhost/'))
+	let target: URL
+	try {
+		target = new URL(href, base)
+	} catch {
+		throw new Error('Malformed DAV href.')
+	}
+	if (expectedParentUrl) {
+		if (target.origin !== expectedParentUrl.origin) {
+			throw new Error(`DAV href origin mismatch: ${target.origin} does not match expected ${expectedParentUrl.origin}`)
+		}
+		if (target.username || target.password) {
+			throw new Error('DAV href contains disallowed userinfo or credentials.')
+		}
+		if (target.search || target.hash) {
+			throw new Error('DAV href contains disallowed query or fragment parameters.')
+		}
+		const expectedPath = expectedParentUrl.pathname.replace(/\/$/, '')
+		const targetPath = target.pathname.replace(/\/$/, '')
+		if (targetPath !== expectedPath && !targetPath.startsWith(expectedPath + '/')) {
+			throw new Error(`DAV href outside expected collection: ${target.pathname} is outside ${expectedParentUrl.pathname}`)
+		}
+	}
+	return target.pathname
+}
+
+function findSuccessfulPropstats(responseEl: Element): Element[] {
+	const propstats = findElements(responseEl, 'DAV:', 'propstat')
+	const successfulProps: Element[] = []
+	for (const ps of propstats) {
+		const statusEl = findElements(ps, 'DAV:', 'status')[0]
+		const status = statusEl?.textContent?.trim()
+		if (!status || status.includes('200')) {
+			const propEl = findElements(ps, 'DAV:', 'prop')[0]
+			if (propEl) successfulProps.push(propEl)
+		}
+	}
+	return successfulProps
+}
+
+function getPropText(props: Element[], ns: string, localName: string): string {
+	for (const prop of props) {
+		const text = getElemText(prop, ns, localName)
+		if (text) return text
+	}
+	return ''
+}
+
+function hasPropElement(props: Element[], ns: string, localName: string): boolean {
+	for (const prop of props) {
+		if (findElements(prop, ns, localName).length > 0) return true
+	}
+	return false
+}
+
+function parseCalendarsXml(xmlText: string, expectedParentUrl?: URL): DavCalendar[] {
 	const doc = parseXmlDoc(xmlText)
 	if (!doc) return []
 	const responses = findElements(doc, 'DAV:', 'response')
 	const result: DavCalendar[] = []
 	for (const r of responses) {
-		const isCalendar = findElements(r, 'urn:ietf:params:xml:ns:caldav', 'calendar').length > 0
+		const props = findSuccessfulPropstats(r)
+		if (!props.length) continue
+		const isCalendar = hasPropElement(props, 'urn:ietf:params:xml:ns:caldav', 'calendar')
 		if (!isCalendar) continue
-		const href = getElemText(r, 'DAV:', 'href')
-		const id = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
-		const title = getElemText(r, 'DAV:', 'displayname') || id
-		const comps = findElements(r, 'urn:ietf:params:xml:ns:caldav', 'comp')
-			.map(c => c.getAttribute('name') ?? '')
-			.filter(Boolean)
-		const canWrite = findElements(r, 'DAV:', 'write').length > 0
-		const color = getElemText(r, 'http://apple.com/ns/ical/', 'calendar-color')
+		const rawHref = getElemText(r, 'DAV:', 'href')
+		const validPath = validateDavHref(rawHref, expectedParentUrl)
+		if (!validPath) continue
+		const id = decodeURIComponent(validPath.replace(/\/$/, '').split('/').pop() ?? '')
+		if (!id) continue
+		const title = getPropText(props, 'DAV:', 'displayname') || id
+		const comps: string[] = []
+		for (const prop of props) {
+			for (const c of findElements(prop, 'urn:ietf:params:xml:ns:caldav', 'comp')) {
+				const name = c.getAttribute('name')
+				if (name && !comps.includes(name)) comps.push(name)
+			}
+		}
+		const canWrite = hasPropElement(props, 'DAV:', 'write')
+		const color = getPropText(props, 'http://apple.com/ns/ical/', 'calendar-color')
 		result.push({
 			id,
 			title,
-			href,
+			href: validPath,
 			components: comps.length ? comps : ['VEVENT', 'VTODO'],
 			canWrite,
 			color: color || undefined,
 		})
+		if (result.length >= 50) break
 	}
 	return result
 }
 
-function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO'): DavCalendarObject[] {
+type JCalData = ConstructorParameters<typeof ICAL.Component>[0]
+
+interface DavParsedTime {
+	zone?: { tzid?: string }
+	isUtc?: boolean
+	isDate?: boolean
+	timezone?: string
+	toString(): string
+}
+
+function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO', expectedParentUrl?: URL): DavCalendarObject[] {
 	const doc = parseXmlDoc(xmlText)
 	if (!doc) return []
 	const responses = findElements(doc, 'DAV:', 'response')
 	const result: DavCalendarObject[] = []
-	for (const r of responses.slice(0, 50)) {
-		const href = getElemText(r, 'DAV:', 'href')
-		const filename = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
-		const etag = getElemText(r, 'DAV:', 'getetag').replace(/^"|"$/g, '')
-		const raw = getElemText(r, 'urn:ietf:params:xml:ns:caldav', 'calendar-data')
-		if (!raw) continue
-		const p = parseDavProperties(raw, component)
-		result.push({
-			href,
-			filename,
-			etag,
-			summary: p.values.SUMMARY ? unescapeCalendarText(p.values.SUMMARY) : undefined,
-			description: p.values.DESCRIPTION ? unescapeCalendarText(p.values.DESCRIPTION) : undefined,
-			location: p.values.LOCATION ? unescapeCalendarText(p.values.LOCATION) : undefined,
-			startUtc: p.values.DTSTART,
-			endUtc: p.values.DTEND,
-			dueDate: p.values.DUE,
-			status: p.values.STATUS,
-			percentComplete: p.values['PERCENT-COMPLETE'],
-			priority: p.values.PRIORITY,
-			uid: p.values.UID,
-			recurring: p.instances !== 1 || !!p.values.RRULE || !!p.values['RECURRENCE-ID'],
-			hasAttendees: /(?:^|\r?\n)ATTENDEE[;:]/i.test(raw),
-			propertyParameters: p.parameters,
-		})
+	for (const r of responses) {
+		const rawHref = getElemText(r, 'DAV:', 'href')
+		const validPath = validateDavHref(rawHref, expectedParentUrl)
+		if (!validPath) continue
+
+		// Collections are collections, not leaf calendar objects
+		const isCollection = hasPropElement(findElements(r, 'DAV:', 'prop'), 'DAV:', 'collection') || validPath.endsWith('/')
+		if (isCollection) continue
+
+		const props = findSuccessfulPropstats(r)
+		if (!props.length) continue
+
+		const rawEtag = getPropText(props, 'DAV:', 'getetag')
+		const etag = rawEtag.replace(/^"|"$/g, '').trim()
+		if (!etag) continue
+
+		const rawData = getPropText(props, 'urn:ietf:params:xml:ns:caldav', 'calendar-data')
+		if (!rawData) continue
+
+		const filename = decodeURIComponent(validPath.split('/').pop() ?? '')
+		if (!filename.endsWith('.ics')) continue
+
+		try {
+			const jcal = ICAL.parse(rawData)
+			const comp = new ICAL.Component(jcal as unknown as JCalData)
+			const sub = comp.getFirstSubcomponent(component.toLowerCase())
+			if (!sub) continue
+
+			const dtstartProp = sub.getFirstProperty('dtstart')
+			const dtendProp = sub.getFirstProperty('dtend')
+			const dueProp = sub.getFirstProperty('due')
+
+			let startUtc: string | undefined
+			let startDate: string | undefined
+			let endUtc: string | undefined
+			let endDate: string | undefined
+			let timezone: string | undefined
+			let dueDate: string | undefined
+			let dueUtc: string | undefined
+
+			if (dtstartProp) {
+				const time = dtstartProp.getFirstValue() as unknown as DavParsedTime
+				const tzid = dtstartProp.getParameter('tzid') || (time.zone && time.zone.tzid !== 'floating' && time.zone.tzid !== 'UTC' ? time.zone.tzid : undefined)
+				if (time.zone?.tzid === 'UTC' || time.isUtc) {
+					startUtc = time.toString()
+				} else {
+					startDate = time.toString()
+					timezone = tzid || 'floating'
+				}
+			}
+			if (dtendProp) {
+				const time = dtendProp.getFirstValue() as unknown as DavParsedTime
+				if (time.zone?.tzid === 'UTC' || time.isUtc) {
+					endUtc = time.toString()
+				} else {
+					endDate = time.toString()
+				}
+			}
+			if (dueProp) {
+				const time = dueProp.getFirstValue() as unknown as DavParsedTime
+				if (time.isDate) {
+					dueDate = time.toString()
+				} else if (time.zone?.tzid === 'UTC' || time.isUtc) {
+					dueUtc = time.toString()
+				} else {
+					dueDate = time.toString()
+					timezone = dueProp.getParameter('tzid') || time.timezone || 'floating'
+				}
+			}
+
+			const summary = sub.getFirstPropertyValue('summary')
+			const description = sub.getFirstPropertyValue('description')
+			const location = sub.getFirstPropertyValue('location')
+			const status = sub.getFirstPropertyValue('status')
+			const percentComplete = sub.getFirstPropertyValue('percent-complete')
+			const priority = sub.getFirstPropertyValue('priority')
+			const uid = sub.getFirstPropertyValue('uid')
+
+			const isRecurring = !!sub.getFirstProperty('rrule')
+				|| !!sub.getFirstProperty('recurrence-id')
+				|| !!sub.getFirstProperty('rdate')
+				|| !!sub.getFirstProperty('exdate')
+				|| comp.getAllSubcomponents(component.toLowerCase()).length > 1
+
+			const hasAttendees = !!sub.getFirstProperty('attendee') || !!sub.getFirstProperty('organizer')
+
+			const propertyParameters: Record<string, string> = {}
+			for (const prop of sub.getAllProperties()) {
+				const key = prop.name.toUpperCase()
+				const line = prop.toICALString()
+				const colonIdx = line.indexOf(':')
+				if (colonIdx > 0) {
+					propertyParameters[key] = line.slice(0, colonIdx)
+				}
+			}
+
+			result.push({
+				href: validPath,
+				filename,
+				etag,
+				summary: typeof summary === 'string' ? summary : undefined,
+				description: typeof description === 'string' ? description : undefined,
+				location: typeof location === 'string' ? location : undefined,
+				startUtc,
+				startDate,
+				endUtc,
+				endDate,
+				timezone,
+				dueDate,
+				dueUtc,
+				status: typeof status === 'string' ? status : undefined,
+				percentComplete: percentComplete !== undefined && percentComplete !== null ? String(percentComplete) : undefined,
+				priority: priority !== undefined && priority !== null ? String(priority) : undefined,
+				uid: typeof uid === 'string' ? uid : undefined,
+				recurring: isRecurring,
+				hasAttendees,
+				propertyParameters,
+			})
+			if (result.length >= 50) break
+		} catch {
+			continue
+		}
 	}
 	return result
 }
 
-function parseAddressBooksXml(xmlText: string): DavAddressBook[] {
+function parseAddressBooksXml(xmlText: string, expectedParentUrl?: URL): DavAddressBook[] {
 	const doc = parseXmlDoc(xmlText)
 	if (!doc) return []
 	const responses = findElements(doc, 'DAV:', 'response')
 	const result: DavAddressBook[] = []
 	for (const r of responses) {
-		const isBook = findElements(r, 'urn:ietf:params:xml:ns:carddav', 'addressbook').length > 0
+		const props = findSuccessfulPropstats(r)
+		if (!props.length) continue
+		const isBook = hasPropElement(props, 'urn:ietf:params:xml:ns:carddav', 'addressbook')
 		if (!isBook) continue
-		const href = getElemText(r, 'DAV:', 'href')
-		const id = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
-		const title = getElemText(r, 'DAV:', 'displayname') || id
-		const canWrite = findElements(r, 'DAV:', 'write').length > 0
-		result.push({ id, title, href, canWrite })
+		const rawHref = getElemText(r, 'DAV:', 'href')
+		const validPath = validateDavHref(rawHref, expectedParentUrl)
+		if (!validPath) continue
+		const id = decodeURIComponent(validPath.replace(/\/$/, '').split('/').pop() ?? '')
+		if (!id) continue
+		const title = getPropText(props, 'DAV:', 'displayname') || id
+		const canWrite = hasPropElement(props, 'DAV:', 'write')
+		result.push({ id, title, href: validPath, canWrite })
+		if (result.length >= 10) break
 	}
 	return result
 }
 
-function parseContactsXml(xmlText: string, bookTitle: string): DavContact[] {
+function parseContactsXml(xmlText: string, bookTitle: string, expectedParentUrl?: URL): DavContact[] {
 	const doc = parseXmlDoc(xmlText)
 	if (!doc) return []
 	const responses = findElements(doc, 'DAV:', 'response')
 	const result: DavContact[] = []
 	for (const r of responses) {
-		const href = getElemText(r, 'DAV:', 'href')
-		const filename = decodeURIComponent(href.replace(/\/$/, '').split('/').pop() ?? '')
-		const etag = getElemText(r, 'DAV:', 'getetag').replace(/^"|"$/g, '')
-		const raw = getElemText(r, 'urn:ietf:params:xml:ns:carddav', 'address-data')
-		if (!raw) continue
-		const p = parseDavProperties(raw, 'VCARD')
-		result.push({
-			href,
-			filename,
-			book: bookTitle,
-			uid: p.values.UID,
-			name: p.values.FN ? unescapeCalendarText(p.values.FN) : undefined,
-			email: p.values.EMAIL ? unescapeCalendarText(p.values.EMAIL) : undefined,
-			tel: p.values.TEL ? unescapeCalendarText(p.values.TEL) : undefined,
-			note: p.values.NOTE ? unescapeCalendarText(p.values.NOTE) : undefined,
-			categories: p.values.CATEGORIES ? unescapeCalendarText(p.values.CATEGORIES) : undefined,
-			etag,
-		})
+		const rawHref = getElemText(r, 'DAV:', 'href')
+		const validPath = validateDavHref(rawHref, expectedParentUrl)
+		if (!validPath) continue
+
+		// Collections are not leaf contacts
+		const isCollection = hasPropElement(findElements(r, 'DAV:', 'prop'), 'DAV:', 'collection') || validPath.endsWith('/')
+		if (isCollection) continue
+
+		const props = findSuccessfulPropstats(r)
+		if (!props.length) continue
+
+		const rawEtag = getPropText(props, 'DAV:', 'getetag')
+		const etag = rawEtag.replace(/^"|"$/g, '').trim()
+		if (!etag) continue
+
+		const rawData = getPropText(props, 'urn:ietf:params:xml:ns:carddav', 'address-data')
+		if (!rawData) continue
+
+		const filename = decodeURIComponent(validPath.split('/').pop() ?? '')
+		if (!filename.endsWith('.vcf')) continue
+
+		try {
+			const jcal = ICAL.parse(rawData)
+			const comp = new ICAL.Component(jcal as unknown as JCalData)
+			if (comp.name !== 'vcard') continue
+
+			const uid = comp.getFirstPropertyValue('uid')
+			const fn = comp.getFirstPropertyValue('fn')
+			const email = comp.getFirstPropertyValue('email')
+			const tel = comp.getFirstPropertyValue('tel')
+			const note = comp.getFirstPropertyValue('note')
+			const catProp = comp.getFirstProperty('categories')
+			const categories = catProp ? (catProp.getValues().join(',') || catProp.getFirstValue()) : undefined
+
+			result.push({
+				href: validPath,
+				filename,
+				book: bookTitle,
+				uid: typeof uid === 'string' ? uid : undefined,
+				name: typeof fn === 'string' ? fn : undefined,
+				email: typeof email === 'string' ? email : undefined,
+				tel: typeof tel === 'string' ? tel : undefined,
+				note: typeof note === 'string' ? note : undefined,
+				categories: typeof categories === 'string' ? categories : undefined,
+				etag,
+			})
+			if (result.length >= 50) break
+		} catch {
+			continue
+		}
 	}
 	return result
 }

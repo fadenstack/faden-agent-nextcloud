@@ -295,7 +295,11 @@ export interface DavCalendarObject {
 	location?: string
 	startUtc?: string
 	endUtc?: string
+	startDate?: string
+	endDate?: string
+	timezone?: string
 	dueDate?: string
+	dueUtc?: string
 	status?: string
 	percentComplete?: string
 	priority?: string
