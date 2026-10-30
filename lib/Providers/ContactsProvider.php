@@ -73,24 +73,7 @@ final class ContactsProvider {
 	}
 
 	private function document(array $response): \DOMXPath {
-		if ($response['status'] !== 207 || str_contains(strtoupper($response['body']), '<!DOCTYPE')) {
-			throw new Problem('The native Contacts response is invalid.', 503);
-		}
-		$document = new \DOMDocument();
-		$previous = libxml_use_internal_errors(true);
-		try {
-			$loaded = $document->loadXML($response['body'], LIBXML_NONET);
-		} finally {
-			libxml_clear_errors();
-			libxml_use_internal_errors($previous);
-		}
-		if (!$loaded || $document->documentElement?->localName !== 'multistatus' || $document->documentElement?->namespaceURI !== 'DAV:') {
-			throw new Problem('The native Contacts response is invalid.', 503);
-		}
-		$xpath = new \DOMXPath($document);
-		$xpath->registerNamespace('d', 'DAV:');
-		$xpath->registerNamespace('c', 'urn:ietf:params:xml:ns:carddav');
-		return $xpath;
+		return DavResponse::document($response, 'urn:ietf:params:xml:ns:carddav');
 	}
 
 	private function text(\DOMXPath $xpath, string $expression, \DOMNode $node): string {
@@ -98,13 +81,20 @@ final class ContactsProvider {
 	}
 
 	public function capabilities(): array {
-		$policy = $this->policy->contacts();
+		try {
+			$policy = $this->policy->contacts();
+		} catch (Problem $error) {
+			if ($error->status === 403) {
+				return [];
+			}
+			throw $error;
+		}
 		$writesEnabled = $this->configuration->providerWritesEnabled() && ($policy['writesEnabled'] ?? false);
 		return [[
 			'provider' => 'contacts',
 			'apiVersion' => 'carddav-v1',
 			'policyVersion' => $policy['policyVersion'],
-			'enabled' => $policy['enabled'],
+			'enabled' => true,
 			'tools' => $writesEnabled
 				? ['nc_contacts_list', 'nc_contacts_find', 'nc_contacts_read', 'nc_contacts_create', 'nc_contacts_patch', 'nc_contacts_delete']
 				: ['nc_contacts_list', 'nc_contacts_find', 'nc_contacts_read'],
@@ -134,8 +124,7 @@ final class ContactsProvider {
 			if (!$isBook) {
 				continue;
 			}
-			$segments = array_values(array_filter(explode('/', trim($href, '/'))));
-			$id = rawurldecode(end($segments) ?: '');
+			$id = DavReference::collection($this->bridge->base(), 'contacts', $policy['actor'], $href);
 			if (!in_array($id, $policy['collections'], true)) {
 				continue;
 			}
@@ -144,9 +133,9 @@ final class ContactsProvider {
 				'provider' => 'contacts',
 				'resourceId' => 'nextcloud:contacts:' . rtrim(strtr(base64_encode($id), '+/', '-_'), '='),
 				'collectionId' => $id,
-				'revision' => $this->text($xpath, 'd:propstat/d:prop/d:getetag', $response) ?: 'book-r1',
+				'revision' => hash('sha256', $response->C14N()),
 				'sourceClass' => $policy['sourceClass'],
-				'audience' => $policy['audience'],
+				'audience' => 'unknown',
 				'policyVersion' => $policy['policyVersion'],
 				'title' => $title !== '' ? $title : $id,
 			];
@@ -162,21 +151,12 @@ final class ContactsProvider {
 		}
 		$books = $this->books();
 		$found = [];
-		$safeQuery = htmlspecialchars($query, ENT_XML1, 'UTF-8');
-		$body = "<c:addressbook-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:carddav\"><d:prop><d:getetag/><c:address-data/></d:prop><c:filter><c:prop-filter name=\"FN\"><c:text-match collation=\"i;unicode-casemap\" match-type=\"contains\">{$safeQuery}</c:text-match></c:prop-filter></c:filter></c:addressbook-query>";
-
 		foreach (array_slice($books, 0, 10) as $book) {
 			$bookId = $book['collectionId'];
-			$xpath = $this->document($this->bridge->send(new NativeRequest(
-				'REPORT',
-				"/remote.php/dav/addressbooks/users/{$policy['actor']}/{$bookId}/",
-				['Depth' => '1', 'Content-Type' => 'application/xml; charset=utf-8'],
-				$body
-			)));
+			$xpath = $this->document($this->bridge->send(NativeRequest::findAddressbookObjects($policy['actor'], $bookId, $query)));
 			foreach ($xpath->query('/d:multistatus/d:response') as $response) {
 				$href = $this->text($xpath, 'd:href', $response);
-				$segments = array_values(array_filter(explode('/', trim($href, '/'))));
-				$filename = rawurldecode(end($segments) ?: '');
+				$filename = DavReference::object($this->bridge->base(), 'contacts', $policy['actor'], $bookId, $href);
 				if (!str_ends_with(strtolower($filename), '.vcf')) {
 					continue;
 				}
@@ -184,15 +164,20 @@ final class ContactsProvider {
 				if ($content === '') {
 					continue;
 				}
-				$etag = trim($this->text($xpath, 'd:propstat/d:prop/d:getetag', $response), '"') ?: 'contact-r1';
+				$class = CalendarClassification::sourceClass($content, $policy['sourceClass']);
+				$this->policy->assertDisclosure($policy, $class);
+				if (strlen($content) > 65536) {
+					throw new Problem('Narrow the contact request.', 413);
+				}
+				$etag = NativeRequest::strongEtag($this->text($xpath, 'd:propstat/d:prop/d:getetag', $response));
 				$found[] = [
 					'provider' => 'contacts',
 					'resourceId' => 'nextcloud:contacts:' . rtrim(strtr(base64_encode("{$bookId}\0{$filename}"), '+/', '-_'), '='),
 					'collectionId' => $bookId,
 					'filename' => $filename,
 					'revision' => $etag,
-					'sourceClass' => $policy['sourceClass'],
-					'audience' => $policy['audience'],
+					'sourceClass' => $class,
+					'audience' => 'unknown',
 					'policyVersion' => $policy['policyVersion'],
 					'contentProfile' => 'vcard-xml-normalized',
 					'content' => $content,
@@ -217,8 +202,14 @@ final class ContactsProvider {
 			if ($res['status'] !== 200) {
 				throw new Problem('The contact resource is not available.', 404);
 			}
+			$class = CalendarClassification::sourceClass($res['body'], $policy['sourceClass']);
+			$this->policy->assertDisclosure($policy, $class);
+			$etag = DavResponse::etag($res['etag'] ?? '');
 			return [
-				'etag' => trim($res['etag'] ?? '', '"'),
+				'provider' => 'contacts', 'collectionId' => $bookId, 'filename' => $filename,
+				'resourceId' => 'nextcloud:contacts:' . rtrim(strtr(base64_encode($bookId . "\0" . $filename), '+/', '-_'), '='),
+				'revision' => $etag, 'etag' => $etag, 'sourceClass' => $class,
+				'audience' => 'unknown', 'policyVersion' => $policy['policyVersion'],
 				'content' => $res['body'],
 			];
 		}
@@ -227,8 +218,7 @@ final class ContactsProvider {
 		$contacts = [];
 		foreach ($xpath->query('/d:multistatus/d:response') as $response) {
 			$href = $this->text($xpath, 'd:href', $response);
-			$segments = array_values(array_filter(explode('/', trim($href, '/'))));
-			$fn = rawurldecode(end($segments) ?: '');
+			$fn = DavReference::object($this->bridge->base(), 'contacts', $policy['actor'], $bookId, $href);
 			if (!str_ends_with(strtolower($fn), '.vcf')) {
 				continue;
 			}
@@ -236,14 +226,19 @@ final class ContactsProvider {
 			if ($content === '') {
 				continue;
 			}
+			if (strlen($content) > 65536) {
+				throw new Problem('Narrow the contact request.', 413);
+			}
+			$class = CalendarClassification::sourceClass($content, $policy['sourceClass']);
+			$this->policy->assertDisclosure($policy, $class);
 			$contacts[] = [
 				'provider' => 'contacts',
 				'resourceId' => 'nextcloud:contacts:' . rtrim(strtr(base64_encode("{$bookId}\0{$fn}"), '+/', '-_'), '='),
 				'collectionId' => $bookId,
 				'filename' => $fn,
-				'revision' => trim($this->text($xpath, 'd:propstat/d:prop/d:getetag', $response), '"') ?: 'contact-r1',
-				'sourceClass' => $policy['sourceClass'],
-				'audience' => $policy['audience'],
+				'revision' => DavResponse::etag($this->text($xpath, 'd:propstat/d:prop/d:getetag', $response)),
+				'sourceClass' => $class,
+				'audience' => 'unknown',
 				'policyVersion' => $policy['policyVersion'],
 				'contentProfile' => 'vcard-xml-normalized',
 				'content' => $content,
@@ -295,10 +290,12 @@ final class ContactsProvider {
 			if ($current['status'] !== 200) {
 				throw new Problem('The contact resource is not available.', 404);
 			}
-			$currentEtag = trim($current['etag'], '"');
-			if ($currentEtag !== trim($expectedEtag, '"')) {
+			$currentEtag = DavResponse::etag($current['etag']);
+			$expectedEtag = NativeRequest::strongEtag($expectedEtag);
+			if ($currentEtag !== $expectedEtag) {
 				throw new Problem('The contact resource changed. Read it again before proposing a write.', 409);
 			}
+			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($current['body'], $policy['sourceClass']));
 			$this->assertPrivateContact($current['body']);
 			$this->assertPrivateContact($vcardData);
 		} else { // delete
@@ -309,10 +306,12 @@ final class ContactsProvider {
 			if ($current['status'] !== 200) {
 				throw new Problem('The contact resource is not available.', 404);
 			}
-			$currentEtag = trim($current['etag'], '"');
-			if ($currentEtag !== trim($expectedEtag, '"')) {
+			$currentEtag = DavResponse::etag($current['etag']);
+			$expectedEtag = NativeRequest::strongEtag($expectedEtag);
+			if ($currentEtag !== $expectedEtag) {
 				throw new Problem('The contact resource changed. Read it again before proposing a write.', 409);
 			}
+			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($current['body'], $policy['sourceClass']));
 			$this->assertPrivateContact($current['body']);
 			$vcardData = '';
 		}
@@ -383,8 +382,8 @@ final class ContactsProvider {
 		unset($state['proposals'][$id]);
 		$this->setState($state);
 
-		$journalResource = new JournalResource('contacts', $p['collectionId'], $p['filename']);
-		$journalEntry = $this->journal->prepare($identity, $p['toolName'], $journalResource, $p['content'], $p['expectedEtag'] ?? '', 'audit-only', 'not-integrated');
+		$journalResource = new JournalResource('contacts', 'book:' . $p['collectionId'] . '/contact:' . $p['filename'], 'book:' . $p['collectionId']);
+		$journalEntry = $this->journal->prepare($identity, $journalResource, $p['toolName'], ['content' => $p['content']], [], ['etag' => $p['expectedEtag']]);
 		$this->journal->markDispatched($identity, $journalEntry['id'], $journalEntry['ticket']);
 
 		$this->session->close();
@@ -399,7 +398,14 @@ final class ContactsProvider {
 			$res = $this->bridge->send($request);
 		} catch (Problem $err) {
 			if ($err->status === 412) {
-				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'failed');
+				// The native condition refused this attempt. Settle only with a
+				// fresh authorized revision; loss of readback remains uncertain.
+				try {
+					$current = $this->bridge->send(NativeRequest::addressbookObject($policy['actor'], $p['collectionId'], $p['filename']));
+					$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unchanged', new VerifiedReadback(DavResponse::etag($current['etag'])));
+				} catch (\Throwable) {
+					$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
+				}
 				throw new Problem('The contact resource was modified by another actor.', 412);
 			}
 			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
@@ -409,10 +415,9 @@ final class ContactsProvider {
 		try {
 			$verify = $this->bridge->send(NativeRequest::addressbookObject($policy['actor'], $p['collectionId'], $p['filename']));
 			if ($p['operation'] === 'delete') {
-				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
 				throw new Problem('The contact resource could not be confirmed deleted.', 409);
 			}
-			$finalEtag = trim($verify['etag'], '"');
+			$finalEtag = trim(DavResponse::verifyContent($verify, $p['content']), '"');
 			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback($finalEtag));
 			return [
 				'status' => 'saved',

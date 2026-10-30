@@ -83,24 +83,7 @@ final class TasksProvider {
 	}
 
 	private function document(array $response): \DOMXPath {
-		if ($response['status'] !== 207 || str_contains(strtoupper($response['body']), '<!DOCTYPE')) {
-			throw new Problem('The native Tasks response is invalid.', 503);
-		}
-		$document = new \DOMDocument();
-		$previous = libxml_use_internal_errors(true);
-		try {
-			$loaded = $document->loadXML($response['body'], LIBXML_NONET);
-		} finally {
-			libxml_clear_errors();
-			libxml_use_internal_errors($previous);
-		}
-		if (!$loaded || $document->documentElement?->localName !== 'multistatus' || $document->documentElement?->namespaceURI !== 'DAV:') {
-			throw new Problem('The native Tasks response is invalid.', 503);
-		}
-		$xpath = new \DOMXPath($document);
-		$xpath->registerNamespace('d', 'DAV:');
-		$xpath->registerNamespace('c', 'urn:ietf:params:xml:ns:caldav');
-		return $xpath;
+		return DavResponse::document($response, 'urn:ietf:params:xml:ns:caldav');
 	}
 
 	private function text(\DOMXPath $xpath, string $expression, \DOMNode $node): string {
@@ -108,13 +91,20 @@ final class TasksProvider {
 	}
 
 	public function capabilities(): array {
-		$policy = $this->policy->tasks();
+		try {
+			$policy = $this->policy->tasks();
+		} catch (Problem $error) {
+			if ($error->status === 403) {
+				return [];
+			}
+			throw $error;
+		}
 		$writesEnabled = $this->configuration->providerWritesEnabled() && ($policy['writesEnabled'] ?? false);
 		return [[
 			'provider' => 'tasks',
 			'apiVersion' => 'caldav-v1',
 			'policyVersion' => $policy['policyVersion'],
-			'enabled' => $policy['enabled'],
+			'enabled' => true,
 			'tools' => $writesEnabled
 				? ['nc_tasks_read', 'nc_tasks_create', 'nc_tasks_patch', 'nc_tasks_delete']
 				: ['nc_tasks_read'],
@@ -157,8 +147,7 @@ final class TasksProvider {
 				continue;
 			}
 
-			$segments = array_values(array_filter(explode('/', trim($href, '/'))));
-			$id = rawurldecode(end($segments) ?: '');
+			$id = DavReference::collection($this->bridge->base(), 'tasks', $policy['actor'], $href);
 			if (!in_array($id, $policy['collections'], true)) {
 				continue;
 			}
@@ -167,9 +156,9 @@ final class TasksProvider {
 				'provider' => 'tasks',
 				'resourceId' => 'nextcloud:tasks:' . rtrim(strtr(base64_encode($id), '+/', '-_'), '='),
 				'collectionId' => $id,
-				'revision' => $this->text($xpath, 'd:propstat/d:prop/d:getetag', $response) ?: 'collection-r1',
+				'revision' => hash('sha256', $response->C14N()),
 				'sourceClass' => $policy['sourceClass'],
-				'audience' => $policy['audience'],
+				'audience' => 'unknown',
 				'policyVersion' => $policy['policyVersion'],
 				'title' => $title !== '' ? $title : $id,
 			];
@@ -187,8 +176,7 @@ final class TasksProvider {
 		$tasks = [];
 		foreach ($xpath->query('/d:multistatus/d:response') as $response) {
 			$href = $this->text($xpath, 'd:href', $response);
-			$segments = array_values(array_filter(explode('/', trim($href, '/'))));
-			$filename = rawurldecode(end($segments) ?: '');
+			$filename = DavReference::object($this->bridge->base(), 'tasks', $policy['actor'], $collectionId, $href);
 			if (!str_ends_with(strtolower($filename), '.ics')) {
 				continue;
 			}
@@ -196,14 +184,20 @@ final class TasksProvider {
 			if ($content === '') {
 				continue;
 			}
+			if (count($tasks) >= 50 || strlen($content) > 65536) {
+				throw new Problem('Narrow the task request.', 413);
+			}
+			$class = CalendarClassification::sourceClass($content, $policy['sourceClass']);
+			$this->policy->assertDisclosure($policy, $class);
+			$etag = NativeRequest::strongEtag($this->text($xpath, 'd:propstat/d:prop/d:getetag', $response));
 			$tasks[] = [
 				'provider' => 'tasks',
 				'resourceId' => 'nextcloud:tasks:' . rtrim(strtr(base64_encode("{$collectionId}\0{$filename}"), '+/', '-_'), '='),
 				'collectionId' => $collectionId,
 				'filename' => $filename,
-				'revision' => trim($this->text($xpath, 'd:propstat/d:prop/d:getetag', $response), '"') ?: 'task-r1',
-				'sourceClass' => $policy['sourceClass'],
-				'audience' => $policy['audience'],
+				'revision' => $etag,
+				'sourceClass' => $class,
+				'audience' => 'unknown',
 				'policyVersion' => $policy['policyVersion'],
 				'contentProfile' => 'icalendar-xml-normalized',
 				'content' => $content,
@@ -223,6 +217,7 @@ final class TasksProvider {
 		if ($res['status'] !== 200) {
 			throw new Problem('The task resource is not available.', 404);
 		}
+		$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($res['body'], $policy['sourceClass']));
 		return [
 			'etag' => trim($res['etag'] ?? '', '"'),
 			'content' => $res['body'],
@@ -269,10 +264,12 @@ final class TasksProvider {
 			if ($current['status'] !== 200) {
 				throw new Problem('The task resource is not available.', 404);
 			}
-			$currentEtag = trim($current['etag'], '"');
-			if ($currentEtag !== trim($expectedEtag, '"')) {
+			$currentEtag = DavResponse::etag($current['etag']);
+			$expectedEtag = NativeRequest::strongEtag($expectedEtag);
+			if ($currentEtag !== $expectedEtag) {
 				throw new Problem('The task resource changed. Read it again before proposing a write.', 409);
 			}
+			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($current['body'], $policy['sourceClass']));
 			$this->assertPrivateTask($current['body']);
 			$this->assertPrivateTask($icsData);
 		} else { // delete
@@ -283,10 +280,12 @@ final class TasksProvider {
 			if ($current['status'] !== 200) {
 				throw new Problem('The task resource is not available.', 404);
 			}
-			$currentEtag = trim($current['etag'], '"');
-			if ($currentEtag !== trim($expectedEtag, '"')) {
+			$currentEtag = DavResponse::etag($current['etag']);
+			$expectedEtag = NativeRequest::strongEtag($expectedEtag);
+			if ($currentEtag !== $expectedEtag) {
 				throw new Problem('The task resource changed. Read it again before proposing a write.', 409);
 			}
+			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($current['body'], $policy['sourceClass']));
 			$this->assertPrivateTask($current['body']);
 			$icsData = '';
 		}
@@ -358,8 +357,8 @@ final class TasksProvider {
 		unset($state['proposals'][$id]);
 		$this->setState($state);
 
-		$journalResource = new JournalResource('tasks', $p['collectionId'], $p['filename']);
-		$journalEntry = $this->journal->prepare($identity, $p['toolName'], $journalResource, $p['content'], $p['expectedEtag'] ?? '', 'audit-only', 'not-integrated');
+		$journalResource = new JournalResource('tasks', 'collection:' . $p['collectionId'] . '/task:' . $p['filename'], 'collection:' . $p['collectionId']);
+		$journalEntry = $this->journal->prepare($identity, $journalResource, $p['toolName'], ['content' => $p['content']], [], ['etag' => $p['expectedEtag']]);
 		$this->journal->markDispatched($identity, $journalEntry['id'], $journalEntry['ticket']);
 
 		// Release session lock before HTTP request
@@ -375,7 +374,14 @@ final class TasksProvider {
 			$res = $this->bridge->send($request);
 		} catch (Problem $err) {
 			if ($err->status === 412) {
-				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'failed');
+				// The native condition refused this attempt. Settle only with a
+				// fresh authorized revision; loss of readback remains uncertain.
+				try {
+					$current = $this->bridge->send(NativeRequest::calendarObject($policy['actor'], $p['collectionId'], $p['filename']));
+					$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unchanged', new VerifiedReadback(DavResponse::etag($current['etag'])));
+				} catch (\Throwable) {
+					$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
+				}
 				throw new Problem('The task resource was modified by another actor.', 412);
 			}
 			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
@@ -385,10 +391,9 @@ final class TasksProvider {
 		try {
 			$verify = $this->bridge->send(NativeRequest::calendarObject($policy['actor'], $p['collectionId'], $p['filename']));
 			if ($p['operation'] === 'delete') {
-				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
 				throw new Problem('The task resource could not be confirmed deleted.', 409);
 			}
-			$finalEtag = trim($verify['etag'], '"');
+			$finalEtag = trim(DavResponse::verifyContent($verify, $p['content']), '"');
 			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback($finalEtag));
 			return [
 				'status' => 'saved',

@@ -75,24 +75,7 @@ final class CalendarProvider {
 	}
 
 	private function document(array $response): \DOMXPath {
-		if ($response['status'] !== 207 || str_contains(strtoupper($response['body']), '<!DOCTYPE')) {
-			throw new Problem('The native Calendar response is invalid.', 503);
-		}
-		$document = new \DOMDocument();
-		$previous = libxml_use_internal_errors(true);
-		try {
-			$loaded = $document->loadXML($response['body'], LIBXML_NONET);
-		} finally {
-			libxml_clear_errors();
-			libxml_use_internal_errors($previous);
-		}
-		if (!$loaded || $document->documentElement?->localName !== 'multistatus' || $document->documentElement?->namespaceURI !== 'DAV:') {
-			throw new Problem('The native Calendar response is invalid.', 503);
-		}
-		$xpath = new \DOMXPath($document);
-		$xpath->registerNamespace('d', 'DAV:');
-		$xpath->registerNamespace('c', 'urn:ietf:params:xml:ns:caldav');
-		return $xpath;
+		return DavResponse::document($response, 'urn:ietf:params:xml:ns:caldav');
 	}
 
 	private function text(\DOMXPath $xpath, string $expression, \DOMNode $node): string {
@@ -221,6 +204,7 @@ final class CalendarProvider {
 			throw new Problem('The calendar resource is not available.', 404);
 		}
 		$etag = trim($resp['etag'], '"');
+		$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($resp['body'], $policy['sourceClass']));
 		return ['etag' => $etag, 'content' => $resp['body']];
 	}
 
@@ -264,10 +248,12 @@ final class CalendarProvider {
 			if ($current['status'] !== 200) {
 				throw new Problem('The calendar resource is not available.', 404);
 			}
-			$currentEtag = trim($current['etag'], '"');
-			if ($currentEtag !== trim($expectedEtag, '"')) {
+			$currentEtag = DavResponse::etag($current['etag']);
+			$expectedEtag = NativeRequest::strongEtag($expectedEtag);
+			if ($currentEtag !== $expectedEtag) {
 				throw new Problem('The calendar resource changed. Read it again before proposing a write.', 409);
 			}
+			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($current['body'], $policy['sourceClass']));
 			$this->assertPrivateEvent($current['body']);
 			$this->assertPrivateEvent($icsData);
 		} else { // delete
@@ -278,10 +264,12 @@ final class CalendarProvider {
 			if ($current['status'] !== 200) {
 				throw new Problem('The calendar resource is not available.', 404);
 			}
-			$currentEtag = trim($current['etag'], '"');
-			if ($currentEtag !== trim($expectedEtag, '"')) {
+			$currentEtag = DavResponse::etag($current['etag']);
+			$expectedEtag = NativeRequest::strongEtag($expectedEtag);
+			if ($currentEtag !== $expectedEtag) {
 				throw new Problem('The calendar resource changed. Read it again before proposing a write.', 409);
 			}
+			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($current['body'], $policy['sourceClass']));
 			$this->assertPrivateEvent($current['body']);
 			$icsData = '';
 		}
@@ -325,6 +313,9 @@ final class CalendarProvider {
 
 	public function approve(string $id): array {
 		$policy = $this->policy->calendar();
+		if (!$policy['writesEnabled']) {
+			throw new Problem('Calendar mutations have been disabled by the administrator.', 403);
+		}
 		$p = $this->proposal($id);
 		$this->assertProposalIdentity($p, $policy);
 		$state = $this->state();
@@ -335,6 +326,9 @@ final class CalendarProvider {
 
 	public function commit(string $id): array {
 		$policy = $this->policy->calendar();
+		if (!$policy['writesEnabled']) {
+			throw new Problem('Calendar mutations have been disabled by the administrator.', 403);
+		}
 		$p = $this->proposal($id);
 		$identity = $this->assertProposalIdentity($p, $policy);
 		if (!$p['approved']) {
@@ -368,7 +362,14 @@ final class CalendarProvider {
 			$this->bridge->send($req);
 		} catch (Problem $err) {
 			if ($err->status === 412) {
-				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'failed');
+				// The native condition refused this attempt. Settle only with a
+				// fresh authorized revision; loss of readback remains uncertain.
+				try {
+					$current = $this->bridge->send(NativeRequest::calendarObject($policy['actor'], $p['collectionId'], $p['filename']));
+					$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unchanged', new VerifiedReadback(DavResponse::etag($current['etag'])));
+				} catch (\Throwable) {
+					$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
+				}
 				throw new Problem('The calendar resource was modified by another actor.', 412);
 			}
 			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
@@ -378,10 +379,9 @@ final class CalendarProvider {
 		try {
 			$verify = $this->bridge->send(NativeRequest::calendarObject($policy['actor'], $p['collectionId'], $p['filename']));
 			if ($p['operation'] === 'delete') {
-				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
 				throw new Problem('The calendar resource could not be confirmed deleted.', 409);
 			}
-			$finalEtag = trim($verify['etag'], '"');
+			$finalEtag = trim(DavResponse::verifyContent($verify, $p['content']), '"');
 			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback($finalEtag));
 			return [
 				'status' => 'saved',

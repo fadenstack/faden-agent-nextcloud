@@ -61,7 +61,10 @@ final class ProviderPolicy {
 			if (!in_array($sourceClass, ['standard', 'protected', 'unknown'], true)) {
 				throw new \InvalidArgumentException();
 			}
-			$writesAllowed = ($config['writesEnabled'] ?? true) && $this->configuration->providerWritesEnabled();
+			if (isset($config['writesEnabled']) && !is_bool($config['writesEnabled'])) {
+				throw new \InvalidArgumentException();
+			}
+			$writesAllowed = ($config['writesEnabled'] ?? false) && $this->configuration->providerWritesEnabled();
 		} catch (\Throwable) {
 			throw new Problem('The administrator provider policy is invalid.', 503);
 		}
@@ -69,7 +72,7 @@ final class ProviderPolicy {
 			throw new Problem(ucfirst($section) . ' tools have been disabled by the administrator.', 403);
 		}
 		$base = $this->filesPolicy->getPolicy($uid, $this->configuration->get()['serverUrl']);
-		$policyVersion = hash('sha256', json_encode([$uid, $base['version'], $value], JSON_THROW_ON_ERROR));
+		$policyVersion = hash('sha256', json_encode([$uid, $base['version'], $value, $writesAllowed], JSON_THROW_ON_ERROR));
 		return ['actor' => $uid, 'collections' => $collections, 'sourceClass' => $sourceClass,
 			'policyVersion' => $policyVersion, 'processing' => $base, 'writesEnabled' => $writesAllowed];
 	}

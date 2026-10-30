@@ -85,12 +85,12 @@ final class ProvidersController extends Controller {
 
 	#[NoAdminRequired]
 	public function tasksLists(): DataResponse {
-		return $this->run(fn () => $this->tasks->lists());
+		return $this->run(fn () => ['lists' => $this->tasks->lists()]);
 	}
 
 	#[NoAdminRequired]
 	public function tasksItems(string $collectionId): DataResponse {
-		return $this->run(fn () => $this->tasks->tasks($collectionId));
+		return $this->run(fn () => ['tasks' => $this->tasks->tasks($collectionId)]);
 	}
 
 	#[NoAdminRequired]
@@ -117,7 +117,7 @@ final class ProvidersController extends Controller {
 
 	#[NoAdminRequired]
 	public function contactsBooks(): DataResponse {
-		return $this->run(fn () => $this->contacts->books());
+		return $this->run(fn () => ['books' => $this->contacts->books()]);
 	}
 
 	#[NoAdminRequired]

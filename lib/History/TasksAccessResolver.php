@@ -24,6 +24,9 @@ final class TasksAccessResolver implements AccessResolver {
 		$collectionId = substr($resource->authorityReference, strlen('collection:'));
 		try {
 			$policy = $this->policy->tasks();
+			if (in_array($purpose, ['prepare', 'dispatch'], true) && !$policy['writesEnabled']) {
+				throw new JournalException('permission_lost', 403);
+			}
 			if (!in_array($collectionId, $policy['collections'], true)) {
 				throw new JournalException('permission_lost', 403);
 			}

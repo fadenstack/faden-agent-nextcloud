@@ -24,6 +24,9 @@ final class ContactsAccessResolver implements AccessResolver {
 		$bookId = substr($resource->authorityReference, strlen('book:'));
 		try {
 			$policy = $this->policy->contacts();
+			if (in_array($purpose, ['prepare', 'dispatch'], true) && !$policy['writesEnabled']) {
+				throw new JournalException('permission_lost', 403);
+			}
 			if (!in_array($bookId, $policy['collections'], true)) {
 				throw new JournalException('permission_lost', 403);
 			}

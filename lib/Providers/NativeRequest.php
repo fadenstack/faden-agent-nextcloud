@@ -26,7 +26,9 @@ final class NativeRequest {
 
 	public static function strongEtag(string $etag): string {
 		$etag = trim($etag);
-		if ($etag === '' || str_starts_with($etag, 'W/') || str_starts_with($etag, 'w/')) {
+		// One concrete opaque entity tag, never a list, wildcard or header value.
+		if (!preg_match('/^(?:"[\x21\x23-\x7e]+"|[a-zA-Z0-9._:-]+)$/D', $etag)
+			|| str_starts_with($etag, 'W/') || str_starts_with($etag, 'w/')) {
 			throw new Problem('A strong native ETag is required.', 412);
 		}
 		if (!str_starts_with($etag, '"')) {
@@ -77,6 +79,16 @@ final class NativeRequest {
 
 	public static function addressbookObjects(string $actor, string $book): self {
 		$body = '<?xml version="1.0"?><card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><card:address-data/></d:prop><card:filter/></card:addressbook-query>';
+		return new self($actor, 'REPORT', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/' . self::segment($book) . '/', $body,
+			['Depth' => '1', 'Content-Type' => 'application/xml; charset=utf-8']);
+	}
+
+	public static function findAddressbookObjects(string $actor, string $book, string $query): self {
+		if ($query === '' || strlen($query) > 80 || preg_match('/[\x00-\x1f\x7f]/', $query)) {
+			throw new Problem('Use bounded contact search text.', 400);
+		}
+		$text = htmlspecialchars($query, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+		$body = '<?xml version="1.0"?><c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop><c:filter><c:prop-filter name="FN"><c:text-match collation="i;unicode-casemap" match-type="contains">' . $text . '</c:text-match></c:prop-filter></c:filter></c:addressbook-query>';
 		return new self($actor, 'REPORT', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/' . self::segment($book) . '/', $body,
 			['Depth' => '1', 'Content-Type' => 'application/xml; charset=utf-8']);
 	}
