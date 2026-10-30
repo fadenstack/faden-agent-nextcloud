@@ -54,7 +54,7 @@ export interface ContactReadResult {
 	readonly etag?: string
 	readonly content?: string
 	readonly raw?: string
-	readonly contacts?: readonly unknown[]
+	readonly contacts?: readonly CalendarCollection[]
 	readonly complete?: boolean
 }
 

@@ -1760,7 +1760,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.files.nativeProviders?.contactsRead) {
 			const res = await this.files.nativeProviders.contactsRead(bookId, filename, signal ?? new AbortController().signal)
 			if (filename) {
-				const raw = res.content ?? res.raw
+				const raw = res.content ?? res.raw ?? ''
 				const parsed = parseDavProperties(raw, 'VCARD')
 				return {
 					etag: res.etag,
@@ -1815,7 +1815,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const current = this.files.nativeProviders?.contactsRead
 				? await (async () => {
 					const c = await this.files.nativeProviders!.contactsRead!(v.bookId, v.filename, signal)
-					const raw = c.content ?? c.raw
+					const raw = c.content ?? c.raw ?? ''
 					const parsed = parseDavProperties(raw, 'VCARD')
 					return { etag: c.etag, raw, values: parsed.values }
 				})()
@@ -1823,7 +1823,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Contact resource changed. Read it again before proposing a write.')
 			}
-			const p = parseDavProperties(current.raw, 'VCARD')
+			const currentRaw = current.raw ?? ''
+			const p = parseDavProperties(currentRaw, 'VCARD')
 			if (p.instances !== 1) {
 				throw new Error('Multi-vCard streams are not supported for single-contact patch.')
 			}
@@ -1836,7 +1837,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					mappedChanges[k.toUpperCase()] = val !== null && val !== undefined ? String(val) : null
 				}
 			}
-			const rawAfter = patchVcard(current.raw, mappedChanges)
+			const rawAfter = patchVcard(currentRaw, mappedChanges)
 			const after = parseDavProperties(rawAfter, 'VCARD').values
 			let proposalId: string | undefined
 			let revision = v.expectedEtag
@@ -1865,7 +1866,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const current = this.files.nativeProviders?.contactsRead
 				? await (async () => {
 					const c = await this.files.nativeProviders!.contactsRead!(v.bookId, v.filename, signal)
-					const raw = c.content ?? c.raw
+					const raw = c.content ?? c.raw ?? ''
 					const parsed = parseDavProperties(raw, 'VCARD')
 					return { etag: c.etag, raw, values: parsed.values }
 				})()
