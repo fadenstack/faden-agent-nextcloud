@@ -91,6 +91,7 @@ import { shallowReactive } from 'vue'
 import { commandChat } from './commands.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
+import { ProviderReadRuntime, nativeCalendarReadTools } from '../providers/readRuntime.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
 
@@ -134,6 +135,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	#attachment: AttachmentViewModel | undefined
 	readonly #fetch: FetchLike
 	readonly #developmentHttp: boolean
+	readonly #providerReads?: ProviderReadRuntime
 
 	constructor(readonly config: Identity, readonly files: FileApi, fetchImpl: FetchLike = globalThis.fetch.bind(globalThis), readonly workspace?: WorkspaceCoordinator) {
 		const url = new URL(config.serverUrl)
@@ -150,6 +152,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			// must remain possible after a source is revoked. Reauthorize before every replay.
 			if (new URL(String(input)).pathname.endsWith('/chat/completions') && config.scopePolicy) {
 				this.#sources.assertProcessing(config.scopePolicy)
+				await this.#providerReads?.assertProcessing(signal)
 				if (!files.scopeResource) throw new Error('The native scope service is unavailable.')
 				for (const reference of this.#sources.references) this.#sources.record(await files.scopeResource(reference, this.#sources.purpose(reference), signal))
 				this.#sources.assertProcessing(config.scopePolicy)
@@ -165,13 +168,14 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.tokens = new AgentTokenProvider({ apiUrl: config.serverUrl, agent: config.agent, store: new MemoryTokenStore(), fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const experimental = experimentalAdaptersAllowed(config)
+		if (config.development && config.providerReadsEnabled === true && config.scopePolicy && files.nativeProviders) this.#providerReads = new ProviderReadRuntime(files.nativeProviders)
 		const filesReadsActive = config.filesReadsEnabled === true && !!config.scopePolicy && !!files.organizeRead && !!files.sharesRead
 		const folderCreateActive = (config.development === true && config.folderCreateEnabled === true && !!config.scopePolicy && !!files.scopeResource && !!files.proposeFolderCreate && !!files.approveFolderCreate && !!files.commitFolderCreate)
 			|| (experimental && config.extendedFilesEnabled === true && !files.proposeFolderCreate && !!files.createFolder)
 		const extendedFilesMutations = experimental && config.extendedFilesEnabled === true && (!!files.createFolder || (!!files.copyFile && !!files.moveFile))
 		const tablesEnabled = experimental && config.tablesEnabled === true && !!files.tables
 		const deckEnabled = experimental && config.deckEnabled === true && !!files.deck
-		const calendarEnabled = experimental && config.calendarEnabled === true && !!files.calendar
+		const calendarEnabled = !this.#providerReads && experimental && config.calendarEnabled === true && !!files.calendar
 		const tasksEnabled = experimental && config.tasksEnabled === true && !!files.tasks
 		const contactsEnabled = experimental && config.contactsEnabled === true && !!files.contacts
 		const mailEnabled = experimental && config.mailEnabled === true && !!files.mail
@@ -207,16 +211,25 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(agentfileEnabled ? agentfileTool(this) : []))
 			.addTools(...(notesEnabled ? notesTools(this) : []))
 			.addTools(...(bookmarksEnabled ? bookmarksTools(this) : []))
+			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads) : []))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
-					const available = this.#scope?.offeredTools
-					return inner.stream(messages, available ? { ...options, tools: options.tools?.filter(tool => available.some(name => name === tool.name)) } : options)
+					const available = this.#scope ? [...this.#scope.offeredTools, ...(this.#providerReads?.offeredTools ?? [])] : undefined
+					return inner.stream(messages, available
+						? {
+							...options,
+							tools: options.tools?.filter(tool => available.some(name => name === tool.name)
+						&& (!this.#providerReads?.hasSources || fileCapability(tool.name)?.risk === 'read')),
+						}
+						: options)
 				},
 			}))
 			.addToolStage(StageOrder.custom, {
 				invoke: async (invocation, next) => {
-					this.#scope?.beginTool(invocation.tool.name)
+					if (this.#providerReads && ['nc_calendar_list', 'nc_calendar_read'].includes(invocation.tool.name)) this.#providerReads.begin(invocation.tool.name)
+					else this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
+					if (this.#providerReads?.hasSources && fileCapability(invocation.tool.name)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
 					const result = fileCapability(invocation.tool.name)?.risk === 'read'
 						? await interruptibleRead(() => next(invocation), invocation.context.signal)
 						: await next(invocation)
@@ -235,6 +248,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.useSessionStore(new MemorySessionStore()).useApprovalStore(new MemoryApprovalStore())
 			.useApprovals({
 				request: async (request, signal) => {
+					if (request.source === 'host' && this.#providerReads?.hasSources && fileCapability(request.toolName)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
 					const expanded = ([
 						TABLES_MUTATIONS, DECK_MUTATIONS, CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS,
 						MAIL_MUTATIONS, TALK_MUTATIONS, COLLECTIVES_MUTATIONS, FORMS_MUTATIONS,
@@ -2035,6 +2049,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if (this.#sources.purpose(reference) === 'shares') await this.authorizeSource(reference, stopped, 'shares')
 				}
 				if (this.#active) await this.rememberSource(`nextcloud:files:${this.#active.file.id}`, stopped)
+				await this.#providerReads?.prepare(command ? undefined : session, published, this.config.scopePolicy,
+					this.#scope.budget, () => this.#scope!.assertCurrent(), stopped)
 			}
 			stopped.throwIfAborted()
 			if (include && !this.#active) throw new Error('Select a file first.')
@@ -2053,6 +2069,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.history.verifying = false
 		if (command) { this.history.active = false; this.history.target = '' }
 		if (!command && this.chat.currentSessionId) this.#sessionSources.set(this.chat.currentSessionId, new SourceLedger(this.#sources))
+		this.#providerReads?.finish(command ? undefined : this.chat.currentSessionId)
 		for (const callId of this.#historyPreviews.keys()) this.cancelHistory(callId)
 		this.#scope?.invalidate()
 		this.#scope = undefined
@@ -2101,6 +2118,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#toolResults.clear()
 		this.#sources.clear()
 		this.#sessionSources.clear()
+		this.#providerReads?.dispose()
 		this.#scope?.invalidate()
 		this.#active = undefined
 		this.#proposals.clear()
@@ -2129,6 +2147,8 @@ function resultRecords(result: unknown): number {
 		if ('files' in result && Array.isArray(result.files)) return result.files.length + 1
 		if ('entries' in result && Array.isArray(result.entries)) return result.entries.length + 1
 		if ('shares' in result && Array.isArray(result.shares)) return result.shares.length + 1
+		if ('collections' in result && Array.isArray(result.collections)) return result.collections.length + 1
+		if ('events' in result && Array.isArray(result.events)) return result.events.length + 1
 		if (Array.isArray(result)) return result.length
 	}
 	return 1

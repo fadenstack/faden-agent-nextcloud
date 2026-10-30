@@ -7,6 +7,7 @@ import { sha256Hex } from './tables.ts'
 import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './adapterGuards.ts'
 import { parseDavProperties, parseDavDocument, contentProperty } from './caldav.ts'
 import { folderDavPlan } from './folderCreate.ts'
+import { nativeProvidersApi } from '../../providers/client.ts'
 
 const MAX_DAV_RESPONSE_BYTES = 512 * 1024
 
@@ -55,6 +56,7 @@ export class NextcloudFiles implements FileApi {
 	constructor(readonly initial: Identity, private readonly nativeFetch: typeof fetch = globalThis.fetch.bind(globalThis)) {}
 	#cloudIdentity: ((signal?: AbortSignal) => Promise<string>) | undefined
 	setCloudIdentity(provider?: (signal?: AbortSignal) => Promise<string>): void { this.#cloudIdentity = provider }
+	readonly nativeProviders = nativeProvidersApi((path, body, signal) => this.post(path, body, signal))
 	readonly history: HistoryApi = {
 		availability: signal => this.authenticatedPost('/history/availability', {}, signal),
 		list: signal => this.authenticatedPost('/history/list', {}, signal),
@@ -555,6 +557,7 @@ export class NextcloudFiles implements FileApi {
 		const now = await this.identity(signal)
 		if (now.userId !== this.initial.userId || now.binding !== this.initial.binding
 			|| now.historyEnabled !== this.initial.historyEnabled
+			|| now.providerReadsEnabled !== this.initial.providerReadsEnabled
 			|| now.development !== this.initial.development
 			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled', 'filesReadsEnabled', 'folderCreateEnabled'] as const).some(key => now[key] !== this.initial[key])
 			|| now.scopePolicy?.version !== this.initial.scopePolicy?.version

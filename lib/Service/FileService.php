@@ -122,7 +122,7 @@ class FileService {
 		$s = $this->state();
 		$config = $this->config->get();
 		$policy = $config['enabled'] && $config['agent'] && $config['serverUrl'] ? $this->scope->getPolicy($s['user'], $config['serverUrl']) : null;
-		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled(), 'filesReadsEnabled' => $this->config->filesReadsEnabled(), 'folderCreateEnabled' => $this->config->folderCreateEnabled()];
+		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled(), 'filesReadsEnabled' => $this->config->filesReadsEnabled(), 'folderCreateEnabled' => $this->config->folderCreateEnabled(), 'providerReadsEnabled' => $this->config->providerReadsEnabled()];
 	}
 
 	public function check(string $binding): void {

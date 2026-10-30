@@ -1,5 +1,6 @@
 import type { Passage } from './passages.ts'
 import type { ScopePolicy, NativeResource, ResourcePurpose } from '../../platform/scope.ts'
+import type { NativeProvidersApi } from '../../providers/client.ts'
 export interface AppConfig {
 	enabled: boolean
 	serverUrl: string
@@ -14,6 +15,7 @@ export interface Identity extends AppConfig {
 	historyEnabled?: boolean
 	filesReadsEnabled?: boolean
 	folderCreateEnabled?: boolean
+	providerReadsEnabled?: boolean
 	/** Development fixtures only until native provider scope/history acceptance. */
 	extendedFilesEnabled?: boolean
 	tablesEnabled?: boolean
@@ -598,6 +600,7 @@ export interface BookmarksApi {
 }
 
 export interface FileApi {
+	readonly nativeProviders?: NativeProvidersApi
 	history?: HistoryApi
 	tables?: TablesApi
 	deck?: DeckApi

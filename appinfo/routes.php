@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 return ['routes' => [
+	['name' => 'providers#capabilities', 'url' => '/providers/capabilities', 'verb' => 'POST'],
+	['name' => 'providers#calendarCollections', 'url' => '/providers/calendar/collections', 'verb' => 'POST'],
+	['name' => 'providers#calendarEvents', 'url' => '/providers/calendar/events', 'verb' => 'POST'],
 	['name' => 'page#index', 'url' => '/', 'verb' => 'GET'],
 	['name' => 'config#get', 'url' => '/config', 'verb' => 'GET'],
 	['name' => 'config#save', 'url' => '/config', 'verb' => 'PUT'],
