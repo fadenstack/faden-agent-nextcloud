@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { t } from '@nextcloud/l10n'
-import type { ApprovalPart, UiStrings } from '@fadenstack/ui'
+import { ToolCallPart, type ApprovalPart, type UiStrings } from '@fadenstack/ui'
 import { Icon, useViewModel } from '@fadenstack/ui-vue'
 import { approvalIcon } from '@fadenstack/ui-web'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
@@ -11,6 +11,15 @@ import { errorMessage } from '../integrations/nextcloud/files.ts'
 // proposed content) and registering it with Nextcloud before it is allowed. Only once: no "always".
 const props = defineProps<{ part: ApprovalPart; strings: UiStrings; host: NextcloudAgent }>()
 const part = useViewModel(() => props.part)
+const chat = useViewModel(() => props.host.chat)
+// RC2 represents an aborted pending approval as expired. Use the matching
+// public tool outcome to distinguish Stop from an actual unanswered timeout.
+const stateText = computed(() => {
+	if (part.value.state !== 'expired') return part.value.stateText
+	const stopped = chat.value.turns.some(turn => turn.parts.some(item => item instanceof ToolCallPart
+		&& item.callId === part.value.request.callId && item.name === part.value.toolName && item.state === 'cancelled'))
+	return stopped ? t('fadenstack_agent', 'Stopped') : part.value.stateText
+})
 const action = computed(() => {
 	switch (part.value.toolName) {
 	case 'nc_files_create_folder': return t('fadenstack_agent', 'Create folder')
@@ -100,7 +109,7 @@ function deny() {
 			</button>
 		</div>
 		<div v-else :class="`fdn-approval-state fdn-approval-${part.state}`">
-			{{ part.stateText }}
+			{{ stateText }}
 		</div>
 		<p v-if="problem" role="alert">
 			{{ problem }}

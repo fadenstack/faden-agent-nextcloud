@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { FakeGateway } from '@fadenstack/testing'
-import { ApprovalPart } from '@fadenstack/ui'
+import { ApprovalPart, type UiStrings } from '@fadenstack/ui'
+import { createApp } from 'vue'
+import NextcloudApproval from '../../src/components/NextcloudApproval.vue'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
 import type { FileApi, FileContext, HistoryDirection, HistoryPreview, Identity } from '../../src/integrations/nextcloud/types.ts'
 import type { WorkspaceCoordinator } from '../../src/workspace/coordinator.ts'
@@ -123,9 +125,18 @@ describe('published SDK explicit native history contract', () => {
 	it('the same Stop cancels a pending explicit approval and clears the unused native preview', async () => {
 		const { host, files, gateway } = await fixture()
 		const running = host.invokeHistory('undo', action)
-		await pending(host)
+		const part = await pending(host)
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(NextcloudApproval, { host, part, strings: { allow: 'Allow', deny: 'Deny' } as UiStrings })
+		app.mount(root)
+		expect(root.querySelector('.fdn-approval-head strong')?.textContent).toBe('Undo file change')
 		host.stop()
 		await running
+		try {
+			await vi.waitFor(() => expect(root.querySelector('.fdn-approval-state')?.textContent?.trim()).toBe('Stopped'))
+			expect(root.textContent).not.toContain('No answer in time')
+		} finally { app.unmount(); root.remove() }
 		expect(files.history!.approve).not.toHaveBeenCalled()
 		expect(files.history!.execute).not.toHaveBeenCalled()
 		expect(files.history!.cancel).toHaveBeenCalledWith(preview, expect.any(AbortSignal))
