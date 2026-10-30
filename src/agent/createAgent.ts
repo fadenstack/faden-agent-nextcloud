@@ -7,7 +7,7 @@ import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
 import { filesReadTools, filesFolderCreateTool, filesMutationTools, EXTENDED_FILES_MUTATIONS, validateFolderName, validateCopyMoveArgs, validateShareReadonlyArgs, type ExtendedProposal } from '../integrations/nextcloud/filesExtended.ts'
 import { tablesTools, TABLES_MUTATIONS, validateAddColumnArgs, validateAddRowArgs, validateUpdateRowArgs, validateDeleteRowArgs, sha256Hex, canonical, rowContent, type TablesProposal } from '../integrations/nextcloud/tables.ts'
-import { experimentalAdaptersAllowed, optionalPositiveInteger } from '../integrations/nextcloud/adapterGuards.ts'
+import { experimentalAdaptersAllowed, optionalPositiveInteger, assertPrototypeAcknowledgement } from '../integrations/nextcloud/adapterGuards.ts'
 import { deckTools, DECK_MUTATIONS, validateDeckPatchArgs, validateDeckCreateArgs, validateDeckMoveArgs, validateDeckAssignArgs, validateDeckLabelArgs, cardContent, type DeckProposal } from '../integrations/nextcloud/deck.ts'
 import {
 	calendarTools,
@@ -1775,6 +1775,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			} else {
 				throw new Error('Unsupported Mail mutation.')
 			}
+			assertPrototypeAcknowledgement(name, result, args)
 			return {
 				status: name === 'nc_mail_send_draft' ? 'sent' : 'saved',
 				result,
@@ -1803,6 +1804,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		try {
 			const { roomToken, message, replyTo } = validateTalkSendMessageArgs(args)
 			const result = await this.files.talk.sendMessage(roomToken, message, replyTo, call.signal)
+			assertPrototypeAcknowledgement(name, result, args)
 			return {
 				status: 'sent',
 				result,
@@ -1839,6 +1841,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			} else {
 				throw new Error('Unsupported Collectives mutation.')
 			}
+			assertPrototypeAcknowledgement(name, result, args)
 			return {
 				status: name === 'nc_collectives_delete_page' ? 'deleted' : 'saved',
 				result,
@@ -1875,6 +1878,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			} else {
 				throw new Error('Unsupported Forms mutation.')
 			}
+			assertPrototypeAcknowledgement(name, result, args)
 			return {
 				status: name === 'nc_forms_submit_response' ? 'submitted' : 'saved',
 				result,
@@ -1937,8 +1941,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			} else {
 				throw new Error('Unsupported workflow mutation.')
 			}
+			assertPrototypeAcknowledgement(name, result, args)
 			return {
-				status: name.endsWith('_run') || name.endsWith('_execute') ? 'executed' : 'saved',
+				status: name.endsWith('_run') || name.endsWith('_execute') ? 'dispatched' : 'saved',
 				result,
 				target: proposal.target,
 				history: name.endsWith('_run') || name.endsWith('_execute') ? 'no_undo_of_delivery_or_exposure_compensation_only' : 'not-integrated',

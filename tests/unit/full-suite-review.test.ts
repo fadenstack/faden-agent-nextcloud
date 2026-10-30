@@ -5,6 +5,9 @@ import { formsTools, collectivesTools, validateFormsCreateFormArgs } from '../..
 import { flowTools, whiteboardTools, windmillTools, n8nTools, notesTools, bookmarksTools, validateFlowUpdateRuleArgs, validateWhiteboardCreateArgs } from '../../src/integrations/nextcloud/workflowAgentfile.ts'
 import { TOOL_ROLLOUT } from '../../src/platform/catalog.ts'
 import type { FileApi, Identity } from '../../src/integrations/nextcloud/types.ts'
+import { NextcloudAgent } from '../../src/agent/createAgent.ts'
+import { FakeGateway } from '@fadenstack/testing'
+import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
 
 vi.mock('@nextcloud/axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('@nextcloud/router', () => ({ generateUrl: (path: string) => `${location.origin}${path}`, generateRemoteUrl: (name: string) => `${location.origin}/remote.php/${name}/` }))
@@ -15,6 +18,33 @@ const identity: Identity = { userId: 'alice', binding: 'native-binding', enabled
 const call = () => ({ callId: 'review-call', sessionId: 'session', turnId: 'turn', signal: new AbortController().signal })
 
 describe('independent full-suite runtime review', () => {
+
+	it.each([
+		{ tool: 'nc_mail_send_draft', provider: 'mail', method: 'sendDraft', flag: 'mailEnabled', args: { draftId: 1, expectedRevision: 'rev' }, response: { delivered: false, messageId: '' } },
+		{ tool: 'nc_forms_submit_response', provider: 'forms', method: 'submitResponse', flag: 'formsEnabled', args: { formId: 1, answers: { '1': 'answer' } }, response: { recorded: false, submissionId: 0 } },
+		{ tool: 'nc_flow_create_draft', provider: 'flow', method: 'createDraftRule', flag: 'flowEnabled', args: { description: 'Draft', operation: 'tag' }, response: { ruleId: 1, active: true } },
+	])('does not report success when $tool returns a negative or contradictory native acknowledgement', async scenario => {
+		let rounds = 0
+		const gateway = new FakeGateway({ users: [{ email: 'alice', password: 'test-password', id: 'user1' }], agents: [{ slug: 'review', name: 'Review', ceiling: 'auto' }],
+			model: async () => ++rounds === 1 ? { toolCalls: [{ id: 'outcome-call', name: scenario.tool, arguments: scenario.args }] } : { text: 'Outcome checked' } })
+		const native = vi.fn(async () => scenario.response)
+		const files = { identity: async () => identity, assertIdentity: async () => {}, [scenario.provider]: { [scenario.method]: native } } as unknown as FileApi
+		const agent = new NextcloudAgent({ ...identity, [scenario.flag]: true }, files, gateway.fetch)
+		try {
+			await agent.signIn('alice', 'test-password')
+			const sending = agent.send('Perform the synthetic test action', false)
+			let approval: ApprovalPart | undefined
+			await vi.waitFor(() => {
+				approval = agent.chat.turns.flatMap(turn => [...turn.parts]).find(part => part instanceof ApprovalPart && part.isPending) as ApprovalPart | undefined
+				expect(approval).toBeDefined()
+			})
+			await agent.approve(approval!)
+			await sending
+			expect(native).toHaveBeenCalledTimes(1)
+			const part = agent.chat.turns.flatMap(turn => [...turn.parts]).find(part => part instanceof ToolCallPart) as ToolCallPart
+			expect(part.state).toBe('failed')
+		} finally { await agent.dispose() }
+	})
 	it('does not mistake the research/prototype inventory for enabled production subsystems', () => {
 		expect(TOOL_ROLLOUT.enabledSubsystems).toEqual(['files'])
 	})

@@ -42,6 +42,33 @@ export function jsonRecord(value: unknown, label: string): Record<string, unknow
 	return value as Record<string, unknown>
 }
 
+/** Response validation for experimental adapters, never a native effect-boundary proof. */
+export function assertPrototypeAcknowledgement(name: string, value: unknown, args: Readonly<Record<string, unknown>>): void {
+	const result = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+	const id = (key: string) => typeof result[key] === 'number' && Number.isSafeInteger(result[key]) && (result[key] as number) > 0
+	const text = (key: string) => typeof result[key] === 'string' && (result[key] as string).trim().length > 0
+	let confirmed = false
+	switch (name) {
+	case 'nc_mail_save_draft': confirmed = id('draftId') && text('revision'); break
+	case 'nc_mail_send_draft': confirmed = result.delivered === true && text('messageId'); break
+	case 'nc_talk_send_message': confirmed = id('messageId') && typeof result.timestamp === 'number' && Number.isFinite(result.timestamp) && result.timestamp >= 0; break
+	case 'nc_collectives_create_page': confirmed = id('pageId') && text('title'); break
+	case 'nc_collectives_delete_page': confirmed = result.deleted === true && result.pageId === args.pageId; break
+	case 'nc_forms_create_form': confirmed = id('formId') && text('title'); break
+	case 'nc_forms_submit_response': confirmed = result.recorded === true && id('submissionId'); break
+	case 'nc_whiteboard_create': confirmed = result.created === true && text('path'); break
+	case 'nc_flow_create_draft': confirmed = id('ruleId') && result.active === false; break
+	case 'nc_flow_update_rule': confirmed = result.ruleId === args.ruleId && (args.deleteRule === true ? result.deleted === true : result.deleted === false && result.active === args.active); break
+	case 'nc_windmill_draft': confirmed = result.draft === true && result.path === args.path; break
+	case 'nc_windmill_run': confirmed = text('jobId') && text('status'); break
+	case 'nc_n8n_draft': confirmed = text('id') && result.active === false; break
+	case 'nc_n8n_execute': confirmed = text('executionId') && text('status'); break
+	case 'nc_notes_create': confirmed = id('noteId') && text('title'); break
+	case 'nc_bookmarks_create': confirmed = id('bookmarkId') && text('url'); break
+	}
+	if (!confirmed) throw new Error('The service did not confirm the requested action. Inspect the resource before another attempt.')
+}
+
 /** Encode exactly one raw DAV identifier; URL dot segments are never identifiers. */
 export function davSegment(value: string): string {
 	if (!value || value.length > 1024 || value === '.' || value === '..' || /[\x00-\x1f\x7f/\\]/.test(value)) throw new Error('A valid DAV path identifier is required.')
