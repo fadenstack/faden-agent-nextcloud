@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace OCA\FadenstackAgent\Controller;
 
 use OCA\FadenstackAgent\Providers\CalendarProvider;
+use OCA\FadenstackAgent\Providers\ContactsProvider;
+use OCA\FadenstackAgent\Providers\TasksProvider;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
 use OCP\AppFramework\Controller;
@@ -19,6 +21,8 @@ final class ProvidersController extends Controller {
 		IRequest $request,
 		private FileService $files,
 		private CalendarProvider $calendar,
+		private TasksProvider $tasks,
+		private ContactsProvider $contacts,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -38,8 +42,14 @@ final class ProvidersController extends Controller {
 
 	#[NoAdminRequired]
 	public function capabilities(): DataResponse {
-		return $this->run(fn () => ['providers' => $this->calendar->capabilities()]);
+		return $this->run(fn () => ['providers' => array_merge(
+			$this->calendar->capabilities(),
+			$this->tasks->capabilities(),
+			$this->contacts->capabilities(),
+		)]);
 	}
+
+	// --- Calendar ---
 
 	#[NoAdminRequired]
 	public function calendarCollections(): DataResponse {
@@ -69,5 +79,69 @@ final class ProvidersController extends Controller {
 	#[NoAdminRequired]
 	public function calendarCommit(string $id): DataResponse {
 		return $this->run(fn () => $this->calendar->commit($id));
+	}
+
+	// --- Tasks ---
+
+	#[NoAdminRequired]
+	public function tasksLists(): DataResponse {
+		return $this->run(fn () => $this->tasks->lists());
+	}
+
+	#[NoAdminRequired]
+	public function tasksItems(string $collectionId): DataResponse {
+		return $this->run(fn () => $this->tasks->tasks($collectionId));
+	}
+
+	#[NoAdminRequired]
+	public function taskItem(string $collectionId, string $filename): DataResponse {
+		return $this->run(fn () => $this->tasks->task($collectionId, $filename));
+	}
+
+	#[NoAdminRequired]
+	public function tasksPropose(string $operation, string $collectionId, string $filename, string $icsData = '', ?string $expectedEtag = null): DataResponse {
+		return $this->run(fn () => $this->tasks->propose($operation, $collectionId, $filename, $icsData, $expectedEtag));
+	}
+
+	#[NoAdminRequired]
+	public function tasksApprove(string $id): DataResponse {
+		return $this->run(fn () => $this->tasks->approve($id));
+	}
+
+	#[NoAdminRequired]
+	public function tasksCommit(string $id): DataResponse {
+		return $this->run(fn () => $this->tasks->commit($id));
+	}
+
+	// --- Contacts ---
+
+	#[NoAdminRequired]
+	public function contactsBooks(): DataResponse {
+		return $this->run(fn () => $this->contacts->books());
+	}
+
+	#[NoAdminRequired]
+	public function contactsFind(string $query): DataResponse {
+		return $this->run(fn () => $this->contacts->find($query));
+	}
+
+	#[NoAdminRequired]
+	public function contactsRead(string $bookId, ?string $filename = null): DataResponse {
+		return $this->run(fn () => $this->contacts->read($bookId, $filename));
+	}
+
+	#[NoAdminRequired]
+	public function contactsPropose(string $operation, string $bookId, string $filename, string $vcardData = '', ?string $expectedEtag = null): DataResponse {
+		return $this->run(fn () => $this->contacts->propose($operation, $bookId, $filename, $vcardData, $expectedEtag));
+	}
+
+	#[NoAdminRequired]
+	public function contactsApprove(string $id): DataResponse {
+		return $this->run(fn () => $this->contacts->approve($id));
+	}
+
+	#[NoAdminRequired]
+	public function contactsCommit(string $id): DataResponse {
+		return $this->run(fn () => $this->contacts->commit($id));
 	}
 }

@@ -9,6 +9,21 @@ return ['routes' => [
 	['name' => 'providers#calendarPropose', 'url' => '/providers/calendar/propose', 'verb' => 'POST'],
 	['name' => 'providers#calendarApprove', 'url' => '/providers/calendar/{id}/approve', 'verb' => 'POST'],
 	['name' => 'providers#calendarCommit', 'url' => '/providers/calendar/{id}/commit', 'verb' => 'POST'],
+
+	['name' => 'providers#tasksLists', 'url' => '/providers/tasks/lists', 'verb' => 'POST'],
+	['name' => 'providers#tasksItems', 'url' => '/providers/tasks/items', 'verb' => 'POST'],
+	['name' => 'providers#taskItem', 'url' => '/providers/tasks/item', 'verb' => 'POST'],
+	['name' => 'providers#tasksPropose', 'url' => '/providers/tasks/propose', 'verb' => 'POST'],
+	['name' => 'providers#tasksApprove', 'url' => '/providers/tasks/{id}/approve', 'verb' => 'POST'],
+	['name' => 'providers#tasksCommit', 'url' => '/providers/tasks/{id}/commit', 'verb' => 'POST'],
+
+	['name' => 'providers#contactsBooks', 'url' => '/providers/contacts/books', 'verb' => 'POST'],
+	['name' => 'providers#contactsFind', 'url' => '/providers/contacts/find', 'verb' => 'POST'],
+	['name' => 'providers#contactsRead', 'url' => '/providers/contacts/read', 'verb' => 'POST'],
+	['name' => 'providers#contactsPropose', 'url' => '/providers/contacts/propose', 'verb' => 'POST'],
+	['name' => 'providers#contactsApprove', 'url' => '/providers/contacts/{id}/approve', 'verb' => 'POST'],
+	['name' => 'providers#contactsCommit', 'url' => '/providers/contacts/{id}/commit', 'verb' => 'POST'],
+
 	['name' => 'page#index', 'url' => '/', 'verb' => 'GET'],
 	['name' => 'config#get', 'url' => '/config', 'verb' => 'GET'],
 	['name' => 'config#save', 'url' => '/config', 'verb' => 'PUT'],

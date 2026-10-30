@@ -2,7 +2,7 @@ import type { DestinationAudience, SourceClass } from '../platform/scope.ts'
 import type { ProviderCapability } from './registry.ts'
 
 export interface CalendarCollection {
-	readonly provider: 'calendar'
+	readonly provider: 'calendar' | 'tasks' | 'contacts'
 	readonly resourceId: string
 	readonly collectionId: string
 	readonly revision: string
@@ -40,6 +40,24 @@ export interface CalendarCommitOutcome {
 	readonly errorMessage?: string
 }
 
+export interface ContactSummary {
+	readonly resourceId: string
+	readonly collectionId: string
+	readonly filename: string
+	readonly etag: string
+	readonly title?: string
+	readonly fn?: string
+	readonly email?: string
+}
+
+export interface ContactReadResult {
+	readonly etag?: string
+	readonly content?: string
+	readonly raw?: string
+	readonly contacts?: readonly unknown[]
+	readonly complete?: boolean
+}
+
 export interface NativeProvidersApi {
 	capabilities(signal: AbortSignal): Promise<readonly ProviderCapability[]>
 	calendarCollections(signal: AbortSignal): Promise<readonly CalendarCollection[]>
@@ -56,9 +74,9 @@ export interface NativeProvidersApi {
 	tasksApprove?(id: string, signal?: AbortSignal): Promise<{ readonly approved: boolean }>
 	tasksCommit?(id: string, signal?: AbortSignal): Promise<CalendarCommitOutcome>
 
-	contactsBooks?(signal: AbortSignal): Promise<readonly unknown[]>
-	contactsFind?(query: string, signal: AbortSignal): Promise<readonly unknown[]>
-	contactsRead?(bookId: string, filename?: string, signal?: AbortSignal): Promise<unknown>
+	contactsBooks?(signal: AbortSignal): Promise<readonly CalendarCollection[]>
+	contactsFind?(query: string, signal: AbortSignal): Promise<readonly ContactSummary[]>
+	contactsRead?(bookId: string, filename?: string, signal?: AbortSignal): Promise<ContactReadResult>
 	contactsPropose?(operation: 'create' | 'patch' | 'delete', bookId: string, filename: string, vcardData: string, expectedEtag?: string | null, signal?: AbortSignal): Promise<CalendarProposalSummary>
 	contactsApprove?(id: string, signal?: AbortSignal): Promise<{ readonly approved: boolean }>
 	contactsCommit?(id: string, signal?: AbortSignal): Promise<CalendarCommitOutcome>
@@ -74,5 +92,19 @@ export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal
 		calendarPropose: async (operation, collectionId, filename, icsData, expectedEtag, signal) => post<CalendarProposalSummary>('/providers/calendar/propose', { operation, collectionId, filename, icsData, expectedEtag }, signal ?? new AbortController().signal),
 		calendarApprove: async (id, signal) => post<{ approved: boolean }>(`/providers/calendar/${encodeURIComponent(id)}/approve`, {}, signal ?? new AbortController().signal),
 		calendarCommit: async (id, signal) => post<CalendarCommitOutcome>(`/providers/calendar/${encodeURIComponent(id)}/commit`, {}, signal ?? new AbortController().signal),
+
+		tasksLists: async signal => (await post<{ lists: CalendarCollection[] }>('/providers/tasks/lists', {}, signal ?? new AbortController().signal)).lists,
+		tasksItems: async (collectionId, signal) => (await post<{ tasks: CalendarEvent[] }>('/providers/tasks/items', { collectionId }, signal ?? new AbortController().signal)).tasks,
+		taskItem: async (collectionId, filename, signal) => post<{ etag: string; content: string }>('/providers/tasks/item', { collectionId, filename }, signal ?? new AbortController().signal),
+		tasksPropose: async (operation, collectionId, filename, icsData, expectedEtag, signal) => post<CalendarProposalSummary>('/providers/tasks/propose', { operation, collectionId, filename, icsData, expectedEtag }, signal ?? new AbortController().signal),
+		tasksApprove: async (id, signal) => post<{ approved: boolean }>(`/providers/tasks/${encodeURIComponent(id)}/approve`, {}, signal ?? new AbortController().signal),
+		tasksCommit: async (id, signal) => post<CalendarCommitOutcome>(`/providers/tasks/${encodeURIComponent(id)}/commit`, {}, signal ?? new AbortController().signal),
+
+		contactsBooks: async signal => (await post<{ books: CalendarCollection[] }>('/providers/contacts/books', {}, signal ?? new AbortController().signal)).books,
+		contactsFind: async (query, signal) => (await post<{ contacts: ContactSummary[]; complete: boolean }>('/providers/contacts/find', { query }, signal ?? new AbortController().signal)).contacts,
+		contactsRead: async (bookId, filename, signal) => post<ContactReadResult>('/providers/contacts/read', { bookId, filename }, signal ?? new AbortController().signal),
+		contactsPropose: async (operation, bookId, filename, vcardData, expectedEtag, signal) => post<CalendarProposalSummary>('/providers/contacts/propose', { operation, bookId, filename, vcardData, expectedEtag }, signal ?? new AbortController().signal),
+		contactsApprove: async (id, signal) => post<{ approved: boolean }>(`/providers/contacts/${encodeURIComponent(id)}/approve`, {}, signal ?? new AbortController().signal),
+		contactsCommit: async (id, signal) => post<CalendarCommitOutcome>(`/providers/contacts/${encodeURIComponent(id)}/commit`, {}, signal ?? new AbortController().signal),
 	}
 }

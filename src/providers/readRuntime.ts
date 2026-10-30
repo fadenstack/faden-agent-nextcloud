@@ -1,16 +1,36 @@
 import { defineTool } from '@fadenstack/agents'
-import { parseDavProperties, calendarTools, type AgentWithCalendar } from '../integrations/nextcloud/caldav.ts'
+import {
+	parseDavProperties,
+	calendarTools,
+	tasksTools,
+	contactsTools,
+	type AgentWithCalendar,
+	type AgentWithTasks,
+	type AgentWithContacts,
+} from '../integrations/nextcloud/caldav.ts'
 import { TurnBudget, ScopeViolation } from '../platform/limits.ts'
 import type { PublishedTool, ScopePolicy } from '../platform/scope.ts'
 import { ProviderRegistry } from './registry.ts'
 import { ProviderTurnScope, type ProviderResource } from './scope.ts'
 import type { NativeProvidersApi } from './client.ts'
 
-const IMPLEMENTATIONS = new ProviderRegistry([{
-	provider: 'calendar',
-	apiVersions: ['caldav-v1'],
-	tools: ['nc_calendar_list', 'nc_calendar_read', 'nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete'],
-}])
+const IMPLEMENTATIONS = new ProviderRegistry([
+	{
+		provider: 'calendar',
+		apiVersions: ['caldav-v1'],
+		tools: ['nc_calendar_list', 'nc_calendar_read', 'nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete'],
+	},
+	{
+		provider: 'tasks',
+		apiVersions: ['caldav-v1'],
+		tools: ['nc_tasks_read', 'nc_tasks_create', 'nc_tasks_patch', 'nc_tasks_delete'],
+	},
+	{
+		provider: 'contacts',
+		apiVersions: ['carddav-v1'],
+		tools: ['nc_contacts_list', 'nc_contacts_find', 'nc_contacts_read', 'nc_contacts_create', 'nc_contacts_patch', 'nc_contacts_delete'],
+	},
+])
 
 /** Read-only vertical slice; no cross-provider mutation is enabled by this class. */
 export class ProviderReadRuntime {
@@ -43,9 +63,20 @@ export class ProviderReadRuntime {
 				const cap = tools.find(item => item.provider === resource.provider)?.capability
 				if (!cap?.canWrite) throw new Error('Provider mutations are not enabled by this configuration.')
 			}
-			const values = resource.resourceId === collectionReference(resource.collectionId)
-				? await this.api.calendarCollections(innerSignal)
-				: await this.api.calendarEvents(resource.collectionId, innerSignal)
+			let values: readonly ProviderResource[] = []
+			if (resource.provider === 'calendar') {
+				values = resource.resourceId === collectionReference('calendar', resource.collectionId)
+					? await this.api.calendarCollections(innerSignal)
+					: await this.api.calendarEvents(resource.collectionId, innerSignal)
+			} else if (resource.provider === 'tasks') {
+				values = resource.resourceId === collectionReference('tasks', resource.collectionId)
+					? (await this.api.tasksLists?.(innerSignal)) ?? []
+					: (await this.api.tasksItems?.(resource.collectionId, innerSignal)) ?? []
+			} else if (resource.provider === 'contacts') {
+				values = resource.resourceId === collectionReference('contacts', resource.collectionId)
+					? (await this.api.contactsBooks?.(innerSignal)) ?? []
+					: (await this.api.contactsRead?.(resource.collectionId, undefined, innerSignal))?.contacts ?? []
+			}
 			const current = values.find(value => value.resourceId === resource.resourceId)
 			if (!current) throw new ScopeViolation('source_forbidden', 'The provider source is no longer available.')
 			return current
@@ -59,15 +90,21 @@ export class ProviderReadRuntime {
 		this.#scope.begin(name)
 	}
 
+	recordSource(resource: ProviderResource): void {
+		if (this.#scope && this.#policy) {
+			this.record(resource)
+		}
+	}
+
 	private record(resource: ProviderResource): void {
 		if (!this.#scope || !this.#policy) throw new Error('The native provider turn is unavailable.')
-		if (resource.provider !== 'calendar' || resource.sourceClass === 'unknown' || !this.#policy.sourceClasses.includes(resource.sourceClass)
+		if (!['calendar', 'tasks', 'contacts'].includes(resource.provider) || resource.sourceClass === 'unknown' || !this.#policy.sourceClasses.includes(resource.sourceClass)
 			|| (resource.sourceClass === 'protected' && this.#policy.downstreamPolicy !== 'configured')) throw new ScopeViolation('processing_forbidden', 'This provider source cannot be sent to the configured model.')
 		const previous = this.#sources.get(resource.resourceId)
 		if (previous && previous.sourceClass !== resource.sourceClass) throw new ScopeViolation('processing_forbidden', 'Earlier source classification changed. Start a new conversation.')
 		if (!previous && this.#sources.size >= 200) throw new ScopeViolation('resource_limit', 'Start a new conversation to use more provider sources.')
 		this.#scope.bind(resource)
-		// Keep authorization metadata only; calendar bodies already belong to the SDK conversation.
+		// Keep authorization metadata only; provider bodies already belong to the SDK conversation.
 		this.#sources.set(resource.resourceId, Object.freeze({
 			provider: resource.provider,
 			resourceId: resource.resourceId,
@@ -96,7 +133,7 @@ export class ProviderReadRuntime {
 		if (!Array.isArray(values) || values.length > 8) throw new Error('Invalid native Calendar collection result.')
 		for (const resource of values) {
 			if (typeof resource.title !== 'string' || resource.title.length > 2048
-				|| resource.resourceId !== collectionReference(resource.collectionId)) throw new Error('Invalid native Calendar collection result.')
+				|| resource.resourceId !== collectionReference('calendar', resource.collectionId)) throw new Error('Invalid native Calendar collection result.')
 			this.record(resource)
 		}
 		return { provider: 'calendar', collections: values, scope: 'administrator-configured collections', writesEnabled: false }
@@ -106,7 +143,7 @@ export class ProviderReadRuntime {
 		if (!this.#scope) throw new Error('The native provider turn is unavailable.')
 		const scope = this.#scope
 		const collection = await scope.authorize(reference, 'calendar', false, signal)
-		if (collection.resourceId !== collectionReference(collection.collectionId)) throw new Error('Choose a calendar collection returned by nc_calendar_list.')
+		if (collection.resourceId !== collectionReference('calendar', collection.collectionId)) throw new Error('Choose a calendar collection returned by nc_calendar_list.')
 		const values = await this.api.calendarEvents(collection.collectionId, signal)
 		signal.throwIfAborted()
 		if (this.#scope !== scope) throw new ScopeViolation('scope_changed', 'The provider turn changed.')
@@ -140,9 +177,9 @@ export class ProviderReadRuntime {
 
 }
 
-function collectionReference(id: string): string {
+function collectionReference(provider: 'calendar' | 'tasks' | 'contacts', id: string): string {
 	const bytes = new TextEncoder().encode(id)
-	return 'nextcloud:calendar:' + btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+	return 'nextcloud:' + provider + ':' + btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
 }
 
 export function nativeCalendarReadTools(runtime: ProviderReadRuntime, agent?: AgentWithCalendar) {
@@ -170,4 +207,14 @@ export function nativeCalendarReadTools(runtime: ProviderReadRuntime, agent?: Ag
 	]
 	if (agent) tools.push(...calendarTools(agent).slice(2))
 	return tools
+}
+
+export function nativeTasksTools(runtime: ProviderReadRuntime, agent?: AgentWithTasks) {
+	if (!agent) return []
+	return tasksTools(agent)
+}
+
+export function nativeContactsTools(runtime: ProviderReadRuntime, agent?: AgentWithContacts) {
+	if (!agent) return []
+	return contactsTools(agent)
 }

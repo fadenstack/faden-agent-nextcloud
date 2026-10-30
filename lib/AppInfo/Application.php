@@ -8,7 +8,9 @@ use OCA\DAV\Events\SabrePluginAddEvent;
 use OCA\FadenstackAgent\DAV\SabrePluginListener;
 use OCA\FadenstackAgent\History\AccessResolverRegistry;
 use OCA\FadenstackAgent\History\CalendarAccessResolver;
+use OCA\FadenstackAgent\History\ContactsAccessResolver;
 use OCA\FadenstackAgent\History\FilesAccessResolver;
+use OCA\FadenstackAgent\History\TasksAccessResolver;
 use OCA\FadenstackAgent\Listener\ShellListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -31,6 +33,8 @@ class Application extends App implements IBootstrap {
 			$registry = new AccessResolverRegistry();
 			$registry->register('files', $container->get(FilesAccessResolver::class));
 			$registry->register('calendar', $container->get(CalendarAccessResolver::class));
+			$registry->register('tasks', $container->get(TasksAccessResolver::class));
+			$registry->register('contacts', $container->get(ContactsAccessResolver::class));
 			return $registry;
 		});
 	}

@@ -91,7 +91,7 @@ import { shallowReactive } from 'vue'
 import { commandChat } from './commands.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
-import { ProviderReadRuntime, nativeCalendarReadTools } from '../providers/readRuntime.ts'
+import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
 
@@ -176,8 +176,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const tablesEnabled = experimental && config.tablesEnabled === true && !!files.tables
 		const deckEnabled = experimental && config.deckEnabled === true && !!files.deck
 		const calendarEnabled = !this.#providerReads && experimental && config.calendarEnabled === true && !!files.calendar
-		const tasksEnabled = experimental && config.tasksEnabled === true && !!files.tasks
-		const contactsEnabled = experimental && config.contactsEnabled === true && !!files.contacts
+		const tasksEnabled = !this.#providerReads && experimental && config.tasksEnabled === true && !!files.tasks
+		const contactsEnabled = !this.#providerReads && experimental && config.contactsEnabled === true && !!files.contacts
 		const mailEnabled = experimental && config.mailEnabled === true && !!files.mail
 		const talkEnabled = experimental && config.talkEnabled === true && !!files.talk
 		const collectivesEnabled = experimental && config.collectivesEnabled === true && !!files.collectives
@@ -212,6 +212,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(notesEnabled ? notesTools(this) : []))
 			.addTools(...(bookmarksEnabled ? bookmarksTools(this) : []))
 			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads, this) : []))
+			.addTools(...(this.#providerReads ? nativeTasksTools(this.#providerReads, this) : []))
+			.addTools(...(this.#providerReads ? nativeContactsTools(this.#providerReads, this) : []))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
 					const available = this.#scope ? [...this.#scope.offeredTools, ...(this.#providerReads?.offeredTools ?? [])] : undefined
@@ -904,6 +906,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (davProposal?.proposalId && this.files.nativeProviders) {
 				if (CALENDAR_MUTATIONS.has(part.toolName) && this.files.nativeProviders.calendarApprove) {
 					await this.files.nativeProviders.calendarApprove(davProposal.proposalId, this.#stop.signal)
+				} else if (TASKS_MUTATIONS.has(part.toolName) && this.files.nativeProviders.tasksApprove) {
+					await this.files.nativeProviders.tasksApprove(davProposal.proposalId, this.#stop.signal)
+				} else if (CONTACTS_MUTATIONS.has(part.toolName) && this.files.nativeProviders.contactsApprove) {
+					await this.files.nativeProviders.contactsApprove(davProposal.proposalId, this.#stop.signal)
 				}
 			}
 			const proposal = this.#davProposals.get(part.request.callId)
@@ -1516,15 +1522,30 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	async readTasks(calendarId: string, signal?: AbortSignal): Promise<unknown> {
-		if (!this.files.tasks) throw new Error('Tasks app is unavailable.')
+		if (!this.files.tasks && !this.files.nativeProviders?.tasksItems) throw new Error('Tasks app is unavailable.')
 		await this.files.assertIdentity(signal)
-		const tasks = await this.files.tasks.readTasks(calendarId, signal)
+		if (this.files.nativeProviders?.tasksItems) {
+			const items = await this.files.nativeProviders.tasksItems(calendarId, signal ?? new AbortController().signal)
+			const parsed = items.map(item => {
+				const props = parseDavProperties(item.content, 'VTODO').values
+				if (this.#providerReads) {
+					this.#providerReads.recordSource(item)
+				}
+				return {
+					filename: item.filename,
+					etag: item.revision,
+					properties: props,
+				}
+			})
+			return { calendarId, tasks: parsed, complete: true }
+		}
+		const tasks = await this.files.tasks!.readTasks(calendarId, signal)
 		return { calendarId, tasks, complete: tasks.complete === true }
 	}
 
 	async planTasksMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DavProposal> {
 		if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-		if (!this.files.tasks) throw new Error('Tasks app is unavailable.')
+		if (!this.files.tasks && !this.files.nativeProviders?.tasksPropose) throw new Error('Tasks app is unavailable.')
 		await this.files.assertIdentity(signal)
 		if (name === 'nc_tasks_create') {
 			const v = validateTasksCreateArgs(args)
@@ -1537,6 +1558,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				priority: v.priority,
 			})
 			const after = parseDavProperties(rawAfter, 'VTODO').values
+			let proposalId: string | undefined
+			let revision = await sha256Hex(rawAfter)
+			if (this.files.nativeProviders?.tasksPropose) {
+				const native = await this.files.nativeProviders.tasksPropose('create', v.calendarId, v.filename, rawAfter, null, signal)
+				proposalId = native.id
+				revision = native.hash
+			}
 			return {
 				name,
 				args: { ...args },
@@ -1544,14 +1572,22 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				before: null,
 				after,
 				rawAfter,
-				revision: await sha256Hex(rawAfter),
+				revision,
 				calendarId: v.calendarId,
 				filename: v.filename,
 				component: 'VTODO',
+				proposalId,
 			}
 		} else if (name === 'nc_tasks_patch') {
 			const v = validateTasksPatchArgs(args)
-			const current = await this.files.tasks.getTask(v.calendarId, v.filename, signal)
+			const current = this.files.nativeProviders?.taskItem
+				? await (async () => {
+					const t = await this.files.nativeProviders!.taskItem!(v.calendarId, v.filename, signal)
+					const raw = t.content
+					const parsed = parseDavProperties(raw, 'VTODO')
+					return { etag: t.etag, raw, values: parsed.values }
+				})()
+				: await this.files.tasks!.getTask(v.calendarId, v.filename, signal)
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Task resource changed. Read it again before proposing a write.')
 			}
@@ -1585,6 +1621,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}
 			const rawAfter = patchIcs(current.raw, 'VTODO', mappedChanges)
 			const after = parseDavProperties(rawAfter, 'VTODO').values
+			let proposalId: string | undefined
+			let revision = v.expectedEtag
+			if (this.files.nativeProviders?.tasksPropose) {
+				const native = await this.files.nativeProviders.tasksPropose('patch', v.calendarId, v.filename, rawAfter, v.expectedEtag, signal)
+				proposalId = native.id
+				revision = native.hash
+			}
 			return {
 				name,
 				args: { ...args },
@@ -1594,20 +1637,35 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				rawBefore: current.raw,
 				rawAfter,
 				etag: v.expectedEtag,
-				revision: v.expectedEtag,
+				revision,
 				calendarId: v.calendarId,
 				filename: v.filename,
 				component: 'VTODO',
+				proposalId,
 			}
 		} else if (name === 'nc_tasks_delete') {
 			const v = validateTasksDeleteArgs(args)
-			const current = await this.files.tasks.getTask(v.calendarId, v.filename, signal)
+			const current = this.files.nativeProviders?.taskItem
+				? await (async () => {
+					const t = await this.files.nativeProviders!.taskItem!(v.calendarId, v.filename, signal)
+					const raw = t.content
+					const parsed = parseDavProperties(raw, 'VTODO')
+					return { etag: t.etag, raw, values: parsed.values }
+				})()
+				: await this.files.tasks!.getTask(v.calendarId, v.filename, signal)
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Task resource changed. Read it again before proposing a write.')
 			}
 			const p = assertPrivateComponent(current.raw, 'VTODO')
 			if (p.instances !== 1 || p.values.RRULE || p.values['RECURRENCE-ID']) {
 				throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
+			}
+			let proposalId: string | undefined
+			let revision = v.expectedEtag
+			if (this.files.nativeProviders?.tasksPropose) {
+				const native = await this.files.nativeProviders.tasksPropose('delete', v.calendarId, v.filename, '', v.expectedEtag, signal)
+				proposalId = native.id
+				revision = native.hash
 			}
 			return {
 				name,
@@ -1617,10 +1675,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				after: { deleted: true },
 				rawBefore: current.raw,
 				etag: v.expectedEtag,
-				revision: v.expectedEtag,
+				revision,
 				calendarId: v.calendarId,
 				filename: v.filename,
 				component: 'VTODO',
+				proposalId,
 			}
 		}
 		throw new Error('Unsupported Tasks mutation.')
@@ -1634,7 +1693,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#davProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
-		if (!this.files.tasks) throw new Error('Tasks app is unavailable.')
+		if (!this.files.tasks && !this.files.nativeProviders?.tasksCommit) throw new Error('Tasks app is unavailable.')
 		await this.files.assertIdentity(call.signal)
 		call.signal.throwIfAborted()
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
@@ -1642,12 +1701,18 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			let result: unknown
 			const calendarId = proposal.calendarId!
 			const filename = proposal.filename
-			if (name === 'nc_tasks_create') {
-				result = await this.files.tasks.createTask(calendarId, filename, proposal.rawAfter!, call.signal)
+			if (proposal.proposalId && this.files.nativeProviders?.tasksCommit) {
+				const commitResult = await this.files.nativeProviders.tasksCommit(proposal.proposalId, call.signal)
+				if (commitResult.outcome !== 'verified') {
+					throw new Error(commitResult.errorMessage || 'Tasks change could not be verified.')
+				}
+				result = { status: commitResult.status, etag: commitResult.etag, outcome: commitResult.outcome }
+			} else if (name === 'nc_tasks_create') {
+				result = await this.files.tasks!.createTask(calendarId, filename, proposal.rawAfter!, call.signal)
 			} else if (name === 'nc_tasks_patch') {
-				result = await this.files.tasks.updateTask(calendarId, filename, proposal.rawAfter!, proposal.etag!, call.signal)
+				result = await this.files.tasks!.updateTask(calendarId, filename, proposal.rawAfter!, proposal.etag!, call.signal)
 			} else if (name === 'nc_tasks_delete') {
-				await this.files.tasks.deleteTask(calendarId, filename, proposal.etag!, call.signal)
+				await this.files.tasks!.deleteTask(calendarId, filename, proposal.etag!, call.signal)
 				result = { deleted: true }
 			}
 			const activity = binding && generation !== undefined
@@ -1670,28 +1735,48 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	async listContacts(signal?: AbortSignal): Promise<unknown> {
-		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		if (!this.files.contacts && !this.files.nativeProviders?.contactsBooks) throw new Error('Contacts app is unavailable.')
 		await this.files.assertIdentity(signal)
-		const addressBooks = await this.files.contacts.listAddressBooks(signal)
+		if (this.files.nativeProviders?.contactsBooks) {
+			const addressBooks = await this.files.nativeProviders.contactsBooks(signal ?? new AbortController().signal)
+			return { addressBooks, complete: true }
+		}
+		const addressBooks = await this.files.contacts!.listAddressBooks(signal)
 		return { addressBooks, complete: addressBooks.complete === true }
 	}
 
 	async findContacts(query: string, signal?: AbortSignal): Promise<unknown> {
-		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		if (!this.files.contacts && !this.files.nativeProviders?.contactsFind) throw new Error('Contacts app is unavailable.')
 		await this.files.assertIdentity(signal)
-		return await this.files.contacts.findContacts(query, signal)
+		if (this.files.nativeProviders?.contactsFind) {
+			return await this.files.nativeProviders.contactsFind(query, signal ?? new AbortController().signal)
+		}
+		return await this.files.contacts!.findContacts(query, signal)
 	}
 
 	async readContact(bookId: string, filename?: string, signal?: AbortSignal): Promise<unknown> {
-		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		if (!this.files.contacts && !this.files.nativeProviders?.contactsRead) throw new Error('Contacts app is unavailable.')
 		await this.files.assertIdentity(signal)
-		const contact = await this.files.contacts.readContact(bookId, filename, signal)
+		if (this.files.nativeProviders?.contactsRead) {
+			const res = await this.files.nativeProviders.contactsRead(bookId, filename, signal ?? new AbortController().signal)
+			if (filename) {
+				const raw = res.content ?? res.raw
+				const parsed = parseDavProperties(raw, 'VCARD')
+				return {
+					etag: res.etag,
+					raw,
+					values: parsed.values,
+				}
+			}
+			return res.contacts ?? res
+		}
+		const contact = await this.files.contacts!.readContact(bookId, filename, signal)
 		return { bookId, filename, contact }
 	}
 
 	async planContactsMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DavProposal> {
 		if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		if (!this.files.contacts && !this.files.nativeProviders?.contactsPropose) throw new Error('Contacts app is unavailable.')
 		await this.files.assertIdentity(signal)
 		if (name === 'nc_contacts_create') {
 			const v = validateContactsCreateArgs(args)
@@ -1705,6 +1790,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				categories: v.categories,
 			})
 			const after = parseDavProperties(rawAfter, 'VCARD').values
+			let proposalId: string | undefined
+			let revision = await sha256Hex(rawAfter)
+			if (this.files.nativeProviders?.contactsPropose) {
+				const native = await this.files.nativeProviders.contactsPropose('create', v.bookId, v.filename, rawAfter, null, signal)
+				proposalId = native.id
+				revision = native.hash
+			}
 			return {
 				name,
 				args: { ...args },
@@ -1712,14 +1804,22 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				before: null,
 				after,
 				rawAfter,
-				revision: await sha256Hex(rawAfter),
+				revision,
 				bookId: v.bookId,
 				filename: v.filename,
 				component: 'VCARD',
+				proposalId,
 			}
 		} else if (name === 'nc_contacts_patch') {
 			const v = validateContactsPatchArgs(args)
-			const current = await this.files.contacts.readContact(v.bookId, v.filename, signal)
+			const current = this.files.nativeProviders?.contactsRead
+				? await (async () => {
+					const c = await this.files.nativeProviders!.contactsRead!(v.bookId, v.filename, signal)
+					const raw = c.content ?? c.raw
+					const parsed = parseDavProperties(raw, 'VCARD')
+					return { etag: c.etag, raw, values: parsed.values }
+				})()
+				: await this.files.contacts!.readContact(v.bookId, v.filename, signal)
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Contact resource changed. Read it again before proposing a write.')
 			}
@@ -1738,6 +1838,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}
 			const rawAfter = patchVcard(current.raw, mappedChanges)
 			const after = parseDavProperties(rawAfter, 'VCARD').values
+			let proposalId: string | undefined
+			let revision = v.expectedEtag
+			if (this.files.nativeProviders?.contactsPropose) {
+				const native = await this.files.nativeProviders.contactsPropose('patch', v.bookId, v.filename, rawAfter, v.expectedEtag, signal)
+				proposalId = native.id
+				revision = native.hash
+			}
 			return {
 				name,
 				args: { ...args },
@@ -1747,16 +1854,31 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				rawBefore: current.raw,
 				rawAfter,
 				etag: v.expectedEtag,
-				revision: v.expectedEtag,
+				revision,
 				bookId: v.bookId,
 				filename: v.filename,
 				component: 'VCARD',
+				proposalId,
 			}
 		} else if (name === 'nc_contacts_delete') {
 			const v = validateContactsDeleteArgs(args)
-			const current = await this.files.contacts.readContact(v.bookId, v.filename, signal)
+			const current = this.files.nativeProviders?.contactsRead
+				? await (async () => {
+					const c = await this.files.nativeProviders!.contactsRead!(v.bookId, v.filename, signal)
+					const raw = c.content ?? c.raw
+					const parsed = parseDavProperties(raw, 'VCARD')
+					return { etag: c.etag, raw, values: parsed.values }
+				})()
+				: await this.files.contacts!.readContact(v.bookId, v.filename, signal)
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Contact resource changed. Read it again before proposing a write.')
+			}
+			let proposalId: string | undefined
+			let revision = v.expectedEtag
+			if (this.files.nativeProviders?.contactsPropose) {
+				const native = await this.files.nativeProviders.contactsPropose('delete', v.bookId, v.filename, '', v.expectedEtag, signal)
+				proposalId = native.id
+				revision = native.hash
 			}
 			return {
 				name,
@@ -1766,10 +1888,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				after: { deleted: true },
 				rawBefore: current.raw,
 				etag: v.expectedEtag,
-				revision: v.expectedEtag,
+				revision,
 				bookId: v.bookId,
 				filename: v.filename,
 				component: 'VCARD',
+				proposalId,
 			}
 		}
 		throw new Error('Unsupported Contacts mutation.')
@@ -1783,7 +1906,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#davProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
-		if (!this.files.contacts) throw new Error('Contacts app is unavailable.')
+		if (!this.files.contacts && !this.files.nativeProviders?.contactsCommit) throw new Error('Contacts app is unavailable.')
 		await this.files.assertIdentity(call.signal)
 		call.signal.throwIfAborted()
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
@@ -1791,12 +1914,18 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			let result: unknown
 			const bookId = proposal.bookId!
 			const filename = proposal.filename
-			if (name === 'nc_contacts_create') {
-				result = await this.files.contacts.createContact(bookId, filename, proposal.rawAfter!, call.signal)
+			if (proposal.proposalId && this.files.nativeProviders?.contactsCommit) {
+				const commitResult = await this.files.nativeProviders.contactsCommit(proposal.proposalId, call.signal)
+				if (commitResult.outcome !== 'verified') {
+					throw new Error(commitResult.errorMessage || 'Contacts change could not be verified.')
+				}
+				result = { status: commitResult.status, etag: commitResult.etag, outcome: commitResult.outcome }
+			} else if (name === 'nc_contacts_create') {
+				result = await this.files.contacts!.createContact(bookId, filename, proposal.rawAfter!, call.signal)
 			} else if (name === 'nc_contacts_patch') {
-				result = await this.files.contacts.updateContact(bookId, filename, proposal.rawAfter!, proposal.etag!, call.signal)
+				result = await this.files.contacts!.updateContact(bookId, filename, proposal.rawAfter!, proposal.etag!, call.signal)
 			} else if (name === 'nc_contacts_delete') {
-				await this.files.contacts.deleteContact(bookId, filename, proposal.etag!, call.signal)
+				await this.files.contacts!.deleteContact(bookId, filename, proposal.etag!, call.signal)
 				result = { deleted: true }
 			}
 			const activity = binding && generation !== undefined
