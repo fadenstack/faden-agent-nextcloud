@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { t } from '@nextcloud/l10n'
 import type { ApprovalPart, UiStrings } from '@fadenstack/ui'
 import { Icon, useViewModel } from '@fadenstack/ui-vue'
@@ -11,6 +11,17 @@ import { errorMessage } from '../integrations/nextcloud/files.ts'
 // proposed content) and registering it with Nextcloud before it is allowed. Only once: no "always".
 const props = defineProps<{ part: ApprovalPart; strings: UiStrings; host: NextcloudAgent }>()
 const part = useViewModel(() => props.part)
+const action = computed(() => {
+	switch (part.value.toolName) {
+	case 'nc_files_create_folder': return t('fadenstack_agent', 'Create folder')
+	case 'nc_actions_revalidate': return t('fadenstack_agent', 'Verify file revision')
+	case 'nc_actions_reconcile': return t('fadenstack_agent', 'Inspect outcome')
+	case 'nc_actions_undo': return t('fadenstack_agent', 'Undo file change')
+	case 'nc_actions_redo': return t('fadenstack_agent', 'Redo file change')
+	case 'nc_create_text_file': return t('fadenstack_agent', 'Create file')
+	default: return t('fadenstack_agent', 'Replace file')
+	}
+})
 const approving = ref(false)
 const problem = ref('')
 async function approve() {
@@ -33,17 +44,17 @@ function deny() {
 </script>
 
 <template>
-	<div class="fdn-approval fdn-approval-danger" role="group" :aria-label="part.title">
+	<div class="fdn-approval fdn-approval-danger" role="group" :aria-label="action">
 		<div class="fdn-approval-head">
 			<Icon :name="approvalIcon(part)" />
-			<strong>{{ part.title }}</strong>
+			<strong>{{ action }}</strong>
 			<span :class="`fdn-badge fdn-class-${part.request.toolClass}`">{{ part.classLabel }}</span>
 		</div>
 		<p v-if="part.reason" class="fdn-approval-reason" dir="auto">
 			{{ part.reason }}
 		</p>
 		<p class="fdn-approval-target">
-			{{ part.toolName === 'nc_files_create_folder' ? t('fadenstack_agent', 'Create folder') : part.toolName === 'nc_actions_revalidate' ? t('fadenstack_agent', 'Verify file revision') : part.toolName === 'nc_actions_reconcile' ? t('fadenstack_agent', 'Inspect outcome') : part.toolName === 'nc_actions_undo' ? t('fadenstack_agent', 'Undo file change') : part.toolName === 'nc_actions_redo' ? t('fadenstack_agent', 'Redo file change') : part.toolName === 'nc_create_text_file' ? t('fadenstack_agent', 'Create file') : t('fadenstack_agent', 'Replace file') }}:
+			{{ action }}:
 			<strong>{{ part.request.arguments.target }}</strong>
 		</p>
 		<template v-if="part.toolName === 'nc_actions_revalidate'">
