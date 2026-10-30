@@ -217,7 +217,17 @@ export function filesFolderCreateTool(host: ExtendedFilesHost) {
 			},
 			run: async (args, c) => {
 				validateFolderName(args.name)
-				if (host.commitMutation) return host.commitMutation('nc_files_create_folder', args, c)
+				if (host.commitMutation) {
+					const result = await host.commitMutation('nc_files_create_folder', args, c)
+					// A finished request is not a confirmed effect. Keep the native
+					// receipt/activity, while the shared SDK row shows failure rather
+					// than a success checkmark for an unconfirmed or blocked action.
+					if (result && typeof result === 'object' && 'outcome' in result && result.outcome !== 'verified') {
+						const message = 'message' in result && typeof result.message === 'string' ? result.message : 'Inspect the destination before another attempt.'
+						throw new Error(`${result.outcome === 'not-dispatched' ? 'Folder creation was not dispatched.' : 'Folder creation is unconfirmed.'} ${message}`)
+					}
+					return result
+				}
 				const parent = String(args.resource_id ?? (host.context ? host.context().file.path : ''))
 				if (!host.files.createFolder) throw new Error('Folder creation is unavailable.')
 				return host.files.createFolder(parent, String(args.name), c.signal)

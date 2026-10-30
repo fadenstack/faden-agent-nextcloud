@@ -501,6 +501,8 @@ describe('Independent folder creation regressions', () => {
 			await flow.agent.approve(await pendingFolder(flow.agent))
 			await flow.send
 			expect(flow.workspace.state.latest?.outcome).toBe(outcome === 'not-dispatched' ? 'not_dispatched' : 'unknown_completion')
+			const part = flow.agent.chat.turns.flatMap(turn => [...turn.parts]).find(item => item instanceof ToolCallPart) as ToolCallPart
+			expect(part.state).toBe('failed')
 			expect(flow.refresh).not.toHaveBeenCalled()
 			expect(flow.files.commitFolderCreate).toHaveBeenCalledTimes(1)
 		} finally { await flow.agent.dispose() }
