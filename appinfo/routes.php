@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 return ['routes' => [
+	['name' => 'providers#actions', 'url' => '/providers/actions', 'verb' => 'POST'],
+	['name' => 'providers#inspectAction', 'url' => '/providers/actions/{id}/inspect', 'verb' => 'POST'],
 	['name' => 'providers#capabilities', 'url' => '/providers/capabilities', 'verb' => 'POST'],
 	['name' => 'providers#calendarCollections', 'url' => '/providers/calendar/collections', 'verb' => 'POST'],
 	['name' => 'providers#calendarEvents', 'url' => '/providers/calendar/events', 'verb' => 'POST'],

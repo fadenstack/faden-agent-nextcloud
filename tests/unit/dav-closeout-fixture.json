@@ -1,0 +1,170 @@
+{
+  "marker": {
+    "user": "dav-guide",
+    "nonce": "056bf0cb",
+    "calendar": {
+      "collection": "calendar-056bf0cb",
+      "filename": "source.ics",
+      "content": "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Fadenstack//DAV review//EN\r\nBEGIN:VEVENT\r\nUID:calendar-056bf0cb\r\nDTSTAMP:20261030T080000Z\r\nSUMMARY:Synthetic Taylor review\r\nCLASS:PUBLIC\r\nX-FADEN-KEEP:unchanged\r\nDTSTART:20280201T090000Z\r\nDTEND:20280201T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+      "createContent": "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Fadenstack//DAV review//EN\r\nBEGIN:VEVENT\r\nUID:new-calendar-056bf0cb\r\nDTSTAMP:20261030T080000Z\r\nSUMMARY:Synthetic Taylor review\r\nCLASS:PUBLIC\r\nX-FADEN-KEEP:unchanged\r\nDTSTART:20280201T090000Z\r\nDTEND:20280201T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    },
+    "tasks": {
+      "collection": "tasks-056bf0cb",
+      "filename": "source.ics",
+      "content": "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Fadenstack//DAV review//EN\r\nBEGIN:VTODO\r\nUID:tasks-056bf0cb\r\nDTSTAMP:20261030T080000Z\r\nSUMMARY:Synthetic Taylor review\r\nCLASS:PUBLIC\r\nX-FADEN-KEEP:unchanged\r\nDUE;VALUE=DATE:20280202\r\nSTATUS:NEEDS-ACTION\r\nPERCENT-COMPLETE:0\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+      "createContent": "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Fadenstack//DAV review//EN\r\nBEGIN:VTODO\r\nUID:new-tasks-056bf0cb\r\nDTSTAMP:20261030T080000Z\r\nSUMMARY:Synthetic Taylor review\r\nCLASS:PUBLIC\r\nX-FADEN-KEEP:unchanged\r\nDUE;VALUE=DATE:20280202\r\nSTATUS:NEEDS-ACTION\r\nPERCENT-COMPLETE:0\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
+    },
+    "contacts": {
+      "collection": "contacts-056bf0cb",
+      "filename": "source.vcf",
+      "content": "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:contact-056bf0cb\r\nFN:Taylor Fixture\r\nN:Fixture;Taylor;;;\r\nEMAIL;TYPE=WORK:taylor@example.test\r\nX-FADEN-KEEP:unchanged\r\nEND:VCARD\r\n",
+      "createContent": "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:new-contact-056bf0cb\r\nFN:Taylor Fixture\r\nN:Fixture;Taylor;;;\r\nEMAIL;TYPE=WORK:taylor@example.test\r\nX-FADEN-KEEP:unchanged\r\nEND:VCARD\r\n"
+    }
+  },
+  "capabilities": [
+    {
+      "provider": "calendar",
+      "apiVersion": "caldav-v1",
+      "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a",
+      "enabled": true,
+      "tools": [
+        "nc_calendar_list",
+        "nc_calendar_read",
+        "nc_calendar_create",
+        "nc_calendar_patch",
+        "nc_calendar_delete"
+      ],
+      "conflict": "conditional",
+      "history": "audit-only",
+      "refresh": "manual",
+      "canRead": true,
+      "canWrite": true
+    },
+    {
+      "provider": "tasks",
+      "apiVersion": "caldav-v1",
+      "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a",
+      "enabled": true,
+      "tools": [
+        "nc_tasks_read",
+        "nc_tasks_create",
+        "nc_tasks_patch",
+        "nc_tasks_delete"
+      ],
+      "conflict": "conditional",
+      "history": "audit-only",
+      "refresh": "manual",
+      "canRead": true,
+      "canWrite": true
+    },
+    {
+      "provider": "contacts",
+      "apiVersion": "carddav-v1",
+      "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a",
+      "enabled": true,
+      "tools": [
+        "nc_contacts_list",
+        "nc_contacts_find",
+        "nc_contacts_read",
+        "nc_contacts_create",
+        "nc_contacts_patch",
+        "nc_contacts_delete"
+      ],
+      "conflict": "conditional",
+      "history": "audit-only",
+      "refresh": "manual",
+      "canRead": true,
+      "canWrite": true
+    }
+  ],
+  "calendarCollections": [
+    {
+      "provider": "calendar",
+      "resourceId": "nextcloud:calendar:Y2FsZW5kYXItMDU2YmYwY2I",
+      "collectionId": "calendar-056bf0cb",
+      "revision": "80d1be46c31e09a8012b77651750ece4d31fd469b1a2022c71eec658a81cc3e1",
+      "title": "DAV review calendar",
+      "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a",
+      "sourceClass": "standard",
+      "audience": "unknown"
+    }
+  ],
+  "calendarEvents": [
+    {
+      "provider": "calendar",
+      "collectionId": "calendar-056bf0cb",
+      "filename": "source.ics",
+      "resourceId": "nextcloud:calendar:Y2FsZW5kYXItMDU2YmYwY2IAc291cmNlLmljcw",
+      "revision": "\"39072362172dceefad6eb03bfd15d876\"",
+      "content": "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Fadenstack//DAV review//EN\nBEGIN:VEVENT\nUID:calendar-056bf0cb\nDTSTAMP:20261030T080000Z\nSUMMARY:Synthetic Taylor review\nCLASS:PUBLIC\nX-FADEN-KEEP:unchanged\nDTSTART:20280201T090000Z\nDTEND:20280201T100000Z\nEND:VEVENT\nEND:VCALENDAR\n",
+      "contentProfile": "icalendar-xml-normalized",
+      "sourceClass": "standard",
+      "audience": "unknown",
+      "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a"
+    }
+  ],
+  "tasksLists": [
+    {
+      "provider": "tasks",
+      "resourceId": "nextcloud:tasks:dGFza3MtMDU2YmYwY2I",
+      "collectionId": "tasks-056bf0cb",
+      "revision": "30677725a6e2763ef7ac43d00206e48f33df6d097845d03e1678bddbbb0cdf7e",
+      "sourceClass": "standard",
+      "audience": "unknown",
+      "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a",
+      "title": "DAV review tasks"
+    }
+  ],
+  "tasks": [
+    {
+      "provider": "tasks",
+      "resourceId": "nextcloud:tasks:dGFza3MtMDU2YmYwY2IAc291cmNlLmljcw",
+      "collectionId": "tasks-056bf0cb",
+      "filename": "source.ics",
+      "revision": "\"cfbcb4cb887f8b30ef42a8da7957e2d6\"",
+      "sourceClass": "standard",
+      "audience": "unknown",
+      "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a",
+      "contentProfile": "icalendar-xml-normalized",
+      "content": "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Fadenstack//DAV review//EN\nBEGIN:VTODO\nUID:tasks-056bf0cb\nDTSTAMP:20261030T080000Z\nSUMMARY:Synthetic Taylor review\nCLASS:PUBLIC\nX-FADEN-KEEP:unchanged\nDUE;VALUE=DATE:20280202\nSTATUS:NEEDS-ACTION\nPERCENT-COMPLETE:0\nEND:VTODO\nEND:VCALENDAR\n"
+    }
+  ],
+  "books": [
+    {
+      "provider": "contacts",
+      "resourceId": "nextcloud:contacts:Y29udGFjdHMtMDU2YmYwY2I",
+      "collectionId": "contacts-056bf0cb",
+      "revision": "ff1c336c9caa2b6e727ac109d7899dbf3726df739b7982fa17486e8772ed9803",
+      "sourceClass": "standard",
+      "audience": "unknown",
+      "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a",
+      "title": "DAV review contacts"
+    }
+  ],
+  "found": [
+    {
+      "provider": "contacts",
+      "resourceId": "nextcloud:contacts:Y29udGFjdHMtMDU2YmYwY2IAc291cmNlLnZjZg",
+      "collectionId": "contacts-056bf0cb",
+      "filename": "source.vcf",
+      "revision": "\"d5d143bf9adfba499879d6ccba158c6d\"",
+      "sourceClass": "standard",
+      "audience": "unknown",
+      "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a",
+      "contentProfile": "vcard-xml-normalized",
+      "content": "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:contact-056bf0cb\r\nFN:Taylor Fixture\r\nN:Fixture;Taylor;;;\r\nEMAIL;TYPE=WORK:taylor@example.test\r\nX-FADEN-KEEP:unchanged\r\nEND:VCARD\r\n"
+    }
+  ],
+  "contact": {
+    "provider": "contacts",
+    "collectionId": "contacts-056bf0cb",
+    "filename": "source.vcf",
+    "resourceId": "nextcloud:contacts:Y29udGFjdHMtMDU2YmYwY2IAc291cmNlLnZjZg",
+    "revision": "\"d5d143bf9adfba499879d6ccba158c6d\"",
+    "etag": "\"d5d143bf9adfba499879d6ccba158c6d\"",
+    "sourceClass": "standard",
+    "audience": "unknown",
+    "policyVersion": "e6a1a08ce13296c6748c6a2fe500f3698be434d0f093a3ff7301aad19b8c9b6a",
+    "content": "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:contact-056bf0cb\r\nFN:Taylor Fixture\r\nN:Fixture;Taylor;;;\r\nEMAIL;TYPE=WORK:taylor@example.test\r\nX-FADEN-KEEP:unchanged\r\nEND:VCARD\r\n"
+  }
+}

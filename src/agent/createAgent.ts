@@ -1,4 +1,4 @@
-import { FadenstackClient, AgentTokenProvider, MemoryTokenStore, loginWithPassword, type FetchLike } from '@fadenstack/client'
+import { FadenstackClient, AgentTokenProvider, MemoryTokenStore, loginWithPassword, type FetchLike, type ChatUpdate } from '@fadenstack/client'
 import { FadenstackAgent, MemorySessionStore, MemoryApprovalStore, StageOrder, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
 import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore, type ToolCallPart } from '@fadenstack/ui'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
@@ -7,7 +7,7 @@ import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
 import { filesReadTools, filesFolderCreateTool, filesMutationTools, EXTENDED_FILES_MUTATIONS, validateFolderName, validateCopyMoveArgs, validateShareReadonlyArgs, type ExtendedProposal } from '../integrations/nextcloud/filesExtended.ts'
 import { tablesTools, TABLES_MUTATIONS, validateAddColumnArgs, validateAddRowArgs, validateUpdateRowArgs, validateDeleteRowArgs, sha256Hex, canonical, rowContent, type TablesProposal } from '../integrations/nextcloud/tables.ts'
-import { experimentalAdaptersAllowed, optionalPositiveInteger, assertPrototypeAcknowledgement } from '../integrations/nextcloud/adapterGuards.ts'
+import { experimentalAdaptersAllowed, optionalPositiveInteger, assertPrototypeAcknowledgement, strongEtagHeader } from '../integrations/nextcloud/adapterGuards.ts'
 import { deckTools, DECK_MUTATIONS, validateDeckPatchArgs, validateDeckCreateArgs, validateDeckMoveArgs, validateDeckAssignArgs, validateDeckLabelArgs, cardContent, type DeckProposal } from '../integrations/nextcloud/deck.ts'
 import {
 	calendarTools,
@@ -92,6 +92,8 @@ import { commandChat } from './commands.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
+import type { CalendarCommitOutcome, ProviderInspection } from '../providers/client.ts'
+import { nativeCalendarDate } from '../providers/davDate.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
 
@@ -119,7 +121,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #expandedPreviews = new Map<string, string>()
 	readonly #expandedApproved = new Set<string>()
 	readonly #historyPreviews = new Map<string, HistoryPreview>()
-	readonly history = shallowReactive({ items: [] as HistoryItem[], availability: undefined as HistoryAvailability | undefined, loading: false, error: '', active: false, target: '', inspecting: false, verifying: false })
+	readonly history = shallowReactive({ items: [] as HistoryItem[], availability: undefined as HistoryAvailability | undefined, inspection: undefined as ProviderInspection | undefined, loading: false, error: '', active: false, target: '', inspecting: false, verifying: false })
 	readonly #proposalViews = new Map<string, MutationBinding>()
 	readonly #proposalResources = new Map<string, unknown>()
 	readonly #proposalParents = new Map<string, number>()
@@ -132,6 +134,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	#writeBlocked = false
 	#include: boolean | undefined
 	#prepareError: unknown
+	#providerCompletion: string | undefined
 	#attachment: AttachmentViewModel | undefined
 	readonly #fetch: FetchLike
 	readonly #developmentHttp: boolean
@@ -214,6 +217,16 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeTasksTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeContactsTools(this.#providerReads, this) : []))
+			.addChatStage(StageOrder.context - 1, inner => ({
+				stream: (messages, options = {}) => {
+					if (this.#providerCompletion) {
+						const text = this.#providerCompletion
+						this.#providerCompletion = undefined
+						return localConfirmation(text)
+					}
+					return inner.stream(messages, options)
+				},
+			}))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
 					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
@@ -340,7 +353,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if ((CALENDAR_MUTATIONS.has(request.toolName) || TASKS_MUTATIONS.has(request.toolName) || CONTACTS_MUTATIONS.has(request.toolName)) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const appName = CALENDAR_MUTATIONS.has(request.toolName) ? 'calendar' : TASKS_MUTATIONS.has(request.toolName) ? 'tasks' : 'contacts'
-						const binding = this.workspace?.prepare(appName as never)
+						const binding = await this.workspace?.prepareProvider(appName)
 						let plan: DavProposal
 						if (CALENDAR_MUTATIONS.has(request.toolName)) {
 							plan = await this.planCalendarMutation(request.toolName, request.arguments, signal)
@@ -355,7 +368,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							...request,
 							canAllowAlways: false,
 							canAllowForSession: false,
-							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after },
+							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after, nativeContent: plan.rawAfter ?? plan.rawBefore },
 						}
 					}
 					if (MAIL_MUTATIONS.has(request.toolName) && request.source === 'host') {
@@ -516,23 +529,45 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		return this.#active
 	}
 
-	get historyAvailable(): boolean { return this.config.historyEnabled === true && !!this.files.history }
+	get historyAvailable(): boolean { return (this.config.historyEnabled === true && !!this.files.history) || (this.config.development === true && !!this.files.nativeProviders?.actions) }
 	get historyCommandsAvailable(): boolean {
-		if (!this.historyAvailable || !this.chat.isReady || !commandChat(this.chat)) return false
+		if (!this.config.historyEnabled || !this.files.history || !this.chat.isReady || !commandChat(this.chat)) return false
 		const profile = this.agent.profile
 		return !!profile.principal && profile.principal.agentId === profile.id && profile.principal.deviceId === this.tokens.deviceId
 	}
 
 	async refreshHistory(signal: AbortSignal): Promise<void> {
-		if (!this.historyAvailable || !this.files.history) return
+		if (!this.historyAvailable) return
 		this.history.loading = true
 		this.history.error = ''
 		this.history.availability = undefined
 		try {
-			const [items, availability] = await Promise.all([this.files.history.list(signal), this.files.history.availability?.(signal)])
-			this.history.items = items
-			this.history.availability = availability
+			const [fileResult, nativeResult] = await Promise.allSettled([
+				this.config.historyEnabled && this.files.history ? Promise.all([this.files.history.list(signal), this.files.history.availability?.(signal)]) : Promise.resolve([[], undefined] as const),
+				this.config.development && this.files.nativeProviders?.actions ? this.files.nativeProviders.actions(signal) : Promise.resolve([]),
+			])
+			signal.throwIfAborted()
+			const items: HistoryItem[] = fileResult.status === 'fulfilled' ? [...fileResult.value[0]] : []
+			if (nativeResult.status === 'fulfilled') items.push(...nativeResult.value)
+			if (!items.length && fileResult.status === 'rejected') throw fileResult.reason
+			if (!items.length && nativeResult.status === 'rejected') throw nativeResult.reason
+			this.history.items = items.sort((a, b) => b.createdAt - a.createdAt)
+			this.history.availability = fileResult.status === 'fulfilled' ? fileResult.value[1] : undefined
 		} catch (error) { this.history.items = []; if (!signal.aborted) this.history.error = errorMessage(error) } finally { this.history.loading = false }
+	}
+
+	async inspectProviderAction(item: HistoryItem, signal: AbortSignal): Promise<void> {
+		if (!item.auditOnly || !item.provider || !this.config.development || !this.files.nativeProviders?.inspectAction) throw new Error('This native action cannot be inspected.')
+		this.history.inspection = undefined
+		try {
+			const inspection = await this.files.nativeProviders.inspectAction(item.id, signal)
+			signal.throwIfAborted()
+			if (inspection.action.id !== item.id || inspection.action.provider !== item.provider || inspection.repeatedDispatch !== false) throw new Error('The native action inspection is invalid.')
+			this.history.inspection = inspection
+		} catch (error) {
+			if (!signal.aborted) this.history.error = 'Current native access could not be verified for this action.'
+			throw error
+		}
 	}
 
 	async invokeHistory(direction: HistoryDirection, actionId: string, label = direction === 'undo' ? 'Undo file change' : direction === 'redo' ? 'Redo file change' : direction === 'revalidate' ? 'Verify file revision' : 'Inspect outcome'): Promise<void> {
@@ -1390,7 +1425,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					return { etag: e.etag, raw: e.content, values: parsed.values }
 				})()
 				: await this.files.calendar!.getEvent(v.calendarId, v.filename, signal)
-			if (current.etag !== v.expectedEtag) {
+			if (strongEtagHeader(current.etag) !== strongEtagHeader(v.expectedEtag)) {
 				throw new Error('Calendar resource changed. Read it again before proposing a write.')
 			}
 			const p = assertPrivateComponent(current.raw, 'VEVENT')
@@ -1437,7 +1472,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					return { etag: e.etag, raw: e.content, values: parsed.values }
 				})()
 				: await this.files.calendar!.getEvent(v.calendarId, v.filename, signal)
-			if (current.etag !== v.expectedEtag) {
+			if (strongEtagHeader(current.etag) !== strongEtagHeader(v.expectedEtag)) {
 				throw new Error('Calendar resource changed. Read it again before proposing a write.')
 			}
 			const p = assertPrivateComponent(current.raw, 'VEVENT')
@@ -1486,14 +1521,16 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
 		try {
 			let result: unknown
+			let nativeCommit: CalendarCommitOutcome | undefined
 			const calendarId = proposal.calendarId!
 			const filename = proposal.filename
 			if (proposal.proposalId && this.files.nativeProviders?.calendarCommit) {
 				const commitResult = await this.files.nativeProviders.calendarCommit(proposal.proposalId, call.signal)
+				nativeCommit = commitResult
 				if (commitResult.outcome !== 'verified') {
 					throw new Error(commitResult.errorMessage || 'Calendar change could not be verified.')
 				}
-				result = { status: commitResult.status, etag: commitResult.etag, outcome: commitResult.outcome }
+				result = { status: commitResult.status, etag: commitResult.etag, outcome: commitResult.outcome, actionId: commitResult.actionId }
 			} else if (name === 'nc_calendar_create') {
 				result = await this.files.calendar!.createEvent(calendarId, filename, proposal.rawAfter!, call.signal)
 			} else if (name === 'nc_calendar_patch') {
@@ -1505,9 +1542,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const activity = binding && generation !== undefined
 				? await this.workspace!.committed(call.callId, generation, binding, {
 					operation: name,
+					provider: { app: 'calendar', collectionId: calendarId, filename, date: nativeEventDate(proposal) },
 					file: { id: 0, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
 				}, call.signal)
 				: undefined
+			if (nativeCommit) await this.confirmProviderCommit('calendar', calendarId, filename, proposal.target, nativeCommit, call.signal)
 			return {
 				status: name === 'nc_calendar_delete' ? 'deleted' : 'saved',
 				result,
@@ -1593,7 +1632,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					return { etag: t.etag, raw, values: parsed.values }
 				})()
 				: await this.files.tasks!.getTask(v.calendarId, v.filename, signal)
-			if (current.etag !== v.expectedEtag) {
+			if (strongEtagHeader(current.etag) !== strongEtagHeader(v.expectedEtag)) {
 				throw new Error('Task resource changed. Read it again before proposing a write.')
 			}
 			const p = assertPrivateComponent(current.raw, 'VTODO')
@@ -1658,7 +1697,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					return { etag: t.etag, raw, values: parsed.values }
 				})()
 				: await this.files.tasks!.getTask(v.calendarId, v.filename, signal)
-			if (current.etag !== v.expectedEtag) {
+			if (strongEtagHeader(current.etag) !== strongEtagHeader(v.expectedEtag)) {
 				throw new Error('Task resource changed. Read it again before proposing a write.')
 			}
 			const p = assertPrivateComponent(current.raw, 'VTODO')
@@ -1704,14 +1743,16 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
 		try {
 			let result: unknown
+			let nativeCommit: CalendarCommitOutcome | undefined
 			const calendarId = proposal.calendarId!
 			const filename = proposal.filename
 			if (proposal.proposalId && this.files.nativeProviders?.tasksCommit) {
 				const commitResult = await this.files.nativeProviders.tasksCommit(proposal.proposalId, call.signal)
+				nativeCommit = commitResult
 				if (commitResult.outcome !== 'verified') {
 					throw new Error(commitResult.errorMessage || 'Tasks change could not be verified.')
 				}
-				result = { status: commitResult.status, etag: commitResult.etag, outcome: commitResult.outcome }
+				result = { status: commitResult.status, etag: commitResult.etag, outcome: commitResult.outcome, actionId: commitResult.actionId }
 			} else if (name === 'nc_tasks_create') {
 				result = await this.files.tasks!.createTask(calendarId, filename, proposal.rawAfter!, call.signal)
 			} else if (name === 'nc_tasks_patch') {
@@ -1723,9 +1764,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const activity = binding && generation !== undefined
 				? await this.workspace!.committed(call.callId, generation, binding, {
 					operation: name,
+					provider: { app: 'tasks', collectionId: calendarId, filename },
 					file: { id: 0, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
 				}, call.signal)
 				: undefined
+			if (nativeCommit) await this.confirmProviderCommit('tasks', calendarId, filename, proposal.target, nativeCommit, call.signal)
 			return {
 				status: name === 'nc_tasks_delete' ? 'deleted' : 'saved',
 				result,
@@ -1856,7 +1899,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const current = this.files.nativeProviders?.contactsRead
 				? await this.contactForProposal(v.bookId, v.filename, signal)
 				: await this.files.contacts!.readContact(v.bookId, v.filename, signal)
-			if (current.etag !== v.expectedEtag) {
+			if (strongEtagHeader(current.etag) !== strongEtagHeader(v.expectedEtag)) {
 				throw new Error('Contact resource changed. Read it again before proposing a write.')
 			}
 			const currentRaw = current.raw ?? ''
@@ -1902,7 +1945,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const current = this.files.nativeProviders?.contactsRead
 				? await this.contactForProposal(v.bookId, v.filename, signal)
 				: await this.files.contacts!.readContact(v.bookId, v.filename, signal)
-			if (current.etag !== v.expectedEtag) {
+			if (strongEtagHeader(current.etag) !== strongEtagHeader(v.expectedEtag)) {
 				throw new Error('Contact resource changed. Read it again before proposing a write.')
 			}
 			let proposalId: string | undefined
@@ -1944,14 +1987,16 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
 		try {
 			let result: unknown
+			let nativeCommit: CalendarCommitOutcome | undefined
 			const bookId = proposal.bookId!
 			const filename = proposal.filename
 			if (proposal.proposalId && this.files.nativeProviders?.contactsCommit) {
 				const commitResult = await this.files.nativeProviders.contactsCommit(proposal.proposalId, call.signal)
+				nativeCommit = commitResult
 				if (commitResult.outcome !== 'verified') {
 					throw new Error(commitResult.errorMessage || 'Contacts change could not be verified.')
 				}
-				result = { status: commitResult.status, etag: commitResult.etag, outcome: commitResult.outcome }
+				result = { status: commitResult.status, etag: commitResult.etag, outcome: commitResult.outcome, actionId: commitResult.actionId }
 			} else if (name === 'nc_contacts_create') {
 				result = await this.files.contacts!.createContact(bookId, filename, proposal.rawAfter!, call.signal)
 			} else if (name === 'nc_contacts_patch') {
@@ -1963,9 +2008,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const activity = binding && generation !== undefined
 				? await this.workspace!.committed(call.callId, generation, binding, {
 					operation: name,
+					provider: { app: 'contacts', collectionId: bookId, filename },
 					file: { id: 0, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
 				}, call.signal)
 				: undefined
+			if (nativeCommit) await this.confirmProviderCommit('contacts', bookId, filename, proposal.target, nativeCommit, call.signal)
 			return {
 				status: name === 'nc_contacts_delete' ? 'deleted' : 'saved',
 				result,
@@ -1976,6 +2023,15 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			this.#writeBlocked = true
 			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.target, error)
 			throw error
+		}
+	}
+
+	private async confirmProviderCommit(provider: 'calendar' | 'tasks' | 'contacts', collectionId: string, filename: string,
+		target: string, outcome: CalendarCommitOutcome, signal: AbortSignal): Promise<void> {
+		if (!this.#providerReads || signal.aborted) return
+		const canReplay = await this.#providerReads.committed(provider, collectionId, filename, outcome.status === 'deleted', outcome.etag, signal).catch(() => false)
+		if (!canReplay && !signal.aborted) {
+			this.#providerCompletion = `Nextcloud confirmed ${outcome.status === 'deleted' ? 'deletion' : 'the save'}: ${target}. Start a new conversation to continue; earlier source content cannot be safely sent again.`
 		}
 	}
 
@@ -2229,6 +2285,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		try {
 			if (this.#closed) throw new Error('This connection has ended. Sign in again.')
 			this.#writeBlocked = false
+			this.#providerCompletion = undefined
 			const stopped = AbortSignal.any([signal, this.#stop.signal])
 			this.#active = include ? this.selection.snapshot() : undefined
 			await this.files.assertIdentity(stopped)
@@ -2352,6 +2409,18 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		await this.agent.dispose()
 	}
 
+}
+
+async function * localConfirmation(text: string): AsyncIterable<ChatUpdate> {
+	yield { type: 'text', text }
+	yield { type: 'finish', reason: 'stop' }
+}
+
+function nativeEventDate(proposal: DavProposal): string | undefined {
+	for (const value of [proposal.after, proposal.before]) {
+		if (value && typeof value === 'object' && 'DTSTART' in value && typeof value.DTSTART === 'string') return nativeCalendarDate(value.DTSTART)
+	}
+	return undefined
 }
 
 function resultRecords(result: unknown): number {

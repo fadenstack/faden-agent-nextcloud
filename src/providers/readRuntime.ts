@@ -13,6 +13,7 @@ import type { PublishedTool, ScopePolicy } from '../platform/scope.ts'
 import { ProviderRegistry } from './registry.ts'
 import { ProviderTurnScope, type ProviderResource } from './scope.ts'
 import type { NativeProvidersApi } from './client.ts'
+import { strongEtagHeader } from '../integrations/nextcloud/adapterGuards.ts'
 
 const IMPLEMENTATIONS = new ProviderRegistry([
 	{
@@ -154,18 +155,51 @@ export class ProviderReadRuntime {
 		}
 	}
 
+	/** Rebase only our independently verified effect; arbitrary editor changes still fail authorize(). */
+	async committed(provider: 'calendar' | 'tasks' | 'contacts', collectionId: string, filename: string,
+		deleted: boolean, etag: string | undefined, signal: AbortSignal): Promise<boolean> {
+		const guard = this.readGuard()
+		const scope = this.#scope!
+		const object = collectionReference(provider, collectionId + '\0' + filename)
+		const collection = collectionReference(provider, collectionId)
+		const affected = [...this.#sources.values()].filter(source => source.provider === provider && source.collectionId === collectionId
+			&& [object, collection].includes(source.resourceId))
+		// A deleted source cannot be freshly authorized. Keep its ledger and finish locally;
+		// a new conversation is required before any of its old content could be replayed.
+		if (deleted && affected.some(source => source.resourceId === object)) return false
+		try {
+			const verified: ProviderResource[] = []
+			for (const previous of affected) {
+				signal.throwIfAborted()
+				const current = await scope.resolve(previous, false, signal)
+				guard()
+				signal.throwIfAborted()
+				if (current.provider !== previous.provider || current.resourceId !== previous.resourceId || current.collectionId !== previous.collectionId
+					|| current.policyVersion !== previous.policyVersion || current.sourceClass !== previous.sourceClass || current.audience !== previous.audience) return false
+				if (previous.resourceId === object && (!etag || strongEtagHeader(current.revision) !== strongEtagHeader(etag))) return false
+				verified.push(current)
+			}
+			for (const current of verified) this.record(current)
+			return true
+		} catch { return false }
+	}
+
 	async collections(signal: AbortSignal): Promise<unknown> {
 		const scope = this.#scope
-		const values = await this.api.calendarCollections(signal)
+		if (!scope) throw new Error('The native provider turn is unavailable.')
+		const discoveryOnly = scope.tools.find(tool => tool.name === 'nc_calendar_list')?.capability.discoveryOnly === true
+		const values = discoveryOnly ? [] : await this.api.calendarCollections(signal)
+		const tasks = scope.tools.some(tool => tool.provider === 'tasks') && this.api.tasksLists ? await this.api.tasksLists(signal) : []
 		signal.throwIfAborted()
 		if (!scope || this.#scope !== scope) throw new ScopeViolation('scope_changed', 'The provider turn changed.')
-		if (!Array.isArray(values) || values.length > 8) throw new Error('Invalid native Calendar collection result.')
-		for (const resource of values) {
+		if (!Array.isArray(values) || values.length > 8 || !Array.isArray(tasks) || tasks.length > 8) throw new Error('Invalid native Calendar collection result.')
+		for (const resource of [...values, ...tasks]) {
 			if (typeof resource.title !== 'string' || resource.title.length > 2048
-				|| resource.resourceId !== collectionReference('calendar', resource.collectionId)) throw new Error('Invalid native Calendar collection result.')
+				|| !['calendar', 'tasks'].includes(resource.provider)
+				|| resource.resourceId !== collectionReference(resource.provider as 'calendar' | 'tasks', resource.collectionId)) throw new Error('Invalid native Calendar collection result.')
 			this.record(resource)
 		}
-		return { provider: 'calendar', collections: values, scope: 'administrator-configured collections', writesEnabled: scope.tools.some(tool => tool.provider === 'calendar' && tool.risk !== 'read') }
+		return { provider: 'calendar', collections: [...values, ...tasks], scope: 'administrator-configured calendars and task lists', writesEnabled: scope.tools.some(tool => ['calendar', 'tasks'].includes(tool.provider) && tool.risk !== 'read') }
 	}
 
 	async events(reference: unknown, signal: AbortSignal): Promise<unknown> {
@@ -187,6 +221,7 @@ export class ProviderReadRuntime {
 				resource_id: resource.resourceId,
 				revision: resource.revision,
 				collection_id: resource.collectionId,
+				filename: resource.filename,
 				properties: parsed.values,
 				sourceClass: resource.sourceClass,
 				audience: resource.audience,
@@ -216,7 +251,7 @@ export function nativeCalendarReadTools(runtime: ProviderReadRuntime, agent?: Ag
 		defineTool({
 			name: 'nc_calendar_list',
 			toolClass: 'read',
-			description: 'List the native calendar collections allowed by the administrator and current user permissions.',
+			description: 'List authorized CalDAV collections. provider=calendar collections support nc_calendar_read; provider=tasks collections provide collectionId for the Tasks tools. References never grant access.',
 			parameters: { type: 'object', properties: {}, additionalProperties: false },
 			run: async (args, call) => {
 				if (Object.keys(args).length) throw new Error('Calendar discovery accepts no arguments.')
@@ -226,7 +261,7 @@ export function nativeCalendarReadTools(runtime: ProviderReadRuntime, agent?: Ag
 		defineTool({
 			name: 'nc_calendar_read',
 			toolClass: 'read',
-			description: 'Read up to 50 events from an authorized calendar returned by nc_calendar_list. This development slice does not change calendars.',
+			description: 'Read up to 50 events from an authorized calendar returned by nc_calendar_list. Retain the returned collection_id, filename and exact revision for individually approved edits.',
 			parameters: { type: 'object', properties: { resource_id: { type: 'string', description: 'Canonical collection resourceId from nc_calendar_list.' } }, required: ['resource_id'], additionalProperties: false },
 			run: async (args, call) => {
 				if (Object.keys(args).some(key => key !== 'resource_id')) throw new Error('Use only a canonical Calendar resource_id.')

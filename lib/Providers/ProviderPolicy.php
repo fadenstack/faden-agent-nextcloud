@@ -21,9 +21,11 @@ final class ProviderPolicy {
 	) {
 	}
 
-	private function parsePolicy(string $section): array {
-		$this->configuration->requireEnabled();
-		if (!$this->configuration->providerReadsEnabled()) {
+	private function parsePolicy(string $section, bool $audit = false): array {
+		if (!$audit) {
+			$this->configuration->requireEnabled();
+		}
+		if (!$audit && !$this->configuration->providerReadsEnabled()) {
 			throw new Problem('The native provider read slice is unavailable.', 403);
 		}
 		$uid = $this->users->getUser()?->getUID();
@@ -68,7 +70,7 @@ final class ProviderPolicy {
 		} catch (\Throwable) {
 			throw new Problem('The administrator provider policy is invalid.', 503);
 		}
-		if (!$config['enabled']) {
+		if (!$audit && !$config['enabled']) {
 			throw new Problem(ucfirst($section) . ' tools have been disabled by the administrator.', 403);
 		}
 		$base = $this->filesPolicy->getPolicy($uid, $this->configuration->get()['serverUrl']);
@@ -87,6 +89,14 @@ final class ProviderPolicy {
 
 	public function contacts(): array {
 		return $this->parsePolicy('contacts');
+	}
+
+	/** Disabling dispatch retains authorized native audit/inspection; revoked scope still denies. */
+	public function audit(string $provider): array {
+		if (!in_array($provider, ['calendar', 'tasks', 'contacts'], true)) {
+			throw new Problem('Unsupported provider audit.', 400);
+		}
+		return $this->parsePolicy($provider, true);
 	}
 
 	public function assertDisclosure(array $policy, ?string $sourceClass = null): void {

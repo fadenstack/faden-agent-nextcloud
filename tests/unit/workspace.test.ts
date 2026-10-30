@@ -16,6 +16,31 @@ function nativeGuard() {
 }
 
 describe('Native editor protection', () => {
+	it('latches edits from a native child document using that document\'s event realm', () => {
+		const frame = document.createElement('iframe')
+		document.body.append(frame)
+		const child = frame.contentDocument!
+		child.body.innerHTML = '<main id="app-content"><input value="Native draft"></main>'
+		const guard = new NativeViewGuard(child)
+		guards.push(guard)
+		child.querySelector('input')!.dispatchEvent(new child.defaultView!.Event('input', { bubbles: true }))
+		expect(guard.snapshot().editState).toBe('dirty')
+		child.querySelector('input')!.remove()
+		expect(guard.snapshot().editState).toBe('dirty')
+	})
+
+	it('distinguishes the native Contacts read-only account card from an editable contact', () => {
+		const guard = nativeGuard()
+		history.replaceState(null, '', '/apps/contacts/All%20contacts/account')
+		document.querySelector('#app-content-vue')!.insertAdjacentHTML('beforeend', '<div class="contact-details-wrapper contact-details-wrapper-read-only"><section class="contact-details">Account profile</section></div>')
+		expect(guard.snapshot().editState).toBe('clean')
+		document.querySelector('.contact-details-wrapper')!.classList.remove('contact-details-wrapper-read-only')
+		expect(guard.snapshot().editState).toBe('unknown')
+		document.querySelector('.contact-details-wrapper')!.classList.add('contact-details-wrapper-read-only')
+		document.querySelector('.contact-details')!.insertAdjacentHTML('beforeend', '<input value="Unsaved contact">')
+		expect(guard.snapshot().editState).toBe('unknown')
+	})
+
 	it('treats an inline Files description editor as unknown before any input event', () => {
 		const guard = nativeGuard()
 		document.querySelector('#app-content-vue')!.insertAdjacentHTML('beforeend', '<div class="editor-container"><div contenteditable="true">Inline native description</div></div>')
@@ -53,8 +78,15 @@ describe('Native editor protection', () => {
 		document.body.append(viewer)
 		expect(guard.snapshot().editState).toBe('unknown')
 		viewer.remove()
-		history.replaceState(null, '', '/apps/calendar')
-		expect(guard.snapshot()).toMatchObject({ app: 'calendar', editState: 'unknown' })
+		history.replaceState(null, '', '/apps/unrecognized')
+		expect(guard.snapshot()).toMatchObject({ app: 'unrecognized', editState: 'unknown' })
+	})
+	it.each(['calendar', 'tasks', 'contacts'])('recognizes a pristine %s browse view and refuses a native editor', app => {
+		const guard = nativeGuard()
+		history.replaceState(null, '', '/apps/' + app + '/')
+		expect(guard.snapshot()).toMatchObject({ app, editState: 'clean' })
+		document.querySelector('#app-content-vue')!.insertAdjacentHTML('beforeend', '<textarea>Native draft</textarea>')
+		expect(guard.snapshot().editState).toBe('unknown')
 	})
 	it('does not mistake its own native Details dialog for an external draft', () => {
 		const guard = nativeGuard()

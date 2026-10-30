@@ -81,12 +81,21 @@ final class JournalService {
 	}
 
 	/** Metadata is filtered through current provider authority before disclosure. */
-	public function list(JournalIdentity $identity, ?JournalResource $resource = null): array {
+	public function list(JournalIdentity $identity, ?JournalResource $resource = null, ?array $providers = null, ?int $limit = null): array {
+		if ($limit !== null && ($limit < 1 || $limit > 50)) {
+			throw new JournalException('invalid_limit', 400);
+		}
 		$result = [];
 		foreach ($this->store->owned($identity->ownerHash, $identity->scopeHash, $resource?->key($identity)) as $row) {
 			try {
+				if ($providers !== null && !in_array(json_decode($row['resource_json'], true, 8, JSON_THROW_ON_ERROR)['provider'] ?? null, $providers, true)) {
+					continue;
+				}
 				$this->authorizeRow($identity, $row, 'list');
 				$result[] = $this->summary($row);
+				if ($limit !== null && count($result) >= $limit) {
+					break;
+				}
 			} catch (JournalException) {
 				// No existence, title or saved bytes from an inaccessible provider/object.
 			}

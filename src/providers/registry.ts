@@ -18,6 +18,8 @@ export interface ProviderCapability {
 	readonly refresh: RefreshStrategy
 	readonly canRead: boolean
 	readonly canWrite: boolean
+	/** Native facade: Calendar discovery is backed only by configured VTODO lists. */
+	readonly discoveryOnly?: boolean
 }
 
 /** The implementation must exist independently of the discovered advertisement. */
@@ -65,12 +67,14 @@ export class ProviderRegistry {
 			seen.add(value.provider)
 			const implementation = this.#implementations.get(value.provider)
 			if (!implementation || value.enabled !== true || value.canRead !== true || !value.policyVersion
+				|| (value.discoveryOnly !== undefined && typeof value.discoveryOnly !== 'boolean')
 				|| !implementation.apiVersions.includes(value.apiVersion)
 				|| !['conditional', 'native', 'read-only'].includes(value.conflict)
 				|| !['certified', 'audit-only', 'not-applicable'].includes(value.history)
 				|| !['native-event', 'route', 'child-reload', 'manual'].includes(value.refresh)
 				|| !Array.isArray(value.tools) || new Set(value.tools).size !== value.tools.length) continue
 			for (const name of implementation.tools) {
+				if (value.discoveryOnly && (value.provider !== 'calendar' || name !== 'nc_calendar_list')) continue
 				const host = fileCapability(name)!
 				const matches = published.filter(tool => tool.name === name)
 				const contract = matches.length === 1 ? matches[0] : undefined

@@ -22,10 +22,14 @@ async function choose(item: HistoryItem) {
 	await nextTick()
 	await props.host.invokeHistory(item.eligible, item.id, item.eligible === 'undo' ? t('fadenstack_agent', 'Undo file change') : item.eligible === 'redo' ? t('fadenstack_agent', 'Redo file change') : item.eligible === 'revalidate' ? t('fadenstack_agent', 'Verify file revision') : t('fadenstack_agent', 'Inspect outcome'))
 }
+async function inspect(item: HistoryItem) {
+	try { await props.host.inspectProviderAction(item, loading.signal) } catch { /* The host exposes a safe inspection error. */ }
+}
 function paused(item: HistoryItem): boolean {
 	return !!props.host.history.availability?.writesPaused && ['undo', 'redo'].includes(item.eligible)
 }
 function state(item: HistoryItem): string {
+	if (item.auditOnly) return item.state === 'applied' ? t('fadenstack_agent', 'Saved · audit only') : item.state === 'failed' ? t('fadenstack_agent', 'No change recorded · audit only') : t('fadenstack_agent', 'Inspect native outcome · audit only')
 	if (item.eligible === 'revalidate') return t('fadenstack_agent', 'File revision changed')
 	if (item.eligible === 'none' && ['applied', 'undone'].includes(item.state)) return t('fadenstack_agent', 'Restoration unavailable')
 	if (item.state === 'applied') return t('fadenstack_agent', 'Saved')
@@ -41,7 +45,7 @@ function state(item: HistoryItem): string {
 <template>
 	<NcDialog :open="true" :name="t('fadenstack_agent', 'Agent actions')" @update:open="!$event && emit('close')">
 		<div class="fadenstack-action-history" :data-version="version">
-			<p>{{ t('fadenstack_agent', 'Review a private text-file change before restoring it. Protection settings and later edits can prevent restoration.') }}</p>
+			<p>{{ t('fadenstack_agent', 'Review recorded actions and inspect their current native state. Restoration is available only for certified private text-file changes.') }}</p>
 			<p v-if="host.history.availability?.writesPaused" role="alert">
 				{{ t('fadenstack_agent', 'Agent file changes are paused because an earlier action could not be safely checked. Contact your administrator. You can still inspect available outcomes.') }}
 			</p>
@@ -51,7 +55,7 @@ function state(item: HistoryItem): string {
 			<p v-if="host.history.availability?.earlierScopeCount" role="status">
 				{{ n('fadenstack_agent', '{count} earlier action uses another connection or previous app settings. Its saved content expires by {date}.', '{count} earlier actions use another connection or previous app settings. Their saved content expires by {date}.', host.history.availability.earlierScopeCount, { count: host.history.availability.earlierScopeCount, date: host.history.availability.earlierContentExpiresBy ? new Date(host.history.availability.earlierContentExpiresBy * 1000).toLocaleString() : '' }) }}
 			</p>
-			<p v-if="!host.historyCommandsAvailable" role="status">
+			<p v-if="host.history.items.some(item => !item.auditOnly) && !host.historyCommandsAvailable" role="status">
 				{{ t('fadenstack_agent', 'Action controls are unavailable on this version. Contact your administrator.') }}
 			</p>
 			<p v-if="host.history.loading" role="status">
@@ -61,15 +65,19 @@ function state(item: HistoryItem): string {
 				{{ host.history.error }}
 			</p>
 			<p v-else-if="!host.history.items.length">
-				{{ t('fadenstack_agent', 'No saved file changes are available for this account.') }}
+				{{ t('fadenstack_agent', 'No recorded actions are available with current native access.') }}
 			</p>
 			<ul v-else>
 				<li v-for="item in host.history.items" :key="item.id">
 					<div>
 						<strong>{{ item.name }}</strong>
 						<span v-if="item.target">{{ item.target }}</span>
+						<span v-if="item.auditOnly">{{ t('fadenstack_agent', 'Native Nextcloud account audit') }} · {{ item.provider }}</span>
 						<span>{{ state(item) }} · {{ new Date(item.createdAt * 1000).toLocaleString() }}</span>
 					</div>
+					<NcButton v-if="item.auditOnly" :disabled="host.chat.isBusy" @click="inspect(item)">
+						{{ t('fadenstack_agent', 'Inspect outcome') }}
+					</NcButton>
 					<NcButton v-if="item.eligible !== 'none'" :disabled="host.chat.isBusy || !host.historyCommandsAvailable || paused(item)" @click="choose(item)">
 						<template #icon>
 							<Icon name="history" :size="20" />
@@ -78,6 +86,12 @@ function state(item: HistoryItem): string {
 					</NcButton>
 				</li>
 			</ul>
+			<section v-if="host.history.inspection" role="status" class="fadenstack-action-inspection">
+				<strong>{{ host.history.inspection.outcome === 'verified_committed' ? t('fadenstack_agent', 'Recorded commitment verified') : t('fadenstack_agent', 'Completion remains uncertain') }}</strong>
+				<p>{{ host.history.inspection.message }}</p>
+				<p>{{ host.history.inspection.observed === 'matches_saved_content' ? t('fadenstack_agent', 'Current content matches the recorded save.') : host.history.inspection.observed === 'absent' ? t('fadenstack_agent', 'The resource is absent and its parent is accessible.') : host.history.inspection.observed === 'different_content' ? t('fadenstack_agent', 'Current content differs from the recorded save.') : t('fadenstack_agent', 'The resource is present.') }}</p>
+				<small>{{ t('fadenstack_agent', 'Action reference') }}: {{ host.history.inspection.action.id }}</small>
+			</section>
 		</div>
 		<template #actions>
 			<NcButton @click="emit('close')">

@@ -20,6 +20,9 @@ class ScopePolicy {
 		'nc_get_selected_file', 'nc_read_file', 'nc_list_folder', 'nc_create_text_file', 'nc_update_text_file'];
 	public const HISTORY_TOOLS = ['nc_actions_undo', 'nc_actions_redo', 'nc_actions_reconcile', 'nc_actions_revalidate'];
 	public const EXTENDED_READ_TOOLS = ['nc_files_organize_read', 'nc_files_shares_read'];
+	public const DAV_TOOLS = ['nc_calendar_list', 'nc_calendar_read', 'nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete',
+		'nc_tasks_read', 'nc_tasks_create', 'nc_tasks_patch', 'nc_tasks_delete',
+		'nc_contacts_list', 'nc_contacts_find', 'nc_contacts_read', 'nc_contacts_create', 'nc_contacts_patch', 'nc_contacts_delete'];
 	private const LIMITS = ['calls' => 30, 'mutations' => 10, 'elapsedMs' => 180000, 'resultBytes' => 262144, 'records' => 200, 'bulkItems' => 20];
 	private const CLASSES = ['standard', 'protected', 'unknown'];
 	private const AUDIENCES = ['private', 'shared', 'public', 'unknown'];
@@ -116,12 +119,16 @@ class ScopePolicy {
 			$this->keys($value, ['revision', 'sources', 'destinations', 'tools', 'sourceClasses', 'downstreamPolicy', 'destinationAudiences', 'movements', 'classificationDefault', 'classificationRules', 'limits']);
 			$sources = $this->scopes($value['sources'] ?? []);
 			$destinations = $this->scopes($value['destinations'] ?? []);
-			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS, 'nc_files_create_folder']);
+			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS, ...self::DAV_TOOLS, 'nc_files_create_folder']);
 			if (!$sources || !$tools || !is_string($value['revision'] ?? null) || strlen($value['revision']) < 1 || strlen($value['revision']) > 100) {
 				throw new \InvalidArgumentException();
 			}
 			if ($this->config->getAppValue(Application::APP_ID, 'files_reads_enabled', '0') !== '1') {
 				$tools = array_values(array_diff($tools, self::EXTENDED_READ_TOOLS));
+			}
+			if ($this->config->getAppValue(Application::APP_ID, 'development', '0') !== '1'
+				|| $this->config->getAppValue(Application::APP_ID, 'provider_reads_enabled', '0') !== '1') {
+				$tools = array_values(array_diff($tools, self::DAV_TOOLS));
 			}
 			if ($this->config->getAppValue(Application::APP_ID, 'development', '0') !== '1'
 				|| $this->config->getAppValue(Application::APP_ID, 'folder_create_enabled', '0') !== '1') {

@@ -16,6 +16,7 @@ export interface MutationBinding { readonly view: Readonly<NativeView>; readonly
 export interface WorkspaceDependencies {
 	guard: Pick<NativeViewGuard, 'snapshot' | 'dispose'>
 	refresh(result: WriteResult, signal: AbortSignal): Promise<ViewOutcome>
+	prepareProvider?(app: string): Promise<void>
 }
 
 /** UI coordination only. Native permissions and the SDK remain the execution authorities. */
@@ -31,6 +32,11 @@ export class WorkspaceCoordinator {
 		const view = this.dependencies.guard.snapshot()
 		if (view.app === app && view.editState !== 'clean') throw new Error(view.reason)
 		return Object.freeze({ app, view: Object.freeze({ ...view }) })
+	}
+
+	async prepareProvider(app: string): Promise<MutationBinding> {
+		await this.dependencies.prepareProvider?.(app)
+		return this.prepare(app)
 	}
 
 	begin(id: string, binding: MutationBinding): number {

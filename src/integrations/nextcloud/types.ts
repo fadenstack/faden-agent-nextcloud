@@ -75,9 +75,9 @@ export interface Proposal extends WriteArguments {
 	before: string | null
 	contextId: string
 }
-export interface WriteResult { operation: string; file: FileMetadata; actionId?: string }
+export interface WriteResult { operation: string; file: FileMetadata; actionId?: string; provider?: { app: 'calendar' | 'tasks' | 'contacts'; collectionId: string; filename: string; date?: string } }
 export type HistoryDirection = 'undo' | 'redo' | 'reconcile' | 'revalidate'
-export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number }
+export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number; auditOnly?: boolean; provider?: 'calendar' | 'tasks' | 'contacts' }
 export interface HistoryPreview { id: string; actionId: string; direction: HistoryDirection; digest: string; target: string; before: string; content: string; expires: number; resolution?: { outcome: 'verified' | 'unchanged'; state: 'applied' | 'undone' | 'failed' }; revalidation?: { state: 'applied' | 'undone'; recordedRevision: string; currentRevision: string } }
 export interface HistoryAvailability { unavailableCount: number; earlierScopeCount: number; earlierContentExpiresBy: number | null; writesPaused?: boolean }
 export interface HistoryApi {

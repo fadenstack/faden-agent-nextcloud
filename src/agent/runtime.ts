@@ -3,13 +3,14 @@ import { getLanguage } from '@nextcloud/l10n'
 import { NextcloudAgent } from './createAgent.ts'
 import { NextcloudFiles, errorMessage } from '../integrations/nextcloud/files.ts'
 import type { Identity } from '../integrations/nextcloud/types.ts'
-import { NativeViewGuard } from '../workspace/nativeView.ts'
+import { NativeWorkspace } from '../workspace/nativeWorkspace.ts'
 import { WorkspaceCoordinator } from '../workspace/coordinator.ts'
 import { refreshFiles } from '../workspace/filesRefresh.ts'
 
 /** One runtime per authenticated page, retained when Files unmounts a tab. */
 export function createRuntime(config: Identity) {
-	const workspace = new WorkspaceCoordinator({ guard: new NativeViewGuard(), refresh: refreshFiles })
+	const native = new NativeWorkspace()
+	const workspace = new WorkspaceCoordinator({ guard: native, prepareProvider: app => native.prepare(app), refresh: (result, signal) => result.provider ? native.refresh(result, signal) : refreshFiles(result, signal) })
 	const files = new NextcloudFiles(config)
 	const state = shallowReactive({ host: undefined as NextcloudAgent | undefined, signedIn: false, checking: false, error: '' })
 	const ensure = () => (state.host ??= markRaw(new NextcloudAgent({ ...config, locale: getLanguage().replaceAll('_', '-') }, files, undefined, workspace)))

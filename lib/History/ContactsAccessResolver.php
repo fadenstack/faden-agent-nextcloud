@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace OCA\FadenstackAgent\History;
 
 use OCA\FadenstackAgent\Providers\ProviderPolicy;
+use OCA\FadenstackAgent\Providers\ProviderAuthority;
 use OCP\IUserSession;
 
 final class ContactsAccessResolver implements AccessResolver {
 	public function __construct(
 		private IUserSession $users,
 		private ProviderPolicy $policy,
+		private ProviderAuthority $authority,
 	) {
 	}
 
@@ -23,7 +25,7 @@ final class ContactsAccessResolver implements AccessResolver {
 		}
 		$bookId = substr($resource->authorityReference, strlen('book:'));
 		try {
-			$policy = $this->policy->contacts();
+			$policy = in_array($purpose, ['prepare', 'dispatch'], true) ? $this->policy->contacts() : $this->policy->audit('contacts');
 			if (in_array($purpose, ['prepare', 'dispatch'], true) && !$policy['writesEnabled']) {
 				throw new JournalException('permission_lost', 403);
 			}
@@ -31,6 +33,7 @@ final class ContactsAccessResolver implements AccessResolver {
 				throw new JournalException('permission_lost', 403);
 			}
 			$this->policy->assertDisclosure($policy);
+			$this->authority->inspect($resource);
 		} catch (\Throwable) {
 			throw new JournalException('permission_lost', 403);
 		}

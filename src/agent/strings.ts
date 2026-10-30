@@ -7,7 +7,7 @@ import { builtInStrings, withStrings, type UiStrings } from '@fadenstack/ui'
  */
 const fileActions: Record<'en' | 'de', { why: string; label: string; ask: string; auto: string }> = {
 	en: {
-		why: 'This file action needs your individual approval.',
+		why: 'This action needs your individual approval.',
 		label: 'Individual approval',
 		ask: 'Approve file actions one at a time.',
 		auto: 'Runs reading tools; file actions still need your individual approval.',

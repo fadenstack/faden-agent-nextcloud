@@ -42,6 +42,18 @@ const chatHeader = computed(() => !props.state.loading && !props.state.error
 
 .fadenstack-drawer-message { padding: 16px; }
 
+body.fadenstack-workspace-child #header { display: none !important; }
+
+body.fadenstack-workspace-child { --header-height: 0px; }
+
+#fadenstack-native-workspace { position: fixed; z-index: 100; inset: var(--header-height, 50px) 0 8px; display: flex; flex-direction: column; background: var(--color-main-background); }
+
+#fadenstack-native-frame { flex: 1; width: 100%; min-height: 0; border: 0; }
+
+.fadenstack-native-workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 12px; font: var(--default-font-size, 15px) / 1.5 var(--font-face, system-ui); }
+
+.fadenstack-native-workspace-toolbar button { padding: 4px 8px; border: 1px solid var(--color-border); border-radius: var(--border-radius-element, 8px); background: var(--color-main-background); color: var(--color-main-text); font: inherit; cursor: pointer; }
+
 .fadenstack-drawer .app-sidebar-tabs { flex: 1 1 0 !important; min-height: 0; overflow: hidden; }
 
 .fadenstack-drawer .app-sidebar-tabs__content { height: 100%; min-height: 0 !important; box-sizing: border-box; }
@@ -50,6 +62,7 @@ const chatHeader = computed(() => !props.state.loading && !props.state.error
 
 /* Keep the Files toolbar and rows accessible alongside a desktop assistant. */
 @media (width >= 1024px) {
+	body.fadenstack-agent-open #fadenstack-native-workspace { inset-inline-end: 428px; }
 	body.fadenstack-agent-open #app-content-vue,
 	body.fadenstack-agent-open #app-content { margin-inline-end: 428px !important; }
 	body.fadenstack-agent-open.fadenstack-agent-in-viewer #viewer .modal-wrapper { max-width: calc(100% - 428px); margin-inline-end: 428px; }

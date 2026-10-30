@@ -96,6 +96,10 @@ function observeSelection() {
 }
 
 function mount() {
+	if (window.parent !== window && window.frameElement?.id === 'fadenstack-native-frame') {
+		document.body.classList.add('fadenstack-workspace-child')
+		return
+	}
 	if (document.getElementById('fadenstack-agent-drawer')) return
 	const root = document.createElement('div')
 	root.id = 'fadenstack-agent-drawer'
@@ -110,7 +114,7 @@ function mount() {
 	watch(() => state.runtime?.workspace.state.locked, value => {
 		if (locked) { locked.inert = wasInert; locked = undefined }
 		if (value) {
-			const target = document.querySelector<HTMLElement>('#app-content-vue, #app-content')
+			const target = document.querySelector<HTMLElement>('#fadenstack-native-workspace') ?? document.querySelector<HTMLElement>('#app-content-vue, #app-content')
 			if (target && !target.contains(root) && !target.contains(activity)) { locked = target; wasInert = target.inert; target.inert = true }
 		}
 	})

@@ -6,6 +6,7 @@ import { Icon, useViewModel } from '@fadenstack/ui-vue'
 import { approvalIcon } from '@fadenstack/ui-web'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
+import DavApprovalFields from './DavApprovalFields.vue'
 
 // A file write, answered in place like the SDK's card, but showing the exact proposal (target, current and
 // proposed content) and registering it with Nextcloud before it is allowed. Only once: no "always".
@@ -104,7 +105,10 @@ function deny() {
 			<div class="fdn-label">
 				{{ part.toolName === 'nc_calendar_delete' ? t('fadenstack_agent', 'Target') : t('fadenstack_agent', 'Proposed event') }}
 			</div>
-			<pre class="fdn-approval-args" dir="auto">{{ typeof part.request.arguments.content === 'string' ? part.request.arguments.content : JSON.stringify(part.request.arguments.content ?? part.request.arguments, null, 2) }}</pre>
+			<DavApprovalFields :before="part.request.arguments.before"
+				:after="part.request.arguments.content"
+				:native-content="part.request.arguments.nativeContent"
+				:deleted="part.toolName === 'nc_calendar_delete'" />
 		</template>
 		<template v-else-if="['nc_tasks_create', 'nc_tasks_patch', 'nc_tasks_delete'].includes(part.toolName)">
 			<p class="fdn-approval-description">
@@ -113,7 +117,10 @@ function deny() {
 			<div class="fdn-label">
 				{{ part.toolName === 'nc_tasks_delete' ? t('fadenstack_agent', 'Target') : t('fadenstack_agent', 'Proposed task') }}
 			</div>
-			<pre class="fdn-approval-args" dir="auto">{{ typeof part.request.arguments.content === 'string' ? part.request.arguments.content : JSON.stringify(part.request.arguments.content ?? part.request.arguments, null, 2) }}</pre>
+			<DavApprovalFields :before="part.request.arguments.before"
+				:after="part.request.arguments.content"
+				:native-content="part.request.arguments.nativeContent"
+				:deleted="part.toolName === 'nc_tasks_delete'" />
 		</template>
 		<template v-else-if="['nc_contacts_create', 'nc_contacts_patch', 'nc_contacts_delete'].includes(part.toolName)">
 			<p class="fdn-approval-description">
@@ -122,7 +129,10 @@ function deny() {
 			<div class="fdn-label">
 				{{ part.toolName === 'nc_contacts_delete' ? t('fadenstack_agent', 'Target') : t('fadenstack_agent', 'Proposed contact') }}
 			</div>
-			<pre class="fdn-approval-args" dir="auto">{{ typeof part.request.arguments.content === 'string' ? part.request.arguments.content : JSON.stringify(part.request.arguments.content ?? part.request.arguments, null, 2) }}</pre>
+			<DavApprovalFields :before="part.request.arguments.before"
+				:after="part.request.arguments.content"
+				:native-content="part.request.arguments.nativeContent"
+				:deleted="part.toolName === 'nc_contacts_delete'" />
 		</template>
 		<template v-else>
 			<div class="fdn-label">

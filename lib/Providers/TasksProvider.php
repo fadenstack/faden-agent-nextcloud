@@ -16,6 +16,7 @@ use OCP\IUserSession;
 /** Native, current-session Tasks discovery, reads, and conditional mutations via CalDAV VTODO. */
 final class TasksProvider {
 	private const KEY = 'fadenstack_tasks_state';
+	private ?string $attemptId = null;
 
 	public function __construct(
 		private NativeApiBridge $bridge,
@@ -24,6 +25,7 @@ final class TasksProvider {
 		private ISession $session,
 		private IUserSession $users,
 		private JournalService $journal,
+		private ProviderAuthority $authority,
 	) {
 	}
 
@@ -34,6 +36,10 @@ final class TasksProvider {
 			$this->session->set(self::KEY, $state);
 		}
 		return $state;
+	}
+
+	public function attemptId(): ?string {
+		return $this->attemptId;
 	}
 
 	private function setState(array $state): void {
@@ -109,6 +115,7 @@ final class TasksProvider {
 	public function capabilities(): array {
 		try {
 			$policy = $this->policy->tasks();
+			$collections = $this->lists();
 		} catch (Problem $error) {
 			if ($error->status === 403) {
 				return [];
@@ -116,19 +123,26 @@ final class TasksProvider {
 			throw $error;
 		}
 		$writesEnabled = $this->configuration->providerWritesEnabled() && ($policy['writesEnabled'] ?? false);
+		if (!$collections) {
+			return [];
+		}
+		$tools = ['nc_tasks_read'];
+		foreach (['create', 'patch', 'delete'] as $operation) {
+			if ($writesEnabled && array_filter($collections, static fn (array $collection): bool => $collection['privileges'][$operation])) {
+				$tools[] = 'nc_tasks_' . $operation;
+			}
+		}
 		return [[
 			'provider' => 'tasks',
 			'apiVersion' => 'caldav-v1',
 			'policyVersion' => $policy['policyVersion'],
 			'enabled' => true,
-			'tools' => $writesEnabled
-				? ['nc_tasks_read', 'nc_tasks_create', 'nc_tasks_patch', 'nc_tasks_delete']
-				: ['nc_tasks_read'],
+			'tools' => $tools,
 			'conflict' => 'conditional',
 			'history' => 'audit-only',
 			'refresh' => 'manual',
 			'canRead' => true,
-			'canWrite' => $writesEnabled,
+			'canWrite' => count($tools) > 1,
 		]];
 	}
 
@@ -148,6 +162,9 @@ final class TasksProvider {
 				}
 			}
 			if (!$isCalendar) {
+				continue;
+			}
+			if (!DavResponse::privileges($xpath, $response)['read']) {
 				continue;
 			}
 			// Check if VTODO is supported in this calendar collection
@@ -170,6 +187,7 @@ final class TasksProvider {
 			$title = $this->text($xpath, 'd:propstat/d:prop/d:displayname', $response);
 			$lists[] = [
 				'provider' => 'tasks',
+				'privileges' => DavResponse::privileges($xpath, $response),
 				'resourceId' => 'nextcloud:tasks:' . rtrim(strtr(base64_encode($id), '+/', '-_'), '='),
 				'collectionId' => $id,
 				'revision' => hash('sha256', $response->C14N()),
@@ -235,7 +253,7 @@ final class TasksProvider {
 		}
 		$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($res['body'], $policy['sourceClass']));
 		return [
-			'etag' => trim($res['etag'] ?? '', '"'),
+			'etag' => DavResponse::etag($res['etag'] ?? ''),
 			'content' => $res['body'],
 		];
 	}
@@ -258,6 +276,7 @@ final class TasksProvider {
 		}
 
 		$identity = $this->journalIdentity($policy);
+		$this->authority->mutation('tasks', $collectionId, $operation);
 
 		if ($operation === 'create') {
 			try {
@@ -314,6 +333,7 @@ final class TasksProvider {
 			'filename' => $filename,
 			'expectedEtag' => $expectedEtag,
 			'content' => $icsData,
+			'sourceClass' => CalendarClassification::sourceClass($operation === 'create' ? $icsData : $current['body'], $policy['sourceClass']),
 			'hash' => hash('sha256', $icsData),
 			'target' => "Task list {$collectionId}, task {$filename}",
 			'expires' => time() + 600,
@@ -366,7 +386,8 @@ final class TasksProvider {
 		$this->setState($state);
 
 		$journalResource = new JournalResource('tasks', 'collection:' . $p['collectionId'] . '/task:' . $p['filename'], 'collection:' . $p['collectionId']);
-		$journalEntry = $this->journal->prepare($identity, $journalResource, $p['toolName'], ['content' => $p['content']], [], ['etag' => $p['expectedEtag']]);
+		$journalEntry = $this->journal->prepare($identity, $journalResource, $p['toolName'], ['content' => $p['content'], 'sourceClass' => $p['sourceClass']], [], ['etag' => $p['expectedEtag']]);
+		$this->attemptId = $journalEntry['id'];
 		$this->journal->markDispatched($identity, $journalEntry['id'], $journalEntry['ticket']);
 
 		// Release session lock before HTTP request
@@ -401,10 +422,11 @@ final class TasksProvider {
 			if ($p['operation'] === 'delete') {
 				throw new Problem('The task resource could not be confirmed deleted.', 409);
 			}
-			$finalEtag = trim(DavResponse::verifyContent($verify, $p['content']), '"');
+			$finalEtag = DavResponse::verifyContent($verify, $p['content']);
 			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback($finalEtag));
 			return [
 				'status' => 'saved',
+				'actionId' => $journalEntry['id'],
 				'outcome' => 'verified',
 				'etag' => $finalEtag,
 				'target' => $p['target'],
@@ -413,9 +435,16 @@ final class TasksProvider {
 			];
 		} catch (Problem $verifyErr) {
 			if ($p['operation'] === 'delete' && $verifyErr->status === 404) {
+				try {
+					$this->authority->collection('tasks', $p['collectionId']);
+				} catch (\Throwable $error) {
+					$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
+					throw $error;
+				}
 				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback('absent'));
 				return [
 					'status' => 'deleted',
+					'actionId' => $journalEntry['id'],
 					'outcome' => 'verified',
 					'target' => $p['target'],
 					'collectionId' => $p['collectionId'],

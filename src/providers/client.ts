@@ -23,6 +23,7 @@ export interface CalendarProposalSummary {
 }
 
 export interface CalendarCommitOutcome {
+	readonly actionId?: string
 	readonly status: 'saved' | 'deleted'
 	readonly outcome: 'verified'
 	readonly etag?: string
@@ -45,7 +46,30 @@ export interface ContactSummary extends ProviderResource {
 export type ContactReadResult = (ContactSummary & { readonly etag: string })
 	| { readonly contacts: readonly ContactSummary[]; readonly complete: boolean }
 
+export interface ProviderAuditItem {
+	readonly id: string
+	readonly provider: 'calendar' | 'tasks' | 'contacts'
+	readonly name: string
+	readonly target: string
+	readonly state: string
+	readonly eligible: 'none'
+	readonly auditOnly: true
+	readonly version: number
+	readonly createdAt: number
+}
+
+export interface ProviderInspection {
+	readonly action: ProviderAuditItem
+	readonly observed: 'present' | 'absent' | 'matches_saved_content' | 'different_content'
+	readonly journalState: string
+	readonly outcome: 'verified_committed' | 'unknown'
+	readonly repeatedDispatch: false
+	readonly message: string
+}
+
 export interface NativeProvidersApi {
+	actions?(signal: AbortSignal): Promise<readonly ProviderAuditItem[]>
+	inspectAction?(id: string, signal: AbortSignal): Promise<ProviderInspection>
 	capabilities(signal: AbortSignal): Promise<readonly ProviderCapability[]>
 	calendarCollections(signal: AbortSignal): Promise<readonly CalendarCollection[]>
 	calendarEvents(collectionId: string, signal: AbortSignal): Promise<readonly CalendarEvent[]>
@@ -72,6 +96,11 @@ export interface NativeProvidersApi {
 /** Only our fixed native endpoints; credentials/URLs never appear in tool arguments. */
 export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>): NativeProvidersApi {
 	return {
+		actions: async signal => post<ProviderAuditItem[]>('/providers/actions', {}, signal),
+		inspectAction: async (id, signal) => {
+			if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid native action reference.')
+			return post<ProviderInspection>(`/providers/actions/${id}/inspect`, {}, signal)
+		},
 		capabilities: async signal => (await post<{ providers: ProviderCapability[] }>('/providers/capabilities', {}, signal)).providers,
 		calendarCollections: async signal => (await post<{ collections: CalendarCollection[] }>('/providers/calendar/collections', {}, signal)).collections,
 		calendarEvents: async (collectionId, signal) => (await post<{ events: CalendarEvent[] }>('/providers/calendar/events', { collectionId }, signal)).events,

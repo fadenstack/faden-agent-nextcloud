@@ -47,6 +47,19 @@ final class DavResponse {
 		}
 	}
 
+	public static function privileges(\DOMXPath $xpath, \DOMNode $context): array {
+		$names = [];
+		foreach ($xpath->query('.//d:current-user-privilege-set/d:privilege/*', $context) as $privilege) {
+			if ($privilege->namespaceURI === 'DAV:') {
+				$names[] = $privilege->localName;
+			}
+		}
+		$all = in_array('all', $names, true);
+		$write = $all || in_array('write', $names, true);
+		return ['read' => $all || in_array('read', $names, true), 'create' => $write || in_array('bind', $names, true),
+			'patch' => $write || in_array('write-content', $names, true), 'delete' => $write || in_array('unbind', $names, true)];
+	}
+
 	public static function verifyContent(array $response, string $expected): string {
 		if (($response['status'] ?? null) !== 200 || !is_string($response['body'] ?? null)
 			|| !hash_equals(hash('sha256', $expected), hash('sha256', $response['body']))) {

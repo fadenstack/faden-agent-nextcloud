@@ -52,6 +52,12 @@ final class NativeRequest {
 			['Depth' => '1', 'Content-Type' => 'application/xml; charset=utf-8']);
 	}
 
+	public static function calendarCollection(string $actor, string $calendar): self {
+		$body = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:resourcetype/><d:current-user-privilege-set/><c:supported-calendar-component-set/></d:prop></d:propfind>';
+		return new self($actor, 'PROPFIND', '/remote.php/dav/calendars/' . self::segment($actor) . '/' . self::segment($calendar) . '/', $body,
+			['Depth' => '0', 'Content-Type' => 'application/xml; charset=utf-8']);
+	}
+
 	public static function calendarObject(string $actor, string $calendar, string $filename): self {
 		return new self($actor, 'GET', '/remote.php/dav/calendars/' . self::segment($actor) . '/' . self::segment($calendar) . '/' . self::segment($filename), '', []);
 	}
@@ -81,6 +87,12 @@ final class NativeRequest {
 		$body = '<?xml version="1.0"?><card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><card:address-data/></d:prop><card:filter/></card:addressbook-query>';
 		return new self($actor, 'REPORT', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/' . self::segment($book) . '/', $body,
 			['Depth' => '1', 'Content-Type' => 'application/xml; charset=utf-8']);
+	}
+
+	public static function addressbookCollection(string $actor, string $book): self {
+		$body = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:resourcetype/><d:current-user-privilege-set/></d:prop></d:propfind>';
+		return new self($actor, 'PROPFIND', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/' . self::segment($book) . '/', $body,
+			['Depth' => '0', 'Content-Type' => 'application/xml; charset=utf-8']);
 	}
 
 	public static function findAddressbookObjects(string $actor, string $book, string $query): self {

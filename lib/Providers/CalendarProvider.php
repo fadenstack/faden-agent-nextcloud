@@ -16,6 +16,7 @@ use OCP\IUserSession;
 /** Native, current-session Calendar discovery, reads, and conditional mutations. */
 final class CalendarProvider {
 	private const KEY = 'fadenstack_calendar_state';
+	private ?string $attemptId = null;
 
 	public function __construct(
 		private NativeApiBridge $bridge,
@@ -24,6 +25,7 @@ final class CalendarProvider {
 		private ISession $session,
 		private IUserSession $users,
 		private JournalService $journal,
+		private ProviderAuthority $authority,
 	) {
 	}
 
@@ -34,6 +36,10 @@ final class CalendarProvider {
 			$this->session->set(self::KEY, $state);
 		}
 		return $state;
+	}
+
+	public function attemptId(): ?string {
+		return $this->attemptId;
 	}
 
 	private function setState(array $state): void {
@@ -137,8 +143,12 @@ final class CalendarProvider {
 				|| !$xpath->query('c:supported-calendar-component-set/c:comp[@name="VEVENT"]', $property)->length) {
 				continue;
 			}
+			if (!DavResponse::privileges($xpath, $property)['read']) {
+				continue;
+			}
 			$ref = 'nextcloud:calendar:' . rtrim(strtr(base64_encode($id), '+/', '-_'), '=');
 			$result[] = ['provider' => 'calendar', 'resourceId' => $ref, 'collectionId' => $id,
+				'privileges' => DavResponse::privileges($xpath, $property),
 				'revision' => hash('sha256', $property->C14N()),
 				'title' => $this->text($xpath, 'd:displayname', $property), 'policyVersion' => $policy['policyVersion'],
 				'sourceClass' => $policy['sourceClass'], 'audience' => 'unknown'];
@@ -160,10 +170,13 @@ final class CalendarProvider {
 		if (!$collections['collections']) {
 			return [];
 		}
-		$canWrite = $collections['writesEnabled'] ?? false;
+		$canWrite = false;
 		$tools = ['nc_calendar_list', 'nc_calendar_read'];
-		if ($canWrite) {
-			$tools = [...$tools, 'nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete'];
+		foreach (['create', 'patch', 'delete'] as $operation) {
+			if ($collections['writesEnabled'] && array_filter($collections['collections'], static fn (array $collection): bool => $collection['privileges'][$operation])) {
+				$tools[] = 'nc_calendar_' . $operation;
+				$canWrite = true;
+			}
 		}
 		return [['provider' => 'calendar', 'apiVersion' => 'caldav-v1', 'policyVersion' => $collections['policyVersion'],
 			'enabled' => true, 'tools' => $tools, 'conflict' => $canWrite ? 'conditional' : 'read-only',
@@ -221,7 +234,7 @@ final class CalendarProvider {
 		if ($resp['status'] !== 200) {
 			throw new Problem('The calendar resource is not available.', 404);
 		}
-		$etag = trim($resp['etag'], '"');
+		$etag = DavResponse::etag($resp['etag']);
 		$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($resp['body'], $policy['sourceClass']));
 		return ['etag' => $etag, 'content' => $resp['body']];
 	}
@@ -244,6 +257,7 @@ final class CalendarProvider {
 		}
 
 		$identity = $this->journalIdentity($policy);
+		$this->authority->mutation('calendar', $collectionId, $operation);
 
 		if ($operation === 'create') {
 			try {
@@ -300,6 +314,7 @@ final class CalendarProvider {
 			'filename' => $filename,
 			'expectedEtag' => $expectedEtag,
 			'content' => $icsData,
+			'sourceClass' => CalendarClassification::sourceClass($operation === 'create' ? $icsData : $current['body'], $policy['sourceClass']),
 			'hash' => hash('sha256', $icsData),
 			'target' => "Calendar {$collectionId}, event {$filename}",
 			'expires' => time() + 600,
@@ -356,11 +371,12 @@ final class CalendarProvider {
 			$identity,
 			$resource,
 			$p['toolName'],
-			['content' => $p['content']],
+			['content' => $p['content'], 'sourceClass' => $p['sourceClass']],
 			[],
 			['etag' => $p['expectedEtag']]
 		);
 
+		$this->attemptId = $journalEntry['id'];
 		$this->journal->markDispatched($identity, $journalEntry['id'], $journalEntry['ticket']);
 
 		try {
@@ -393,10 +409,11 @@ final class CalendarProvider {
 			if ($p['operation'] === 'delete') {
 				throw new Problem('The calendar resource could not be confirmed deleted.', 409);
 			}
-			$finalEtag = trim(DavResponse::verifyContent($verify, $p['content']), '"');
+			$finalEtag = DavResponse::verifyContent($verify, $p['content']);
 			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback($finalEtag));
 			return [
 				'status' => 'saved',
+				'actionId' => $journalEntry['id'],
 				'outcome' => 'verified',
 				'etag' => $finalEtag,
 				'target' => $p['target'],
@@ -405,9 +422,16 @@ final class CalendarProvider {
 			];
 		} catch (Problem $verifyErr) {
 			if ($p['operation'] === 'delete' && $verifyErr->status === 404) {
+				try {
+					$this->authority->collection('calendar', $p['collectionId']);
+				} catch (\Throwable $error) {
+					$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
+					throw $error;
+				}
 				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback('absent'));
 				return [
 					'status' => 'deleted',
+					'actionId' => $journalEntry['id'],
 					'outcome' => 'verified',
 					'target' => $p['target'],
 					'collectionId' => $p['collectionId'],

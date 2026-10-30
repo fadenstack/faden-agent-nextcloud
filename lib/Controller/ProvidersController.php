@@ -7,6 +7,7 @@ namespace OCA\FadenstackAgent\Controller;
 use OCA\FadenstackAgent\Providers\CalendarProvider;
 use OCA\FadenstackAgent\Providers\ContactsProvider;
 use OCA\FadenstackAgent\Providers\TasksProvider;
+use OCA\FadenstackAgent\Providers\ProviderAuditService;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
 use OCP\AppFramework\Controller;
@@ -23,6 +24,7 @@ final class ProvidersController extends Controller {
 		private CalendarProvider $calendar,
 		private TasksProvider $tasks,
 		private ContactsProvider $contacts,
+		private ProviderAuditService $audit,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -32,21 +34,54 @@ final class ProvidersController extends Controller {
 			$this->files->check($this->request->getHeader('X-Fadenstack-Session'));
 			$response = new DataResponse($operation());
 		} catch (Problem $error) {
-			$response = new DataResponse(['message' => $error->getMessage()], $error->status);
+			$response = new DataResponse(['message' => $error->getMessage(), ...$this->attempt()], $error->status);
 		} catch (\Throwable) {
-			$response = new DataResponse(['message' => 'The provider result could not be verified.'], 503);
+			$response = new DataResponse(['message' => 'The provider result could not be verified.', ...$this->attempt()], 503);
+		}
+		$response->addHeader('Cache-Control', 'no-store');
+		return $response;
+	}
+
+	private function attempt(): array {
+		$id = $this->calendar->attemptId() ?? $this->tasks->attemptId() ?? $this->contacts->attemptId();
+		return $id ? ['actionId' => $id, 'outcome' => 'unknown', 'inspectionAvailable' => true] : [];
+	}
+
+	/** Audit remains available after dispatch is disabled; native session + CSRF still apply. */
+	private function auditRun(callable $operation): DataResponse {
+		try {
+			$this->files->checkSession($this->request->getHeader('X-Fadenstack-Session'));
+			$response = new DataResponse($operation());
+		} catch (\Throwable) {
+			$response = new DataResponse(['message' => 'The native action could not be inspected with current access.'], 403);
 		}
 		$response->addHeader('Cache-Control', 'no-store');
 		return $response;
 	}
 
 	#[NoAdminRequired]
+	public function actions(): DataResponse {
+		return $this->auditRun(fn () => $this->audit->listing());
+	}
+
+	#[NoAdminRequired]
+	public function inspectAction(string $id): DataResponse {
+		return $this->auditRun(fn () => $this->audit->inspect($id));
+	}
+
+	#[NoAdminRequired]
 	public function capabilities(): DataResponse {
-		return $this->run(fn () => ['providers' => array_merge(
-			$this->calendar->capabilities(),
-			$this->tasks->capabilities(),
-			$this->contacts->capabilities(),
-		)]);
+		return $this->run(function (): array {
+			$calendar = $this->calendar->capabilities();
+			$tasks = $this->tasks->capabilities();
+			// The published discovery tool covers both CalDAV component families.
+			// This facade grants collection discovery only, never event access/writes.
+			if (!$calendar && $tasks && $this->tasks->lists()) {
+				$calendar = [[...$tasks[0], 'provider' => 'calendar', 'tools' => ['nc_calendar_list'],
+					'conflict' => 'read-only', 'history' => 'not-applicable', 'canWrite' => false, 'discoveryOnly' => true]];
+			}
+			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities())];
+		});
 	}
 
 	// --- Calendar ---

@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace OCA\FadenstackAgent\History;
 
 use OCA\FadenstackAgent\Providers\ProviderPolicy;
+use OCA\FadenstackAgent\Providers\ProviderAuthority;
 use OCP\IUserSession;
 
 final class CalendarAccessResolver implements AccessResolver {
 	public function __construct(
 		private IUserSession $users,
 		private ProviderPolicy $policy,
+		private ProviderAuthority $authority,
 	) {
 	}
 
@@ -23,7 +25,7 @@ final class CalendarAccessResolver implements AccessResolver {
 		}
 		$collectionId = substr($resource->authorityReference, strlen('collection:'));
 		try {
-			$policy = $this->policy->calendar();
+			$policy = in_array($purpose, ['prepare', 'dispatch'], true) ? $this->policy->calendar() : $this->policy->audit('calendar');
 			if (in_array($purpose, ['prepare', 'dispatch'], true) && !$policy['writesEnabled']) {
 				throw new JournalException('permission_lost', 403);
 			}
@@ -31,6 +33,7 @@ final class CalendarAccessResolver implements AccessResolver {
 				throw new JournalException('permission_lost', 403);
 			}
 			$this->policy->assertDisclosure($policy);
+			$this->authority->inspect($resource);
 		} catch (\Throwable) {
 			throw new JournalException('permission_lost', 403);
 		}

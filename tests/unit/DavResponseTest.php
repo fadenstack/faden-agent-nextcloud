@@ -12,6 +12,24 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class DavResponseTest extends TestCase {
+	public static function nativeRoles(): array {
+		return [
+			['<d:read/>', [true, false, false, false]],
+			['<d:read/><d:write/>', [true, true, true, true]],
+			['<d:all/>', [true, true, true, true]],
+			['<d:bind/>', [false, true, false, false]],
+			['<d:write-content/>', [false, false, true, false]],
+			['<d:unbind/>', [false, false, false, true]],
+			['<x:all xmlns:x="https://foreign.test"/>', [false, false, false, false]],
+		];
+	}
+
+	#[DataProvider('nativeRoles')]
+	public function testActualNativePrivilegesBoundTheAdvertisedOperations(string $privileges, array $expected): void {
+		$xpath = DavResponse::document(['status' => 207, 'body' => '<d:multistatus xmlns:d="DAV:"><d:response><d:propstat><d:prop><d:current-user-privilege-set><d:privilege>' . $privileges . '</d:privilege></d:current-user-privilege-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>'], 'urn:ietf:params:xml:ns:caldav');
+		self::assertSame($expected, array_values(DavResponse::privileges($xpath, $xpath->query('/d:multistatus/d:response')->item(0))));
+	}
+
 	public function testOnlySuccessfulPropertyBlocksContributeNativeData(): void {
 		$xpath = DavResponse::document(['status' => 207, 'body' => '<d:multistatus xmlns:d="DAV:"><d:response><d:href>/item</d:href><d:propstat><d:prop><d:displayname>authorized</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat><d:propstat><d:prop><d:displayname>denied-canary</d:displayname></d:prop><d:status>HTTP/1.1 403 Forbidden</d:status></d:propstat></d:response></d:multistatus>'], 'urn:ietf:params:xml:ns:caldav');
 		self::assertSame('authorized', $xpath->evaluate('string(/d:multistatus/d:response/d:propstat/d:prop/d:displayname)'));

@@ -16,6 +16,7 @@ use OCP\IUserSession;
 /** Native, current-session Contacts discovery, reads, and conditional mutations via CardDAV. */
 final class ContactsProvider {
 	private const KEY = 'fadenstack_contacts_state';
+	private ?string $attemptId = null;
 
 	public function __construct(
 		private NativeApiBridge $bridge,
@@ -24,6 +25,7 @@ final class ContactsProvider {
 		private ISession $session,
 		private IUserSession $users,
 		private JournalService $journal,
+		private ProviderAuthority $authority,
 	) {
 	}
 
@@ -34,6 +36,10 @@ final class ContactsProvider {
 			$this->session->set(self::KEY, $state);
 		}
 		return $state;
+	}
+
+	public function attemptId(): ?string {
+		return $this->attemptId;
 	}
 
 	private function setState(array $state): void {
@@ -99,6 +105,7 @@ final class ContactsProvider {
 	public function capabilities(): array {
 		try {
 			$policy = $this->policy->contacts();
+			$collections = $this->books();
 		} catch (Problem $error) {
 			if ($error->status === 403) {
 				return [];
@@ -106,19 +113,26 @@ final class ContactsProvider {
 			throw $error;
 		}
 		$writesEnabled = $this->configuration->providerWritesEnabled() && ($policy['writesEnabled'] ?? false);
+		if (!$collections) {
+			return [];
+		}
+		$tools = ['nc_contacts_list', 'nc_contacts_find', 'nc_contacts_read'];
+		foreach (['create', 'patch', 'delete'] as $operation) {
+			if ($writesEnabled && array_filter($collections, static fn (array $collection): bool => $collection['privileges'][$operation])) {
+				$tools[] = 'nc_contacts_' . $operation;
+			}
+		}
 		return [[
 			'provider' => 'contacts',
 			'apiVersion' => 'carddav-v1',
 			'policyVersion' => $policy['policyVersion'],
 			'enabled' => true,
-			'tools' => $writesEnabled
-				? ['nc_contacts_list', 'nc_contacts_find', 'nc_contacts_read', 'nc_contacts_create', 'nc_contacts_patch', 'nc_contacts_delete']
-				: ['nc_contacts_list', 'nc_contacts_find', 'nc_contacts_read'],
+			'tools' => $tools,
 			'conflict' => 'conditional',
 			'history' => 'audit-only',
 			'refresh' => 'manual',
 			'canRead' => true,
-			'canWrite' => $writesEnabled,
+			'canWrite' => count($tools) > 3,
 		]];
 	}
 
@@ -140,6 +154,9 @@ final class ContactsProvider {
 			if (!$isBook) {
 				continue;
 			}
+			if (!DavResponse::privileges($xpath, $response)['read']) {
+				continue;
+			}
 			$id = DavReference::collection($this->bridge->base(), 'contacts', $policy['actor'], $href);
 			if (!in_array($id, $policy['collections'], true)) {
 				continue;
@@ -147,6 +164,7 @@ final class ContactsProvider {
 			$title = $this->text($xpath, 'd:propstat/d:prop/d:displayname', $response);
 			$books[] = [
 				'provider' => 'contacts',
+				'privileges' => DavResponse::privileges($xpath, $response),
 				'resourceId' => 'nextcloud:contacts:' . rtrim(strtr(base64_encode($id), '+/', '-_'), '='),
 				'collectionId' => $id,
 				'revision' => hash('sha256', $response->C14N()),
@@ -284,6 +302,7 @@ final class ContactsProvider {
 		}
 
 		$identity = $this->journalIdentity($policy);
+		$this->authority->mutation('contacts', $bookId, $operation);
 
 		if ($operation === 'create') {
 			try {
@@ -340,6 +359,7 @@ final class ContactsProvider {
 			'filename' => $filename,
 			'expectedEtag' => $expectedEtag,
 			'content' => $vcardData,
+			'sourceClass' => CalendarClassification::sourceClass($operation === 'create' ? $vcardData : $current['body'], $policy['sourceClass']),
 			'hash' => hash('sha256', $vcardData),
 			'target' => "Address book {$bookId}, contact {$filename}",
 			'expires' => time() + 600,
@@ -391,7 +411,8 @@ final class ContactsProvider {
 		$this->setState($state);
 
 		$journalResource = new JournalResource('contacts', 'book:' . $p['collectionId'] . '/contact:' . $p['filename'], 'book:' . $p['collectionId']);
-		$journalEntry = $this->journal->prepare($identity, $journalResource, $p['toolName'], ['content' => $p['content']], [], ['etag' => $p['expectedEtag']]);
+		$journalEntry = $this->journal->prepare($identity, $journalResource, $p['toolName'], ['content' => $p['content'], 'sourceClass' => $p['sourceClass']], [], ['etag' => $p['expectedEtag']]);
+		$this->attemptId = $journalEntry['id'];
 		$this->journal->markDispatched($identity, $journalEntry['id'], $journalEntry['ticket']);
 
 		$this->session->close();
@@ -425,10 +446,11 @@ final class ContactsProvider {
 			if ($p['operation'] === 'delete') {
 				throw new Problem('The contact resource could not be confirmed deleted.', 409);
 			}
-			$finalEtag = trim(DavResponse::verifyContent($verify, $p['content']), '"');
+			$finalEtag = DavResponse::verifyContent($verify, $p['content']);
 			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback($finalEtag));
 			return [
 				'status' => 'saved',
+				'actionId' => $journalEntry['id'],
 				'outcome' => 'verified',
 				'etag' => $finalEtag,
 				'target' => $p['target'],
@@ -437,9 +459,16 @@ final class ContactsProvider {
 			];
 		} catch (Problem $verifyErr) {
 			if ($p['operation'] === 'delete' && $verifyErr->status === 404) {
+				try {
+					$this->authority->collection('contacts', $p['collectionId']);
+				} catch (\Throwable $error) {
+					$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
+					throw $error;
+				}
 				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback('absent'));
 				return [
 					'status' => 'deleted',
+					'actionId' => $journalEntry['id'],
 					'outcome' => 'verified',
 					'target' => $p['target'],
 					'collectionId' => $p['collectionId'],

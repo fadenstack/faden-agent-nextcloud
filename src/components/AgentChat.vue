@@ -7,6 +7,7 @@ import '@fadenstack/ui-web/styles.css'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { useObservable } from '../agent/useObservable.ts'
 import { WRITE_TOOLS, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
+import { CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS } from '../integrations/nextcloud/caldav.ts'
 import type { FileContext, SearchViewResults } from '../integrations/nextcloud/types.ts'
 import NextcloudApproval from './NextcloudApproval.vue'
 import SearchResultsCard from './SearchResultsCard.vue'
@@ -28,6 +29,14 @@ watch(() => { void version.value; return props.host.contextAttachment }, (attach
 }, { immediate: true })
 const composerContext = computed(() => { void version.value; return props.host.selection.snapshot() })
 const displayContext = computed(() => { void version.value; return chat.isBusy ? props.host.turnContext : composerContext.value })
+const nativeContext = computed(() => {
+	void version.value
+	const app = props.host.workspace?.dependencies.guard.snapshot().app
+	if (app === 'calendar') return t('fadenstack_agent', 'Calendar view · Ask about an event by name.')
+	if (app === 'tasks') return t('fadenstack_agent', 'Tasks view · Ask about a task by name.')
+	if (app === 'contacts') return t('fadenstack_agent', 'Contacts view · Ask about a contact by name.')
+	return ''
+})
 const contextLabel = computed(() => {
 	void version.value
 	void attachmentVersion.value
@@ -57,7 +66,7 @@ const theme = 'nextcloud' as ChatTheme
 // allowed; a search shows its results as cards above the tool line. Everything else is the SDK's own view.
 const renderers: PartRenderer[] = [
 	(part, strings) => {
-		if (part instanceof ApprovalPart && ((WRITE_TOOLS.has(part.toolName) && part.request.arguments.proposalId) || (HISTORY_TOOLS.has(part.toolName) && part.request.arguments.historyPreviewId) || (part.toolName === 'nc_files_create_folder' && part.request.arguments.proposalId))) {
+		if (part instanceof ApprovalPart && (((WRITE_TOOLS.has(part.toolName) || CALENDAR_MUTATIONS.has(part.toolName) || TASKS_MUTATIONS.has(part.toolName) || CONTACTS_MUTATIONS.has(part.toolName)) && part.request.arguments.proposalId) || (HISTORY_TOOLS.has(part.toolName) && part.request.arguments.historyPreviewId) || (part.toolName === 'nc_files_create_folder' && part.request.arguments.proposalId))) {
 			return h(NextcloudApproval, { part, strings, host: props.host })
 		}
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
@@ -168,6 +177,7 @@ function signOut() {
 						<Icon :name="displayContext.file.folder ? 'book' : 'page'" :size="16" />
 						<span>{{ displayContext.file.name }}</span>
 					</button>
+					<span v-else-if="nativeContext" class="fdn-muted">{{ nativeContext }}</span>
 					<span v-else class="fdn-muted">{{ chat.isBusy ? t('fadenstack_agent', 'No file included in this response.') : t('fadenstack_agent', 'Search files or choose a file in Files.') }}</span>
 				</div>
 				<div v-if="documentContext && displayContext" class="fdn-context-bar fdn-muted fadenstack-context-note">
