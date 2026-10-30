@@ -107,9 +107,10 @@ describe('governed history integration', () => {
 		await sending
 		await host.dispose()
 	})
-	it.skipIf(!!process.env.FADENSTACK_COMMAND_SDK)('keeps explicit controls unavailable with the published SDK and has no direct execution fallback', async () => {
-		const { host, files, gateway } = fixture()
+	it.each([false, true])('keeps explicit controls unavailable without an authenticated server principal (native History=%s)', async enabled => {
+		const { host, files, gateway } = fixture(enabled)
 		await host.signIn('alice', 'test')
+		expect(typeof host.chat.invokeTool).toBe('function')
 		expect(host.historyCommandsAvailable).toBe(false)
 		await expect(host.invokeHistory('undo', action)).rejects.toThrow('unavailable')
 		expect(files.history!.prepare).not.toHaveBeenCalled()

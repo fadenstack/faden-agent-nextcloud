@@ -43,7 +43,7 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 	return part
 }
 
-describe.runIf(!!process.env.FADENSTACK_COMMAND_SDK)('companion SDK explicit native history contract', () => {
+describe('published SDK explicit native history contract', () => {
 	it.each(['approve', 'stop'] as const)('verifies restored revision through individual approval; %s preserves the settled state without replay', async answer => {
 		const { host, files, gateway, check } = await fixture(undefined, 'revalidate')
 		host.history.items = [{ id: action, name: 'draft.md', state: 'applied', eligible: 'revalidate', version: 3, createdAt: 1 }]

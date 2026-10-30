@@ -489,12 +489,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			// takes the file context it includes; the turn's tools read that context until it ends.
 			beforeSend: (_message, signal) => this.#prepare(signal),
 			afterSend: () => this.#finish(),
-			...{
-				// Public companion SDK hooks; ignored by the pinned older SDK, whose
-				// missing invokeTool API keeps explicit history controls disabled.
-				beforeCommand: async (_command: unknown, signal: AbortSignal) => { this.history.active = true; this.history.target = ''; this.workspace?.prepare('files'); await this.#prepare(signal, true) },
-				afterCommand: () => this.#finish(true),
-			},
+			// The published command SDK shares chat approvals, Stop and the native turn lifecycle.
+			beforeCommand: async (_command, signal) => { this.history.active = true; this.history.target = ''; this.workspace?.prepare('files'); await this.#prepare(signal, true) },
+			afterCommand: () => this.#finish(true),
 		})
 	}
 
@@ -515,7 +512,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	get historyAvailable(): boolean { return this.config.historyEnabled === true && !!this.files.history }
-	get historyCommandsAvailable(): boolean { return this.historyAvailable && !!commandChat(this.chat) }
+	get historyCommandsAvailable(): boolean {
+		if (!this.historyAvailable || !this.chat.isReady || !commandChat(this.chat)) return false
+		const profile = this.agent.profile
+		return !!profile.principal && profile.principal.agentId === profile.id && profile.principal.deviceId === this.tokens.deviceId
+	}
 
 	async refreshHistory(signal: AbortSignal): Promise<void> {
 		if (!this.historyAvailable || !this.files.history) return
@@ -531,7 +532,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	async invokeHistory(direction: HistoryDirection, actionId: string, label = direction === 'undo' ? 'Undo file change' : direction === 'redo' ? 'Redo file change' : direction === 'revalidate' ? 'Verify file revision' : 'Inspect outcome'): Promise<void> {
 		const commands = commandChat(this.chat)
-		if (!this.historyAvailable || !commands || !/^[a-f0-9]{32}$/.test(actionId)) throw new Error('Action history commands are unavailable.')
+		if (!this.historyCommandsAvailable || !commands || !/^[a-f0-9]{32}$/.test(actionId)) throw new Error('Action history commands are unavailable.')
 		await commands.invokeTool(`nc_actions_${direction}`, { action_id: actionId }, { origin: 'user_history', label })
 	}
 

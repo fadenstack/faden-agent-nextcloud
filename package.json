@@ -19,11 +19,11 @@
     "extends @nextcloud/browserslist-config"
   ],
   "dependencies": {
-    "@fadenstack/agents": "0.2.0-rc.2",
-    "@fadenstack/client": "0.2.0-rc.2",
-    "@fadenstack/ui": "0.2.0-rc.2",
-    "@fadenstack/ui-vue": "0.2.0-rc.2",
-    "@fadenstack/ui-web": "0.2.0-rc.2",
+    "@fadenstack/agents": "0.3.0-rc.2",
+    "@fadenstack/client": "0.3.0-rc.2",
+    "@fadenstack/ui": "0.3.0-rc.2",
+    "@fadenstack/ui-vue": "0.3.0-rc.2",
+    "@fadenstack/ui-web": "0.3.0-rc.2",
     "@nextcloud/auth": "^2.5.0",
     "@nextcloud/axios": "^2.5.0",
     "@nextcloud/event-bus": "^3.3.2",
@@ -39,7 +39,7 @@
     "vue": "^3.5.42"
   },
   "devDependencies": {
-    "@fadenstack/testing": "0.2.0-rc.2",
+    "@fadenstack/testing": "0.3.0-rc.2",
     "@nextcloud/browserslist-config": "^3.1.2",
     "@nextcloud/eslint-config": "^8.4.2",
     "@nextcloud/stylelint-config": "^3.1.1",

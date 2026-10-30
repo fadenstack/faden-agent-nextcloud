@@ -1,10 +1,6 @@
 import type { AgentChatViewModel } from '@fadenstack/ui'
 
-/** Public companion SDK contract. The published 0.2 SDK deliberately has no fallback. */
-interface CommandChat {
-	invokeTool(name: string, args: Record<string, unknown>, options: { origin: 'user_history'; label?: string }): Promise<unknown>
-}
-export function commandChat(chat: AgentChatViewModel): CommandChat | undefined {
-	const candidate = chat as AgentChatViewModel & Partial<CommandChat>
-	return typeof candidate.invokeTool === 'function' ? candidate as CommandChat : undefined
+/** Use only the published governed SDK command path; never dispatch a native inverse directly. */
+export function commandChat(chat: AgentChatViewModel): Pick<AgentChatViewModel, 'invokeTool'> | undefined {
+	return typeof chat.invokeTool === 'function' ? chat : undefined
 }
