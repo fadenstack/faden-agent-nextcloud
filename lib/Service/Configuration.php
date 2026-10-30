@@ -54,6 +54,11 @@ class Configuration {
 		return $this->get()['development'] && $this->config->getAppValue(Application::APP_ID, 'provider_reads_enabled', '0') === '1';
 	}
 
+	/** Development-only provider write slice; requires provider_writes_enabled flag. */
+	public function providerWritesEnabled(): bool {
+		return $this->get()['development'] && $this->config->getAppValue(Application::APP_ID, 'provider_writes_enabled', '0') === '1';
+	}
+
 	/** Distinct server-controlled opt-in for experimental single-folder creation (nc_files_create_folder). Default false, development-only. */
 	public function folderCreateEnabled(): bool {
 		return $this->get()['development']

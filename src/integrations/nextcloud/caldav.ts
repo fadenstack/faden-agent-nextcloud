@@ -40,6 +40,7 @@ export interface DavProposal {
 	bookId?: string
 	filename: string
 	component: 'VEVENT' | 'VTODO' | 'VCARD'
+	proposalId?: string
 }
 
 /** RFC 5545 / RFC 6350 line unfolding: remove CRLF + space/tab. */

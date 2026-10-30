@@ -24,6 +24,17 @@ final class NativeRequest {
 		return rawurlencode($value);
 	}
 
+	public static function strongEtag(string $etag): string {
+		$etag = trim($etag);
+		if ($etag === '' || str_starts_with($etag, 'W/') || str_starts_with($etag, 'w/')) {
+			throw new Problem('A strong native ETag is required.', 412);
+		}
+		if (!str_starts_with($etag, '"')) {
+			$etag = '"' . $etag . '"';
+		}
+		return $etag;
+	}
+
 	public static function calendarCollections(string $actor): self {
 		$body = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:a="http://apple.com/ns/ical/" xmlns:o="http://owncloud.org/ns"><d:prop><d:displayname/><d:resourcetype/><d:current-user-privilege-set/><d:owner/><d:acl/><c:supported-calendar-component-set/><o:calendar-enabled/><a:calendar-color/></d:prop></d:propfind>';
 		return new self($actor, 'PROPFIND', '/remote.php/dav/calendars/' . self::segment($actor) . '/', $body,
@@ -41,5 +52,51 @@ final class NativeRequest {
 
 	public static function calendarObject(string $actor, string $calendar, string $filename): self {
 		return new self($actor, 'GET', '/remote.php/dav/calendars/' . self::segment($actor) . '/' . self::segment($calendar) . '/' . self::segment($filename), '', []);
+	}
+
+	public static function createCalendarObject(string $actor, string $calendar, string $filename, string $icsData): self {
+		return new self($actor, 'PUT', '/remote.php/dav/calendars/' . self::segment($actor) . '/' . self::segment($calendar) . '/' . self::segment($filename), $icsData,
+			['Content-Type' => 'text/calendar; charset=utf-8', 'If-None-Match' => '*']);
+	}
+
+	public static function updateCalendarObject(string $actor, string $calendar, string $filename, string $icsData, string $etag): self {
+		return new self($actor, 'PUT', '/remote.php/dav/calendars/' . self::segment($actor) . '/' . self::segment($calendar) . '/' . self::segment($filename), $icsData,
+			['Content-Type' => 'text/calendar; charset=utf-8', 'If-Match' => self::strongEtag($etag)]);
+	}
+
+	public static function deleteCalendarObject(string $actor, string $calendar, string $filename, string $etag): self {
+		return new self($actor, 'DELETE', '/remote.php/dav/calendars/' . self::segment($actor) . '/' . self::segment($calendar) . '/' . self::segment($filename), '',
+			['If-Match' => self::strongEtag($etag)]);
+	}
+
+	public static function addressbookCollections(string $actor): self {
+		$body = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:prop><d:displayname/><d:resourcetype/><d:current-user-privilege-set/><d:owner/><d:acl/></d:prop></d:propfind>';
+		return new self($actor, 'PROPFIND', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/', $body,
+			['Depth' => '1', 'Content-Type' => 'application/xml; charset=utf-8']);
+	}
+
+	public static function addressbookObjects(string $actor, string $book): self {
+		$body = '<?xml version="1.0"?><card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><card:address-data/></d:prop><card:filter/></card:addressbook-query>';
+		return new self($actor, 'REPORT', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/' . self::segment($book) . '/', $body,
+			['Depth' => '1', 'Content-Type' => 'application/xml; charset=utf-8']);
+	}
+
+	public static function addressbookObject(string $actor, string $book, string $filename): self {
+		return new self($actor, 'GET', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/' . self::segment($book) . '/' . self::segment($filename), '', []);
+	}
+
+	public static function createAddressbookObject(string $actor, string $book, string $filename, string $vcardData): self {
+		return new self($actor, 'PUT', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/' . self::segment($book) . '/' . self::segment($filename), $vcardData,
+			['Content-Type' => 'text/vcard; charset=utf-8', 'If-None-Match' => '*']);
+	}
+
+	public static function updateAddressbookObject(string $actor, string $book, string $filename, string $vcardData, string $etag): self {
+		return new self($actor, 'PUT', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/' . self::segment($book) . '/' . self::segment($filename), $vcardData,
+			['Content-Type' => 'text/vcard; charset=utf-8', 'If-Match' => self::strongEtag($etag)]);
+	}
+
+	public static function deleteAddressbookObject(string $actor, string $book, string $filename, string $etag): self {
+		return new self($actor, 'DELETE', '/remote.php/dav/addressbooks/users/' . self::segment($actor) . '/' . self::segment($book) . '/' . self::segment($filename), '',
+			['If-Match' => self::strongEtag($etag)]);
 	}
 }

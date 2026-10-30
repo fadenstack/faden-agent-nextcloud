@@ -28,6 +28,15 @@ const action = computed(() => {
 	case 'nc_actions_undo': return t('fadenstack_agent', 'Undo file change')
 	case 'nc_actions_redo': return t('fadenstack_agent', 'Redo file change')
 	case 'nc_create_text_file': return t('fadenstack_agent', 'Create file')
+	case 'nc_calendar_create': return t('fadenstack_agent', 'Create event')
+	case 'nc_calendar_patch': return t('fadenstack_agent', 'Update event')
+	case 'nc_calendar_delete': return t('fadenstack_agent', 'Delete event')
+	case 'nc_tasks_create': return t('fadenstack_agent', 'Create task')
+	case 'nc_tasks_patch': return t('fadenstack_agent', 'Update task')
+	case 'nc_tasks_delete': return t('fadenstack_agent', 'Delete task')
+	case 'nc_contacts_create': return t('fadenstack_agent', 'Create contact')
+	case 'nc_contacts_patch': return t('fadenstack_agent', 'Update contact')
+	case 'nc_contacts_delete': return t('fadenstack_agent', 'Delete contact')
 	default: return t('fadenstack_agent', 'Replace file')
 	}
 })
@@ -81,12 +90,39 @@ function deny() {
 		</template>
 		<details v-else-if="part.request.arguments.before !== null && part.request.arguments.before !== undefined">
 			<summary>{{ t('fadenstack_agent', 'Current content') }}</summary>
-			<pre class="fdn-approval-args" dir="auto">{{ part.request.arguments.before }}</pre>
+			<pre class="fdn-approval-args" dir="auto">{{ typeof part.request.arguments.before === 'string' ? part.request.arguments.before : JSON.stringify(part.request.arguments.before, null, 2) }}</pre>
 		</details>
 		<template v-if="part.toolName === 'nc_files_create_folder'">
 			<p class="fdn-approval-description">
 				{{ part.request.arguments.executionReady === false ? t('fadenstack_agent', 'Folder creation is unavailable in this version. No folder will be created.') : t('fadenstack_agent', 'An empty folder will be created inside the target directory. Existing items are not overwritten.') }}
 			</p>
+		</template>
+		<template v-else-if="['nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete'].includes(part.toolName)">
+			<p class="fdn-approval-description">
+				{{ part.toolName === 'nc_calendar_delete' ? t('fadenstack_agent', 'This private non-recurring calendar event will be deleted.') : part.toolName === 'nc_calendar_create' ? t('fadenstack_agent', 'A private non-recurring event will be created without attendees in this calendar.') : t('fadenstack_agent', 'The specified fields of this private calendar event will be updated.') }}
+			</p>
+			<div class="fdn-label">
+				{{ part.toolName === 'nc_calendar_delete' ? t('fadenstack_agent', 'Target') : t('fadenstack_agent', 'Proposed event') }}
+			</div>
+			<pre class="fdn-approval-args" dir="auto">{{ typeof part.request.arguments.content === 'string' ? part.request.arguments.content : JSON.stringify(part.request.arguments.content ?? part.request.arguments, null, 2) }}</pre>
+		</template>
+		<template v-else-if="['nc_tasks_create', 'nc_tasks_patch', 'nc_tasks_delete'].includes(part.toolName)">
+			<p class="fdn-approval-description">
+				{{ part.toolName === 'nc_tasks_delete' ? t('fadenstack_agent', 'This task will be deleted.') : part.toolName === 'nc_tasks_create' ? t('fadenstack_agent', 'A private task will be created in this list.') : t('fadenstack_agent', 'The specified fields of this task will be updated.') }}
+			</p>
+			<div class="fdn-label">
+				{{ part.toolName === 'nc_tasks_delete' ? t('fadenstack_agent', 'Target') : t('fadenstack_agent', 'Proposed task') }}
+			</div>
+			<pre class="fdn-approval-args" dir="auto">{{ typeof part.request.arguments.content === 'string' ? part.request.arguments.content : JSON.stringify(part.request.arguments.content ?? part.request.arguments, null, 2) }}</pre>
+		</template>
+		<template v-else-if="['nc_contacts_create', 'nc_contacts_patch', 'nc_contacts_delete'].includes(part.toolName)">
+			<p class="fdn-approval-description">
+				{{ part.toolName === 'nc_contacts_delete' ? t('fadenstack_agent', 'This contact will be deleted.') : part.toolName === 'nc_contacts_create' ? t('fadenstack_agent', 'A contact will be created in this address book.') : t('fadenstack_agent', 'The specified fields of this contact will be updated.') }}
+			</p>
+			<div class="fdn-label">
+				{{ part.toolName === 'nc_contacts_delete' ? t('fadenstack_agent', 'Target') : t('fadenstack_agent', 'Proposed contact') }}
+			</div>
+			<pre class="fdn-approval-args" dir="auto">{{ typeof part.request.arguments.content === 'string' ? part.request.arguments.content : JSON.stringify(part.request.arguments.content ?? part.request.arguments, null, 2) }}</pre>
 		</template>
 		<template v-else>
 			<div class="fdn-label">

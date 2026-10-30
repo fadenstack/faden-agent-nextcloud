@@ -50,4 +50,24 @@ final class ProvidersController extends Controller {
 	public function calendarEvents(string $collectionId): DataResponse {
 		return $this->run(fn () => $this->calendar->events($collectionId));
 	}
+
+	#[NoAdminRequired]
+	public function calendarEvent(string $collectionId, string $filename): DataResponse {
+		return $this->run(fn () => $this->calendar->event($collectionId, $filename));
+	}
+
+	#[NoAdminRequired]
+	public function calendarPropose(string $operation, string $collectionId, string $filename, string $icsData = '', ?string $expectedEtag = null): DataResponse {
+		return $this->run(fn () => $this->calendar->propose($operation, $collectionId, $filename, $icsData, $expectedEtag));
+	}
+
+	#[NoAdminRequired]
+	public function calendarApprove(string $id): DataResponse {
+		return $this->run(fn () => $this->calendar->approve($id));
+	}
+
+	#[NoAdminRequired]
+	public function calendarCommit(string $id): DataResponse {
+		return $this->run(fn () => $this->calendar->commit($id));
+	}
 }

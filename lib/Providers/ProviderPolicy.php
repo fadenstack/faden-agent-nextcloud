@@ -21,7 +21,7 @@ final class ProviderPolicy {
 	) {
 	}
 
-	public function calendar(): array {
+	private function parsePolicy(string $section): array {
 		$this->configuration->requireEnabled();
 		if (!$this->configuration->providerReadsEnabled()) {
 			throw new Problem('The native provider read slice is unavailable.', 403);
@@ -32,21 +32,21 @@ final class ProviderPolicy {
 		}
 		$raw = $this->config->getAppValue(Application::APP_ID, 'provider_policy', '');
 		if ($raw === '') {
-			throw new Problem('Calendar tools have not been enabled by the administrator.', 403);
+			throw new Problem(ucfirst($section) . ' tools have not been enabled by the administrator.', 403);
 		}
 		try {
 			if (strlen($raw) > 32768) {
 				throw new \InvalidArgumentException();
 			}
 			$value = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
-			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar'])) {
+			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts'])) {
 				throw new \InvalidArgumentException();
 			}
-			$calendar = $value['calendar'] ?? null;
-			if (!is_array($calendar) || !is_bool($calendar['enabled'] ?? null) || array_diff(array_keys($calendar), ['enabled', 'collections', 'sourceClass'])) {
+			$config = $value[$section] ?? null;
+			if (!is_array($config) || !is_bool($config['enabled'] ?? null) || array_diff(array_keys($config), ['enabled', 'collections', 'sourceClass', 'writesEnabled'])) {
 				throw new \InvalidArgumentException();
 			}
-			$collections = $calendar['collections'] ?? null;
+			$collections = $config['collections'] ?? null;
 			if (!is_array($collections) || !array_is_list($collections) || !$collections || count($collections) > 8
 				|| count(array_unique($collections, SORT_REGULAR)) !== count($collections)) {
 				throw new \InvalidArgumentException();
@@ -57,20 +57,33 @@ final class ProviderPolicy {
 				}
 				NativeRequest::segment($collection);
 			}
-			$sourceClass = $calendar['sourceClass'] ?? 'unknown';
+			$sourceClass = $config['sourceClass'] ?? 'unknown';
 			if (!in_array($sourceClass, ['standard', 'protected', 'unknown'], true)) {
 				throw new \InvalidArgumentException();
 			}
+			$writesAllowed = ($config['writesEnabled'] ?? true) && $this->configuration->providerWritesEnabled();
 		} catch (\Throwable) {
 			throw new Problem('The administrator provider policy is invalid.', 503);
 		}
-		if (!$calendar['enabled']) {
-			throw new Problem('Calendar tools have been disabled by the administrator.', 403);
+		if (!$config['enabled']) {
+			throw new Problem(ucfirst($section) . ' tools have been disabled by the administrator.', 403);
 		}
 		$base = $this->filesPolicy->getPolicy($uid, $this->configuration->get()['serverUrl']);
 		$policyVersion = hash('sha256', json_encode([$uid, $base['version'], $value], JSON_THROW_ON_ERROR));
 		return ['actor' => $uid, 'collections' => $collections, 'sourceClass' => $sourceClass,
-			'policyVersion' => $policyVersion, 'processing' => $base];
+			'policyVersion' => $policyVersion, 'processing' => $base, 'writesEnabled' => $writesAllowed];
+	}
+
+	public function calendar(): array {
+		return $this->parsePolicy('calendar');
+	}
+
+	public function tasks(): array {
+		return $this->parsePolicy('tasks');
+	}
+
+	public function contacts(): array {
+		return $this->parsePolicy('contacts');
 	}
 
 	public function assertDisclosure(array $policy, ?string $sourceClass = null): void {

@@ -4,14 +4,74 @@ declare(strict_types=1);
 
 namespace OCA\FadenstackAgent\Providers;
 
+use OCA\FadenstackAgent\History\JournalIdentity;
+use OCA\FadenstackAgent\History\JournalResource;
+use OCA\FadenstackAgent\History\JournalService;
+use OCA\FadenstackAgent\History\VerifiedReadback;
+use OCA\FadenstackAgent\Service\Configuration;
 use OCA\FadenstackAgent\Service\Problem;
+use OCP\ISession;
+use OCP\IUserSession;
 
-/** First bounded provider: native, current-session Calendar discovery and reads. */
+/** Native, current-session Calendar discovery, reads, and conditional mutations. */
 final class CalendarProvider {
+	private const KEY = 'fadenstack_calendar_state';
+
 	public function __construct(
 		private NativeApiBridge $bridge,
 		private ProviderPolicy $policy,
+		private Configuration $configuration,
+		private ISession $session,
+		private IUserSession $users,
+		private JournalService $journal,
 	) {
+	}
+
+	private function state(): array {
+		$state = $this->session->get(self::KEY);
+		if (!is_array($state) || ($state['binding'] ?? null) !== $this->session->getId()) {
+			$state = ['binding' => $this->session->getId(), 'proposals' => []];
+			$this->session->set(self::KEY, $state);
+		}
+		return $state;
+	}
+
+	private function setState(array $state): void {
+		$this->session->set(self::KEY, $state);
+	}
+
+	private function journalIdentity(array $policy): JournalIdentity {
+		$state = $this->state();
+		$binding = hash('sha256', json_encode([$state['binding'], $this->configuration->get(), $policy['policyVersion']], JSON_THROW_ON_ERROR));
+		return new JournalIdentity($policy['actor'], JournalIdentity::nativeScope(), $binding);
+	}
+
+	private function assertProposalIdentity(array $proposal, array $policy): JournalIdentity {
+		$identity = $this->journalIdentity($policy);
+		if (($proposal['identityScope'] ?? null) !== $identity->scopeHash || ($proposal['identitySession'] ?? null) !== $identity->sessionHash) {
+			throw new Problem('The account, device, profile or scope changed. Review a new proposal.', 409);
+		}
+		return $identity;
+	}
+
+	private function proposal(string $id): array {
+		$p = $this->state()['proposals'][$id] ?? null;
+		if (!$p || $p['expires'] < time()) {
+			throw new Problem('The proposal expired or was already consumed.', 410);
+		}
+		return $p;
+	}
+
+	private function assertPrivateEvent(string $ics): void {
+		if ($ics === '' || strlen($ics) > 65536 || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', $ics)) {
+			throw new Problem('Invalid iCalendar data.', 400);
+		}
+		if (preg_match('/(?:^|\r?\n)(?:ATTENDEE|ORGANIZER|METHOD)[;:]/i', $ics)) {
+			throw new Problem('Attendee notifications and scheduling require a separate explicitly approved operation.', 400);
+		}
+		if (preg_match('/(?:^|\r?\n)(?:RRULE|RECURRENCE-ID|RDATE|EXDATE)[;:]/i', $ics)) {
+			throw new Problem('Recurring resources and exceptions require a separate editor; no write sent.', 400);
+		}
 	}
 
 	private function document(array $response): \DOMXPath {
@@ -84,7 +144,7 @@ final class CalendarProvider {
 		}
 		$this->assertCurrent($policy);
 		return ['provider' => 'calendar', 'apiVersion' => 'caldav-v1', 'policyVersion' => $policy['policyVersion'],
-			'collections' => $result, 'completeWithinConfiguredScope' => true, 'writesEnabled' => false];
+			'collections' => $result, 'completeWithinConfiguredScope' => true, 'writesEnabled' => $policy['writesEnabled']];
 	}
 
 	public function capabilities(): array {
@@ -99,9 +159,14 @@ final class CalendarProvider {
 		if (!$collections['collections']) {
 			return [];
 		}
+		$canWrite = $collections['writesEnabled'] ?? false;
+		$tools = ['nc_calendar_list', 'nc_calendar_read'];
+		if ($canWrite) {
+			$tools = [...$tools, 'nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete'];
+		}
 		return [['provider' => 'calendar', 'apiVersion' => 'caldav-v1', 'policyVersion' => $collections['policyVersion'],
-			'enabled' => true, 'tools' => ['nc_calendar_list', 'nc_calendar_read'], 'conflict' => 'read-only',
-			'history' => 'not-applicable', 'refresh' => 'manual', 'canRead' => true, 'canWrite' => false]];
+			'enabled' => true, 'tools' => $tools, 'conflict' => $canWrite ? 'conditional' : 'read-only',
+			'history' => $canWrite ? 'audit-only' : 'not-applicable', 'refresh' => 'manual', 'canRead' => true, 'canWrite' => $canWrite]];
 	}
 
 	public function events(string $collectionId): array {
@@ -142,6 +207,204 @@ final class CalendarProvider {
 		}
 		$this->assertCurrent($policy);
 		return ['provider' => 'calendar', 'policyVersion' => $policy['policyVersion'], 'events' => $result, 'complete' => true];
+	}
+
+	public function event(string $collectionId, string $filename): array {
+		$policy = $this->policy->calendar();
+		$this->policy->assertDisclosure($policy);
+		if (!in_array($collectionId, $policy['collections'], true)) {
+			throw new Problem('The Calendar collection is outside the configured scope.', 404);
+		}
+		NativeRequest::segment($filename);
+		$resp = $this->bridge->send(NativeRequest::calendarObject($policy['actor'], $collectionId, $filename));
+		if ($resp['status'] !== 200) {
+			throw new Problem('The calendar resource is not available.', 404);
+		}
+		$etag = trim($resp['etag'], '"');
+		return ['etag' => $etag, 'content' => $resp['body']];
+	}
+
+	public function propose(string $operation, string $collectionId, string $filename, string $icsData, ?string $expectedEtag = null): array {
+		$policy = $this->policy->calendar();
+		$this->policy->assertDisclosure($policy);
+		if (!($policy['writesEnabled'] ?? false)) {
+			throw new Problem('Calendar mutations have been disabled by the administrator.', 403);
+		}
+		if (!in_array($collectionId, $policy['collections'], true)) {
+			throw new Problem('The Calendar collection is outside the configured scope.', 404);
+		}
+		NativeRequest::segment($filename);
+		if (!str_ends_with(strtolower($filename), '.ics')) {
+			throw new Problem('A valid filename ending in .ics is required.', 400);
+		}
+		if (!in_array($operation, ['create', 'patch', 'delete'], true)) {
+			throw new Problem('Unsupported calendar operation.', 400);
+		}
+
+		$identity = $this->journalIdentity($policy);
+
+		if ($operation === 'create') {
+			try {
+				$existing = $this->bridge->send(NativeRequest::calendarObject($policy['actor'], $collectionId, $filename));
+				if ($existing['status'] === 200) {
+					throw new Problem('An event with this name already exists.', 409);
+				}
+			} catch (Problem $probe) {
+				if ($probe->status !== 404) {
+					throw $probe;
+				}
+			}
+			$this->assertPrivateEvent($icsData);
+			$expectedEtag = null;
+		} elseif ($operation === 'patch') {
+			if ($expectedEtag === null || $expectedEtag === '' || str_starts_with(trim($expectedEtag), 'W/') || str_starts_with(trim($expectedEtag), 'w/')) {
+				throw new Problem('A strong native expectedEtag is required.', 400);
+			}
+			$current = $this->bridge->send(NativeRequest::calendarObject($policy['actor'], $collectionId, $filename));
+			if ($current['status'] !== 200) {
+				throw new Problem('The calendar resource is not available.', 404);
+			}
+			$currentEtag = trim($current['etag'], '"');
+			if ($currentEtag !== trim($expectedEtag, '"')) {
+				throw new Problem('The calendar resource changed. Read it again before proposing a write.', 409);
+			}
+			$this->assertPrivateEvent($current['body']);
+			$this->assertPrivateEvent($icsData);
+		} else { // delete
+			if ($expectedEtag === null || $expectedEtag === '' || str_starts_with(trim($expectedEtag), 'W/') || str_starts_with(trim($expectedEtag), 'w/')) {
+				throw new Problem('A strong native expectedEtag is required.', 400);
+			}
+			$current = $this->bridge->send(NativeRequest::calendarObject($policy['actor'], $collectionId, $filename));
+			if ($current['status'] !== 200) {
+				throw new Problem('The calendar resource is not available.', 404);
+			}
+			$currentEtag = trim($current['etag'], '"');
+			if ($currentEtag !== trim($expectedEtag, '"')) {
+				throw new Problem('The calendar resource changed. Read it again before proposing a write.', 409);
+			}
+			$this->assertPrivateEvent($current['body']);
+			$icsData = '';
+		}
+
+		$p = [
+			'id' => bin2hex(random_bytes(24)),
+			'operation' => $operation,
+			'toolName' => 'nc_calendar_' . $operation,
+			'collectionId' => $collectionId,
+			'filename' => $filename,
+			'expectedEtag' => $expectedEtag,
+			'content' => $icsData,
+			'hash' => hash('sha256', $icsData),
+			'target' => "Calendar {$collectionId}, event {$filename}",
+			'expires' => time() + 600,
+			'approved' => false,
+			'identityScope' => $identity->scopeHash,
+			'identitySession' => $identity->sessionHash,
+		];
+
+		$state = $this->state();
+		$state['proposals'] = array_filter($state['proposals'] ?? [], fn ($item) => $item['expires'] > time());
+		if (count($state['proposals']) >= 10) {
+			throw new Problem('Too many pending proposals. Wait for them to expire.', 429);
+		}
+		$state['proposals'][$p['id']] = $p;
+		$this->setState($state);
+
+		return [
+			'id' => $p['id'],
+			'operation' => $p['operation'],
+			'toolName' => $p['toolName'],
+			'target' => $p['target'],
+			'collectionId' => $collectionId,
+			'filename' => $filename,
+			'hash' => $p['hash'],
+			'expectedEtag' => $expectedEtag,
+			'expires' => $p['expires'],
+		];
+	}
+
+	public function approve(string $id): array {
+		$policy = $this->policy->calendar();
+		$p = $this->proposal($id);
+		$this->assertProposalIdentity($p, $policy);
+		$state = $this->state();
+		$state['proposals'][$id]['approved'] = true;
+		$this->setState($state);
+		return ['approved' => true];
+	}
+
+	public function commit(string $id): array {
+		$policy = $this->policy->calendar();
+		$p = $this->proposal($id);
+		$identity = $this->assertProposalIdentity($p, $policy);
+		if (!$p['approved']) {
+			throw new Problem('This operation requires explicit approval.', 403);
+		}
+
+		$state = $this->state();
+		unset($state['proposals'][$id]); // Single-use consumption
+		$this->setState($state);
+
+		$resource = new JournalResource('calendar', 'collection:' . $p['collectionId'] . '/event:' . $p['filename'], 'collection:' . $p['collectionId']);
+		$journalEntry = $this->journal->prepare(
+			$identity,
+			$resource,
+			$p['toolName'],
+			['content' => $p['content']],
+			[],
+			['etag' => $p['expectedEtag']]
+		);
+
+		$this->journal->markDispatched($identity, $journalEntry['id'], $journalEntry['ticket']);
+
+		try {
+			if ($p['operation'] === 'create') {
+				$req = NativeRequest::createCalendarObject($policy['actor'], $p['collectionId'], $p['filename'], $p['content']);
+			} elseif ($p['operation'] === 'patch') {
+				$req = NativeRequest::updateCalendarObject($policy['actor'], $p['collectionId'], $p['filename'], $p['content'], $p['expectedEtag']);
+			} else {
+				$req = NativeRequest::deleteCalendarObject($policy['actor'], $p['collectionId'], $p['filename'], $p['expectedEtag']);
+			}
+			$this->bridge->send($req);
+		} catch (Problem $err) {
+			if ($err->status === 412) {
+				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'failed');
+				throw new Problem('The calendar resource was modified by another actor.', 412);
+			}
+			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
+			throw $err;
+		}
+
+		try {
+			$verify = $this->bridge->send(NativeRequest::calendarObject($policy['actor'], $p['collectionId'], $p['filename']));
+			if ($p['operation'] === 'delete') {
+				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
+				throw new Problem('The calendar resource could not be confirmed deleted.', 409);
+			}
+			$finalEtag = trim($verify['etag'], '"');
+			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback($finalEtag));
+			return [
+				'status' => 'saved',
+				'outcome' => 'verified',
+				'etag' => $finalEtag,
+				'target' => $p['target'],
+				'collectionId' => $p['collectionId'],
+				'filename' => $p['filename'],
+			];
+		} catch (Problem $verifyErr) {
+			if ($p['operation'] === 'delete' && $verifyErr->status === 404) {
+				$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'verified', new VerifiedReadback('absent'));
+				return [
+					'status' => 'deleted',
+					'outcome' => 'verified',
+					'target' => $p['target'],
+					'collectionId' => $p['collectionId'],
+					'filename' => $p['filename'],
+				];
+			}
+			$this->journal->finish($identity, $journalEntry['id'], $journalEntry['ticket'], 'unknown');
+			throw $verifyErr;
+		}
 	}
 
 	private function assertCurrent(array $policy): void {

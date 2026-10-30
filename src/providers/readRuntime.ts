@@ -1,5 +1,5 @@
 import { defineTool } from '@fadenstack/agents'
-import { parseDavProperties } from '../integrations/nextcloud/caldav.ts'
+import { parseDavProperties, calendarTools, type AgentWithCalendar } from '../integrations/nextcloud/caldav.ts'
 import { TurnBudget, ScopeViolation } from '../platform/limits.ts'
 import type { PublishedTool, ScopePolicy } from '../platform/scope.ts'
 import { ProviderRegistry } from './registry.ts'
@@ -9,7 +9,7 @@ import type { NativeProvidersApi } from './client.ts'
 const IMPLEMENTATIONS = new ProviderRegistry([{
 	provider: 'calendar',
 	apiVersions: ['caldav-v1'],
-	tools: ['nc_calendar_list', 'nc_calendar_read'],
+	tools: ['nc_calendar_list', 'nc_calendar_read', 'nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete'],
 }])
 
 /** Read-only vertical slice; no cross-provider mutation is enabled by this class. */
@@ -39,7 +39,10 @@ export class ProviderReadRuntime {
 		assertIdentity()
 		const tools = IMPLEMENTATIONS.available(capabilities, published)
 		this.#scope = new ProviderTurnScope(tools, budget, assertIdentity, async (resource, write, innerSignal) => {
-			if (write) throw new Error('Provider mutations are not enabled by this read-only slice.')
+			if (write) {
+				const cap = tools.find(item => item.provider === resource.provider)?.capability
+				if (!cap?.canWrite) throw new Error('Provider mutations are not enabled by this configuration.')
+			}
 			const values = resource.resourceId === collectionReference(resource.collectionId)
 				? await this.api.calendarCollections(innerSignal)
 				: await this.api.calendarEvents(resource.collectionId, innerSignal)
@@ -142,8 +145,8 @@ function collectionReference(id: string): string {
 	return 'nextcloud:calendar:' + btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
 }
 
-export function nativeCalendarReadTools(runtime: ProviderReadRuntime) {
-	return [
+export function nativeCalendarReadTools(runtime: ProviderReadRuntime, agent?: AgentWithCalendar) {
+	const tools = [
 		defineTool({
 			name: 'nc_calendar_list',
 			toolClass: 'read',
@@ -165,4 +168,6 @@ export function nativeCalendarReadTools(runtime: ProviderReadRuntime) {
 			},
 		}),
 	]
+	if (agent) tools.push(...calendarTools(agent).slice(2))
+	return tools
 }

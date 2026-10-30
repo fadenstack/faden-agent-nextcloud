@@ -211,7 +211,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(agentfileEnabled ? agentfileTool(this) : []))
 			.addTools(...(notesEnabled ? notesTools(this) : []))
 			.addTools(...(bookmarksEnabled ? bookmarksTools(this) : []))
-			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads) : []))
+			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads, this) : []))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
 					const available = this.#scope ? [...this.#scope.offeredTools, ...(this.#providerReads?.offeredTools ?? [])] : undefined
@@ -219,17 +219,17 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						? {
 							...options,
 							tools: options.tools?.filter(tool => available.some(name => name === tool.name)
-						&& (!this.#providerReads?.hasSources || fileCapability(tool.name)?.risk === 'read')),
+						&& (!this.#providerReads?.hasSources || fileCapability(tool.name)?.subsystem !== 'files' || fileCapability(tool.name)?.risk === 'read')),
 						}
 						: options)
 				},
 			}))
 			.addToolStage(StageOrder.custom, {
 				invoke: async (invocation, next) => {
-					if (this.#providerReads && ['nc_calendar_list', 'nc_calendar_read'].includes(invocation.tool.name)) this.#providerReads.begin(invocation.tool.name)
+					if (this.#providerReads && this.#providerReads.offeredTools.includes(invocation.tool.name)) this.#providerReads.begin(invocation.tool.name)
 					else this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
-					if (this.#providerReads?.hasSources && fileCapability(invocation.tool.name)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
+					if (this.#providerReads?.hasSources && fileCapability(invocation.tool.name)?.subsystem === 'files' && fileCapability(invocation.tool.name)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
 					const result = fileCapability(invocation.tool.name)?.risk === 'read'
 						? await interruptibleRead(() => next(invocation), invocation.context.signal)
 						: await next(invocation)
@@ -248,8 +248,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.useSessionStore(new MemorySessionStore()).useApprovalStore(new MemoryApprovalStore())
 			.useApprovals({
 				request: async (request, signal) => {
-					if (request.source === 'host' && this.#providerReads?.hasSources && fileCapability(request.toolName)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
-					const expanded = ([
+					if (request.source === 'host' && this.#providerReads?.hasSources && fileCapability(request.toolName)?.subsystem === 'files' && fileCapability(request.toolName)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
+					const nativeProviderMutation = (CALENDAR_MUTATIONS.has(request.toolName) && !!this.files.nativeProviders?.calendarPropose)
+						|| (TASKS_MUTATIONS.has(request.toolName) && !!this.files.nativeProviders?.tasksPropose)
+						|| (CONTACTS_MUTATIONS.has(request.toolName) && !!this.files.nativeProviders?.contactsPropose)
+					const expanded = !nativeProviderMutation && ([
 						TABLES_MUTATIONS, DECK_MUTATIONS, CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS,
 						MAIL_MUTATIONS, TALK_MUTATIONS, COLLECTIVES_MUTATIONS, FORMS_MUTATIONS,
 						WHITEBOARD_MUTATIONS, FLOW_MUTATIONS, WINDMILL_MUTATIONS, N8N_MUTATIONS,
@@ -897,6 +900,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			await this.files.assertIdentity(this.#stop.signal)
 		}
 		if ((CALENDAR_MUTATIONS.has(part.toolName) || TASKS_MUTATIONS.has(part.toolName) || CONTACTS_MUTATIONS.has(part.toolName)) && part.request.source === 'host') {
+			const davProposal = this.#davProposals.get(part.request.callId)
+			if (davProposal?.proposalId && this.files.nativeProviders) {
+				if (CALENDAR_MUTATIONS.has(part.toolName) && this.files.nativeProviders.calendarApprove) {
+					await this.files.nativeProviders.calendarApprove(davProposal.proposalId, this.#stop.signal)
+				}
+			}
 			const proposal = this.#davProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
@@ -1332,7 +1341,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	async planCalendarMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DavProposal> {
 		if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-		if (!this.files.calendar) throw new Error('Calendar app is unavailable.')
+		if (!this.files.calendar && !this.files.nativeProviders?.calendarPropose) throw new Error('Calendar app is unavailable.')
 		await this.files.assertIdentity(signal)
 		if (name === 'nc_calendar_create') {
 			const v = validateCalendarCreateArgs(args)
@@ -1346,6 +1355,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				endUtc: v.endUtc,
 			})
 			const after = parseDavProperties(rawAfter, 'VEVENT').values
+			let proposalId: string | undefined
+			let revision = await sha256Hex(rawAfter)
+			if (this.files.nativeProviders?.calendarPropose) {
+				const native = await this.files.nativeProviders.calendarPropose('create', v.calendarId, v.filename, rawAfter, null, signal)
+				proposalId = native.id
+				revision = native.hash
+			}
 			return {
 				name,
 				args: { ...args },
@@ -1353,14 +1369,21 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				before: null,
 				after,
 				rawAfter,
-				revision: await sha256Hex(rawAfter),
+				revision,
 				calendarId: v.calendarId,
 				filename: v.filename,
 				component: 'VEVENT',
+				proposalId,
 			}
 		} else if (name === 'nc_calendar_patch') {
 			const v = validateCalendarPatchArgs(args)
-			const current = await this.files.calendar.getEvent(v.calendarId, v.filename, signal)
+			const current = this.files.nativeProviders?.calendarEvent
+				? await (async () => {
+					const e = await this.files.nativeProviders!.calendarEvent(v.calendarId, v.filename, signal)
+					const parsed = parseDavProperties(e.content, 'VEVENT')
+					return { etag: e.etag, raw: e.content, values: parsed.values }
+				})()
+				: await this.files.calendar!.getEvent(v.calendarId, v.filename, signal)
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Calendar resource changed. Read it again before proposing a write.')
 			}
@@ -1377,6 +1400,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}
 			const rawAfter = patchIcs(current.raw, 'VEVENT', mappedChanges)
 			const after = parseDavProperties(rawAfter, 'VEVENT').values
+			let proposalId: string | undefined
+			let revision = v.expectedEtag
+			if (this.files.nativeProviders?.calendarPropose) {
+				const native = await this.files.nativeProviders.calendarPropose('patch', v.calendarId, v.filename, rawAfter, v.expectedEtag, signal)
+				proposalId = native.id
+				revision = native.hash
+			}
 			return {
 				name,
 				args: { ...args },
@@ -1386,14 +1416,21 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				rawBefore: current.raw,
 				rawAfter,
 				etag: v.expectedEtag,
-				revision: v.expectedEtag,
+				revision,
 				calendarId: v.calendarId,
 				filename: v.filename,
 				component: 'VEVENT',
+				proposalId,
 			}
 		} else if (name === 'nc_calendar_delete') {
 			const v = validateCalendarDeleteArgs(args)
-			const current = await this.files.calendar.getEvent(v.calendarId, v.filename, signal)
+			const current = this.files.nativeProviders?.calendarEvent
+				? await (async () => {
+					const e = await this.files.nativeProviders!.calendarEvent(v.calendarId, v.filename, signal)
+					const parsed = parseDavProperties(e.content, 'VEVENT')
+					return { etag: e.etag, raw: e.content, values: parsed.values }
+				})()
+				: await this.files.calendar!.getEvent(v.calendarId, v.filename, signal)
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Calendar resource changed. Read it again before proposing a write.')
 			}
@@ -1404,6 +1441,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (/(?:^|\r?\n)ATTENDEE[;:]/i.test(current.raw)) {
 				throw new Error('Attendee notifications require a separate explicitly approved operation. Attendee-bearing events are excluded from private event tools.')
 			}
+			let proposalId: string | undefined
+			let revision = v.expectedEtag
+			if (this.files.nativeProviders?.calendarPropose) {
+				const native = await this.files.nativeProviders.calendarPropose('delete', v.calendarId, v.filename, '', v.expectedEtag, signal)
+				proposalId = native.id
+				revision = native.hash
+			}
 			return {
 				name,
 				args: { ...args },
@@ -1412,10 +1456,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				after: { deleted: true },
 				rawBefore: current.raw,
 				etag: v.expectedEtag,
-				revision: v.expectedEtag,
+				revision,
 				calendarId: v.calendarId,
 				filename: v.filename,
 				component: 'VEVENT',
+				proposalId,
 			}
 		}
 		throw new Error('Unsupported Calendar mutation.')
@@ -1425,11 +1470,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#davProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
-		this.consumeExpandedApproval(call.callId, args)
+		if (!proposal.proposalId) this.consumeExpandedApproval(call.callId, args)
 		this.#davProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
-		if (!this.files.calendar) throw new Error('Calendar app is unavailable.')
+		if (!this.files.calendar && !this.files.nativeProviders?.calendarCommit) throw new Error('Calendar app is unavailable.')
 		await this.files.assertIdentity(call.signal)
 		call.signal.throwIfAborted()
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
@@ -1437,12 +1482,18 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			let result: unknown
 			const calendarId = proposal.calendarId!
 			const filename = proposal.filename
-			if (name === 'nc_calendar_create') {
-				result = await this.files.calendar.createEvent(calendarId, filename, proposal.rawAfter!, call.signal)
+			if (proposal.proposalId && this.files.nativeProviders?.calendarCommit) {
+				const commitResult = await this.files.nativeProviders.calendarCommit(proposal.proposalId, call.signal)
+				if (commitResult.outcome !== 'verified') {
+					throw new Error(commitResult.errorMessage || 'Calendar change could not be verified.')
+				}
+				result = { status: commitResult.status, etag: commitResult.etag, outcome: commitResult.outcome }
+			} else if (name === 'nc_calendar_create') {
+				result = await this.files.calendar!.createEvent(calendarId, filename, proposal.rawAfter!, call.signal)
 			} else if (name === 'nc_calendar_patch') {
-				result = await this.files.calendar.updateEvent(calendarId, filename, proposal.rawAfter!, proposal.etag!, call.signal)
+				result = await this.files.calendar!.updateEvent(calendarId, filename, proposal.rawAfter!, proposal.etag!, call.signal)
 			} else if (name === 'nc_calendar_delete') {
-				await this.files.calendar.deleteEvent(calendarId, filename, proposal.etag!, call.signal)
+				await this.files.calendar!.deleteEvent(calendarId, filename, proposal.etag!, call.signal)
 				result = { deleted: true }
 			}
 			const activity = binding && generation !== undefined
@@ -1579,7 +1630,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#davProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
-		this.consumeExpandedApproval(call.callId, args)
+		if (!proposal.proposalId) this.consumeExpandedApproval(call.callId, args)
 		this.#davProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
@@ -1728,7 +1779,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#davProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
-		this.consumeExpandedApproval(call.callId, args)
+		if (!proposal.proposalId) this.consumeExpandedApproval(call.callId, args)
 		this.#davProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
