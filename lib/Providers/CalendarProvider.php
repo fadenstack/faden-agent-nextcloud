@@ -62,6 +62,24 @@ final class CalendarProvider {
 		return $p;
 	}
 
+	private function mutationPolicy(): array {
+		try {
+			$policy = $this->policy->calendar();
+			$this->policy->assertDisclosure($policy);
+			if (!$policy['writesEnabled']) {
+				throw new Problem('Calendar mutations have been disabled by the administrator.', 403);
+			}
+			return $policy;
+		} catch (Problem $error) {
+			// Observing a disabled/invalid policy retires this session's pending approvals.
+			// Re-enabling the same configuration must not revive those approvals.
+			$state = $this->state();
+			$state['proposals'] = [];
+			$this->setState($state);
+			throw $error;
+		}
+	}
+
 	private function assertPrivateEvent(string $ics): void {
 		if ($ics === '' || strlen($ics) > 65536 || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', $ics)) {
 			throw new Problem('Invalid iCalendar data.', 400);
@@ -312,10 +330,7 @@ final class CalendarProvider {
 	}
 
 	public function approve(string $id): array {
-		$policy = $this->policy->calendar();
-		if (!$policy['writesEnabled']) {
-			throw new Problem('Calendar mutations have been disabled by the administrator.', 403);
-		}
+		$policy = $this->mutationPolicy();
 		$p = $this->proposal($id);
 		$this->assertProposalIdentity($p, $policy);
 		$state = $this->state();
@@ -325,10 +340,7 @@ final class CalendarProvider {
 	}
 
 	public function commit(string $id): array {
-		$policy = $this->policy->calendar();
-		if (!$policy['writesEnabled']) {
-			throw new Problem('Calendar mutations have been disabled by the administrator.', 403);
-		}
+		$policy = $this->mutationPolicy();
 		$p = $this->proposal($id);
 		$identity = $this->assertProposalIdentity($p, $policy);
 		if (!$p['approved']) {

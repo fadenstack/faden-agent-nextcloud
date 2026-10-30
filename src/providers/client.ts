@@ -1,18 +1,11 @@
-import type { DestinationAudience, SourceClass } from '../platform/scope.ts'
 import type { ProviderCapability } from './registry.ts'
+import type { ProviderResource } from './scope.ts'
 
-export interface CalendarCollection {
-	readonly provider: 'calendar' | 'tasks' | 'contacts'
-	readonly resourceId: string
-	readonly collectionId: string
-	readonly revision: string
-	readonly sourceClass: SourceClass
-	readonly audience: DestinationAudience
-	readonly policyVersion: string
+export interface CalendarCollection extends ProviderResource {
 	readonly title: string
 }
 
-export interface CalendarEvent extends CalendarCollection {
+export interface CalendarEvent extends ProviderResource {
 	readonly filename: string
 	readonly contentProfile: 'icalendar-xml-normalized'
 	readonly content: string
@@ -40,23 +33,17 @@ export interface CalendarCommitOutcome {
 	readonly errorMessage?: string
 }
 
-export interface ContactSummary {
-	readonly resourceId: string
-	readonly collectionId: string
+export interface ContactSummary extends ProviderResource {
+	readonly provider: 'contacts'
 	readonly filename: string
-	readonly etag: string
+	readonly content: string
 	readonly title?: string
 	readonly fn?: string
 	readonly email?: string
 }
 
-export interface ContactReadResult {
-	readonly etag?: string
-	readonly content?: string
-	readonly raw?: string
-	readonly contacts?: readonly CalendarCollection[]
-	readonly complete?: boolean
-}
+export type ContactReadResult = (ContactSummary & { readonly etag: string })
+	| { readonly contacts: readonly ContactSummary[]; readonly complete: boolean }
 
 export interface NativeProvidersApi {
 	capabilities(signal: AbortSignal): Promise<readonly ProviderCapability[]>

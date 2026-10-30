@@ -62,6 +62,22 @@ final class ContactsProvider {
 		return $p;
 	}
 
+	private function mutationPolicy(): array {
+		try {
+			$policy = $this->policy->contacts();
+			$this->policy->assertDisclosure($policy);
+			if (!$policy['writesEnabled']) {
+				throw new Problem('Contacts mutations have been disabled by the administrator.', 403);
+			}
+			return $policy;
+		} catch (Problem $error) {
+			$state = $this->state();
+			$state['proposals'] = [];
+			$this->setState($state);
+			throw $error;
+		}
+	}
+
 	private function assertPrivateContact(string $vcf): void {
 		if ($vcf === '' || strlen($vcf) > 65536 || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', $vcf)) {
 			throw new Problem('Invalid vCard contact data.', 400);
@@ -353,11 +369,7 @@ final class ContactsProvider {
 	}
 
 	public function approve(string $id): array {
-		$policy = $this->policy->contacts();
-		$this->policy->assertDisclosure($policy);
-		if (!($policy['writesEnabled'] ?? false)) {
-			throw new Problem('Contacts mutations have been disabled by the administrator.', 403);
-		}
+		$policy = $this->mutationPolicy();
 		$p = $this->proposal($id);
 		$this->assertProposalIdentity($p, $policy);
 		$state = $this->state();
@@ -367,11 +379,7 @@ final class ContactsProvider {
 	}
 
 	public function commit(string $id): array {
-		$policy = $this->policy->contacts();
-		$this->policy->assertDisclosure($policy);
-		if (!($policy['writesEnabled'] ?? false)) {
-			throw new Problem('Contacts mutations have been disabled by the administrator.', 403);
-		}
+		$policy = $this->mutationPolicy();
 		$p = $this->proposal($id);
 		$identity = $this->assertProposalIdentity($p, $policy);
 		if (!($p['approved'] ?? false)) {

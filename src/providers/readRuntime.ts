@@ -57,7 +57,7 @@ export class ProviderReadRuntime {
 		signal.throwIfAborted()
 		if (epoch !== this.#epoch) throw new ScopeViolation('scope_changed', 'The provider turn changed.')
 		assertIdentity()
-		const tools = IMPLEMENTATIONS.available(capabilities, published)
+		const tools = IMPLEMENTATIONS.available(capabilities, published.filter(tool => policy.tools.some(name => name === tool.name)))
 		this.#scope = new ProviderTurnScope(tools, budget, assertIdentity, async (resource, write, innerSignal) => {
 			if (write) {
 				const cap = tools.find(item => item.provider === resource.provider)?.capability
@@ -73,9 +73,13 @@ export class ProviderReadRuntime {
 					? (await this.api.tasksLists?.(innerSignal)) ?? []
 					: (await this.api.tasksItems?.(resource.collectionId, innerSignal)) ?? []
 			} else if (resource.provider === 'contacts') {
-				values = resource.resourceId === collectionReference('contacts', resource.collectionId)
-					? (await this.api.contactsBooks?.(innerSignal)) ?? []
-					: (await this.api.contactsRead?.(resource.collectionId, undefined, innerSignal))?.contacts ?? []
+				if (resource.resourceId === collectionReference('contacts', resource.collectionId)) {
+					values = (await this.api.contactsBooks?.(innerSignal)) ?? []
+				} else {
+					if (!resource.filename) throw new ScopeViolation('source_forbidden', 'The recorded contact reference is incomplete.')
+					const current = await this.api.contactsRead?.(resource.collectionId, resource.filename, innerSignal)
+					values = current && 'resourceId' in current ? [current] : []
+				}
 			}
 			const current = values.find(value => value.resourceId === resource.resourceId)
 			if (!current) throw new ScopeViolation('source_forbidden', 'The provider source is no longer available.')
@@ -90,20 +94,44 @@ export class ProviderReadRuntime {
 		this.#scope.begin(name)
 	}
 
-	recordSource(resource: ProviderResource): void {
-		if (this.#scope && this.#policy) {
-			this.record(resource)
+	readGuard(): () => void {
+		const scope = this.#scope
+		const epoch = this.#epoch
+		if (!scope || !this.#policy) throw new Error('The native provider turn is unavailable.')
+		return () => {
+			if (this.#scope !== scope || this.#epoch !== epoch) throw new ScopeViolation('scope_changed', 'The provider turn changed.')
+			scope.assertIdentity()
+			scope.budget.assertLive()
 		}
 	}
 
-	private record(resource: ProviderResource): void {
+	recordSource(value: unknown): void {
+		if (!value || typeof value !== 'object') throw new Error('Invalid native provider resource metadata.')
+		// record/bind validates every field before retaining this boundary value.
+		this.record(value as ProviderResource)
+	}
+
+	/** Proposal preimages stay in the local approval view; they are not model tool output. */
+	inspectLocalSource(value: unknown): void {
+		if (!value || typeof value !== 'object') throw new Error('Invalid native provider resource metadata.')
+		this.record(value as ProviderResource, false)
+	}
+
+	private record(resource: ProviderResource, retain = true): void {
 		if (!this.#scope || !this.#policy) throw new Error('The native provider turn is unavailable.')
 		if (!['calendar', 'tasks', 'contacts'].includes(resource.provider) || resource.sourceClass === 'unknown' || !this.#policy.sourceClasses.includes(resource.sourceClass)
 			|| (resource.sourceClass === 'protected' && this.#policy.downstreamPolicy !== 'configured')) throw new ScopeViolation('processing_forbidden', 'This provider source cannot be sent to the configured model.')
 		const previous = this.#sources.get(resource.resourceId)
 		if (previous && previous.sourceClass !== resource.sourceClass) throw new ScopeViolation('processing_forbidden', 'Earlier source classification changed. Start a new conversation.')
 		if (!previous && this.#sources.size >= 200) throw new ScopeViolation('resource_limit', 'Start a new conversation to use more provider sources.')
+		if (resource.provider === 'contacts' && resource.resourceId !== collectionReference('contacts', resource.collectionId)
+			&& (typeof resource.filename !== 'string' || !resource.filename || /[\x00-\x1f\x7f/\\]/.test(resource.filename)
+				|| resource.resourceId !== collectionReference('contacts', resource.collectionId + '\0' + resource.filename))) throw new ScopeViolation('source_forbidden', 'The native contact reference is invalid.')
+		if (resource.provider === 'contacts' && resource.filename
+			&& (!('content' in resource) || typeof resource.content !== 'string' || resource.content.length > 65536
+				|| parseDavProperties(resource.content, 'VCARD').instances !== 1)) throw new Error('Invalid native contact content.')
 		this.#scope.bind(resource)
+		if (!retain) return
 		// Keep authorization metadata only; provider bodies already belong to the SDK conversation.
 		this.#sources.set(resource.resourceId, Object.freeze({
 			provider: resource.provider,
@@ -113,6 +141,7 @@ export class ProviderReadRuntime {
 			sourceClass: resource.sourceClass,
 			audience: resource.audience,
 			policyVersion: resource.policyVersion,
+			...(resource.filename ? { filename: resource.filename } : {}),
 		}))
 	}
 
@@ -136,7 +165,7 @@ export class ProviderReadRuntime {
 				|| resource.resourceId !== collectionReference('calendar', resource.collectionId)) throw new Error('Invalid native Calendar collection result.')
 			this.record(resource)
 		}
-		return { provider: 'calendar', collections: values, scope: 'administrator-configured collections', writesEnabled: false }
+		return { provider: 'calendar', collections: values, scope: 'administrator-configured collections', writesEnabled: scope.tools.some(tool => tool.provider === 'calendar' && tool.risk !== 'read') }
 	}
 
 	async events(reference: unknown, signal: AbortSignal): Promise<unknown> {

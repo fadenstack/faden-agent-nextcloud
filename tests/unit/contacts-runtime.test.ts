@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway, lastToolResults } from '@fadenstack/testing'
 import { ApprovalPart } from '@fadenstack/ui'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
 import { ProviderReadRuntime } from '../../src/providers/readRuntime.ts'
@@ -71,20 +71,21 @@ const book: CalendarCollection = {
 const sampleVcard = 'BEGIN:VCARD\r\nVERSION:3.0\r\nPRODID:-//Fadenstack test//EN\r\nUID:contact-1\r\nFN:Alice Smith\r\nN:Smith;Alice;;;\r\nEMAIL;TYPE=INTERNET:alice@example.com\r\nTEL;TYPE=CELL:+123456789\r\nNOTE:Key collaborator\r\nCATEGORIES:Work\r\nEND:VCARD\r\n'
 
 const contactItem: ContactSummary = {
+	...book,
+	provider: 'contacts',
 	resourceId: 'nextcloud:contacts:Y29udGFjdHMAY29udGFjdC0xLnZjZg',
 	collectionId: 'contacts',
 	filename: 'contact-1.vcf',
-	etag: 'contact-r1',
+	revision: 'contact-r1',
+	content: sampleVcard,
 	title: 'Alice Smith',
 	fn: 'Alice Smith',
 	email: 'alice@example.com',
 }
 
 const contactReadResult: ContactReadResult = {
+	...contactItem,
 	etag: 'contact-r1',
-	content: sampleVcard,
-	raw: sampleVcard,
-	complete: true,
 }
 
 const signal = () => new AbortController().signal
@@ -101,7 +102,7 @@ function mockNativeApi(overrides: Partial<NativeProvidersApi> = {}): NativeProvi
 
 		contactsBooks: vi.fn(async () => [book]),
 		contactsFind: vi.fn(async () => [contactItem]),
-		contactsRead: vi.fn(async () => contactReadResult),
+		contactsRead: vi.fn(async (_book, filename) => filename ? contactReadResult : { contacts: [contactItem], complete: true }),
 		contactsPropose: vi.fn(async (operation, bookId, filename, vcardData, expectedEtag) => ({
 			id: 'prop-contacts-123',
 			operation,
@@ -158,6 +159,26 @@ function gateway(model?: ConstructorParameters<typeof FakeGateway>[0]['model']) 
 	})
 }
 
+async function readThroughSdk(native: NativeProvidersApi, name: string, args: Record<string, unknown>) {
+	let round = 0
+	let result: unknown
+	const gw = gateway(request => {
+		if (++round === 1) return { toolCalls: [{ id: 'read', name, arguments: args }] }
+		result = JSON.parse(lastToolResults(request).get('read')!)
+		return { text: 'Read completed.' }
+	})
+	const host = new NextcloudAgent(identity, mockFilesApi(native), gw.fetch)
+	try {
+		await host.signIn('alice', 'test')
+		await host.send('Read the synthetic contacts.', false)
+		expect(host.chat.turns[0].state).toBe('completed')
+		expect(round).toBe(2)
+		return result
+	} finally {
+		await host.dispose()
+	}
+}
+
 describe('Native Contacts mutation lifecycle and runtime', () => {
 	it('offers all 6 contacts tools when server capability has canWrite: true', async () => {
 		const native = mockNativeApi()
@@ -177,40 +198,23 @@ describe('Native Contacts mutation lifecycle and runtime', () => {
 
 	it('lists native address books with permissions', async () => {
 		const native = mockNativeApi()
-		const files = mockFilesApi(native)
-		const gw = gateway()
-		const host = new NextcloudAgent(identity, files, gw.fetch)
-		await host.signIn('alice', 'test')
-
-		const result = await host.listContacts()
+		const result = await readThroughSdk(native, 'nc_contacts_list', {})
 		expect(result).toEqual({
 			addressBooks: [book],
 			complete: true,
 		})
-		await host.dispose()
 	})
 
 	it('finds matching contacts without collapsing duplicate names', async () => {
 		const native = mockNativeApi()
-		const files = mockFilesApi(native)
-		const gw = gateway()
-		const host = new NextcloudAgent(identity, files, gw.fetch)
-		await host.signIn('alice', 'test')
-
-		const result = await host.findContacts('Smith')
+		const result = await readThroughSdk(native, 'nc_contacts_find', { query: 'Smith' })
 		expect(result).toEqual([contactItem])
 		expect(native.contactsFind).toHaveBeenCalledWith('Smith', expect.any(AbortSignal))
-		await host.dispose()
 	})
 
 	it('reads individual contact properties with exact ETag', async () => {
 		const native = mockNativeApi()
-		const files = mockFilesApi(native)
-		const gw = gateway()
-		const host = new NextcloudAgent(identity, files, gw.fetch)
-		await host.signIn('alice', 'test')
-
-		const result = await host.readContact('contacts', 'contact-1.vcf')
+		const result = await readThroughSdk(native, 'nc_contacts_read', { bookId: 'contacts', filename: 'contact-1.vcf' })
 		expect(result).toEqual({
 			etag: 'contact-r1',
 			raw: sampleVcard,
@@ -221,7 +225,80 @@ describe('Native Contacts mutation lifecycle and runtime', () => {
 				CATEGORIES: 'Work',
 			}),
 		})
+	})
+
+	it('reads a bounded address book through the composed SDK', async () => {
+		expect(await readThroughSdk(mockNativeApi(), 'nc_contacts_read', { bookId: 'contacts' })).toEqual([contactItem])
+	})
+
+	it.each([
+		['individual', 'nc_contacts_read', { bookId: 'contacts', filename: 'contact-1.vcf' }],
+		['whole book', 'nc_contacts_read', { bookId: 'contacts' }],
+		['search', 'nc_contacts_find', { query: 'Smith' }],
+	] as const)('blocks the model follow-up after %s contact access is revoked', async (_label, name, args) => {
+		const native = mockNativeApi()
+		vi.mocked(native.contactsRead!).mockImplementation(async (_book, filename) => {
+			if (!filename) return { contacts: [contactItem], complete: true }
+			throw new Error('Native contact access was revoked.')
+		})
+		if (args.filename) vi.mocked(native.contactsRead!).mockResolvedValueOnce(contactReadResult)
+		let calls = 0
+		const gw = gateway(() => ++calls === 1
+			? { toolCalls: [{ id: 'read', name, arguments: args }] }
+			: { text: 'This request must never be reached.' })
+		const host = new NextcloudAgent(identity, mockFilesApi(native), gw.fetch)
+		try {
+			await host.signIn('alice', 'test')
+			await host.send('Read a contact.', false)
+			expect(host.chat.turns[0].state).toBe('failed')
+			expect(host.chat.turns[0].errorMessage).toContain('revoked')
+			expect(calls).toBe(1)
+		} finally { await host.dispose() }
+	})
+
+	it('refuses native reads outside a governed provider turn before fetching content', async () => {
+		const native = mockNativeApi()
+		const host = new NextcloudAgent(identity, mockFilesApi(native), gateway().fetch)
+		await host.signIn('alice', 'test')
+		await expect(host.readContact('contacts', 'contact-1.vcf')).rejects.toThrow('turn is unavailable')
+		expect(native.contactsRead).not.toHaveBeenCalled()
 		await host.dispose()
+	})
+
+	it.each(['revision', 'audience', 'sourceClass', 'policyVersion'] as const)('rechecks historical contact %s before a later model request', async field => {
+		const native = mockNativeApi()
+		const runtime = new ProviderReadRuntime(native)
+		await runtime.prepare('contact-history', published, policy, new TurnBudget(), () => {}, signal())
+		runtime.recordSource(contactReadResult)
+		runtime.finish('contact-history')
+		const changes = { revision: 'contact-r2', audience: 'public', sourceClass: 'protected', policyVersion: 'new-policy' } as const
+		vi.mocked(native.contactsRead!).mockResolvedValue({ ...contactReadResult, [field]: changes[field] })
+		await expect(runtime.prepare('contact-history', published, policy, new TurnBudget(), () => {}, signal())).rejects.toThrow('changed')
+	})
+
+	it('rejects an unresolvable contact reference before retaining its body', async () => {
+		const runtime = new ProviderReadRuntime(mockNativeApi())
+		await runtime.prepare('bad-reference', published, policy, new TurnBudget(), () => {}, signal())
+		expect(() => runtime.recordSource({ ...contactItem, filename: 'other.vcf' })).toThrow('reference is invalid')
+		expect(runtime.hasSources).toBe(false)
+	})
+
+	it('rejects a late response after the provider turn has changed', async () => {
+		const runtime = new ProviderReadRuntime(mockNativeApi())
+		await runtime.prepare('old-contact-turn', published, policy, new TurnBudget(), () => {}, signal())
+		const oldGuard = runtime.readGuard()
+		runtime.finish('old-contact-turn')
+		await runtime.prepare('new-contact-turn', published, policy, new TurnBudget(), () => {}, signal())
+		expect(oldGuard).toThrow('turn changed')
+		expect(runtime.hasSources).toBe(false)
+	})
+
+	it('validates local approval preimages without treating them as disclosed model output', async () => {
+		const runtime = new ProviderReadRuntime(mockNativeApi())
+		await runtime.prepare('local-proposal', published, policy, new TurnBudget(), () => {}, signal())
+		runtime.inspectLocalSource(contactReadResult)
+		expect(runtime.hasSources).toBe(false)
+		expect(() => runtime.inspectLocalSource({ ...contactReadResult, sourceClass: 'unknown' })).toThrow('cannot be sent')
 	})
 
 	it('composes nc_contacts_create: propose -> approval -> approve -> commit -> verified receipt', async () => {
@@ -419,6 +496,11 @@ describe('Native Contacts mutation lifecycle and runtime', () => {
 				target: 'Delete contact contact-1.vcf from address book contacts',
 			})),
 		})
+		vi.mocked(native.contactsCommit!).mockImplementation(async () => {
+			// The committed object really becomes unreadable; only the local preview used its body.
+			vi.mocked(native.contactsRead!).mockRejectedValue(new Error('The contact no longer exists.'))
+			return { status: 'deleted', outcome: 'verified', target: 'contacts/contact-1.vcf' }
+		})
 		let round = 0
 		const gw = gateway(() => {
 			round++
@@ -463,6 +545,8 @@ describe('Native Contacts mutation lifecycle and runtime', () => {
 
 		expect(native.contactsCommit).toHaveBeenCalledWith('prop-contacts-123', expect.any(AbortSignal))
 		expect(host.chat.turns[0].state).toBe('completed')
+		expect(native.contactsRead).toHaveBeenCalledTimes(1)
+		expect(JSON.stringify(gw.modelCalls.at(-1)?.messages)).not.toContain('Key collaborator')
 		await host.dispose()
 	})
 

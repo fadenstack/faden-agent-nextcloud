@@ -94,6 +94,12 @@ describe('Native provider read runtime', () => {
 		expect(native.calendarEvents).toHaveBeenCalledWith('team', expect.any(AbortSignal))
 	})
 
+	it('intersects native capabilities with the administrator tool grant', async () => {
+		const { runtime } = await ready(api(), { policy: { ...policy, tools: ['nc_calendar_list'] } })
+		expect(runtime.offeredTools).toEqual(['nc_calendar_list'])
+		expect(() => runtime.begin('nc_calendar_read')).toThrow('unavailable')
+	})
+
 	it('rejects paths, URLs and event references supplied as collections', async () => {
 		const { runtime } = await ready()
 		for (const reference of ['/team', 'https://cloud.test/calendar/team', 'nextcloud:calendar:Z3Vlc3NlZA']) {
@@ -240,6 +246,25 @@ function gateway(model?: ConstructorParameters<typeof FakeGateway>[0]['model']) 
 }
 
 describe('Native Calendar through the composed published SDK (mock gateway/native API)', () => {
+	it.each(['disabled', 'unpublished-version', 'local-grant'] as const)('does not restore a %s provider through the generic Files scope', async mode => {
+		const native = api()
+		if (mode === 'disabled') vi.mocked(native.capabilities).mockResolvedValue([])
+		if (mode === 'unpublished-version') vi.mocked(native.capabilities).mockResolvedValue([{ ...capability, apiVersion: 'untested-v99' }])
+		const config = mode === 'local-grant' ? { ...identity, scopePolicy: { ...policy, tools: ['nc_calendar_read'] } } : identity
+		let offered: string[] = []
+		let round = 0
+		const gw = gateway(request => {
+			offered = request.tools.map(tool => tool.name)
+			return ++round === 1 ? { toolCalls: [{ id: 'invented', name: 'nc_calendar_list', arguments: {} }] } : { text: 'Unavailable.' }
+		})
+		const host = new NextcloudAgent(config, files(native), gw.fetch)
+		try {
+			await host.signIn('alice', 'test')
+			await host.send('List calendars.', false)
+			expect(offered).not.toContain('nc_calendar_list')
+			expect(native.calendarCollections).not.toHaveBeenCalled()
+		} finally { await host.dispose() }
+	})
 	it('stays absent without both native development gates', async () => {
 		for (const flags of [{ development: false }, { providerReadsEnabled: false }, { providerReadsEnabled: undefined }]) {
 			const host = new NextcloudAgent({ ...identity, ...flags }, files(), gateway().fetch)

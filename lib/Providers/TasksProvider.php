@@ -62,6 +62,22 @@ final class TasksProvider {
 		return $p;
 	}
 
+	private function mutationPolicy(): array {
+		try {
+			$policy = $this->policy->tasks();
+			$this->policy->assertDisclosure($policy);
+			if (!$policy['writesEnabled']) {
+				throw new Problem('Tasks mutations have been disabled by the administrator.', 403);
+			}
+			return $policy;
+		} catch (Problem $error) {
+			$state = $this->state();
+			$state['proposals'] = [];
+			$this->setState($state);
+			throw $error;
+		}
+	}
+
 	private function assertPrivateTask(string $ics): void {
 		if ($ics === '' || strlen($ics) > 65536 || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', $ics)) {
 			throw new Problem('Invalid iCalendar task data.', 400);
@@ -327,11 +343,7 @@ final class TasksProvider {
 	}
 
 	public function approve(string $id): array {
-		$policy = $this->policy->tasks();
-		$this->policy->assertDisclosure($policy);
-		if (!($policy['writesEnabled'] ?? false)) {
-			throw new Problem('Tasks mutations have been disabled by the administrator.', 403);
-		}
+		$policy = $this->mutationPolicy();
 		$p = $this->proposal($id);
 		$this->assertProposalIdentity($p, $policy);
 		$state = $this->state();
@@ -341,11 +353,7 @@ final class TasksProvider {
 	}
 
 	public function commit(string $id): array {
-		$policy = $this->policy->tasks();
-		$this->policy->assertDisclosure($policy);
-		if (!($policy['writesEnabled'] ?? false)) {
-			throw new Problem('Tasks mutations have been disabled by the administrator.', 403);
-		}
+		$policy = $this->mutationPolicy();
 		$p = $this->proposal($id);
 		$identity = $this->assertProposalIdentity($p, $policy);
 		if (!($p['approved'] ?? false)) {

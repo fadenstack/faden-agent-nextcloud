@@ -10,6 +10,7 @@ export interface ProviderResource {
 	readonly sourceClass: SourceClass
 	readonly audience: DestinationAudience
 	readonly policyVersion: string
+	readonly filename?: string
 }
 
 /** Resource handles are issued by native discovery; decoding one never grants access. */

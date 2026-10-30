@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway, lastToolResults } from '@fadenstack/testing'
 import { ApprovalPart } from '@fadenstack/ui'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
 import { ProviderReadRuntime } from '../../src/providers/readRuntime.ts'
@@ -166,11 +166,18 @@ describe('Native Tasks mutation lifecycle and runtime', () => {
 	it('reads tasks from native task list with exact filenames and properties', async () => {
 		const native = mockNativeApi()
 		const files = mockFilesApi(native)
-		const gw = gateway()
+		let round = 0
+		let result: unknown
+		const gw = gateway(request => {
+			if (++round === 1) return { toolCalls: [{ id: 'read', name: 'nc_tasks_read', arguments: { calendarId: 'personal' } }] }
+			result = JSON.parse(lastToolResults(request).get('read')!)
+			return { text: 'Tasks read.' }
+		})
 		const host = new NextcloudAgent(identity, files, gw.fetch)
 		await host.signIn('alice', 'test')
 
-		const result = await host.readTasks('personal')
+		await host.send('Read my tasks.', false)
+		expect(host.chat.turns[0].state).toBe('completed')
 		expect(result).toEqual({
 			calendarId: 'personal',
 			complete: true,

@@ -216,7 +216,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(this.#providerReads ? nativeContactsTools(this.#providerReads, this) : []))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
-					const available = this.#scope ? [...this.#scope.offeredTools, ...(this.#providerReads?.offeredTools ?? [])] : undefined
+					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
 					return inner.stream(messages, available
 						? {
 							...options,
@@ -228,7 +228,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addToolStage(StageOrder.custom, {
 				invoke: async (invocation, next) => {
-					if (this.#providerReads && this.#providerReads.offeredTools.includes(invocation.tool.name)) this.#providerReads.begin(invocation.tool.name)
+					if (this.#providerReads && ['calendar', 'tasks', 'contacts'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
 					else this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
 					if (this.#providerReads?.hasSources && fileCapability(invocation.tool.name)?.subsystem === 'files' && fileCapability(invocation.tool.name)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
@@ -1525,16 +1525,21 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (!this.files.tasks && !this.files.nativeProviders?.tasksItems) throw new Error('Tasks app is unavailable.')
 		await this.files.assertIdentity(signal)
 		if (this.files.nativeProviders?.tasksItems) {
+			const current = this.#providerReads?.readGuard()
+			if (!current) throw new Error('The native provider turn is unavailable.')
 			const items = await this.files.nativeProviders.tasksItems(calendarId, signal ?? new AbortController().signal)
+			signal?.throwIfAborted()
+			current()
+			if (!Array.isArray(items) || items.length > 50) throw new Error('Invalid native Tasks result.')
 			const parsed = items.map(item => {
-				const props = parseDavProperties(item.content, 'VTODO').values
-				if (this.#providerReads) {
-					this.#providerReads.recordSource(item)
-				}
+				if (item.provider !== 'tasks' || item.collectionId !== calendarId || typeof item.content !== 'string' || item.content.length > 65536) throw new Error('Invalid native Tasks result.')
+				const props = parseDavProperties(item.content, 'VTODO')
+				if (props.instances !== 1) throw new Error('Invalid native task content.')
+				this.#providerReads!.recordSource(item)
 				return {
 					filename: item.filename,
 					etag: item.revision,
-					properties: props,
+					properties: props.values,
 				}
 			})
 			return { calendarId, tasks: parsed, complete: true }
@@ -1738,7 +1743,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (!this.files.contacts && !this.files.nativeProviders?.contactsBooks) throw new Error('Contacts app is unavailable.')
 		await this.files.assertIdentity(signal)
 		if (this.files.nativeProviders?.contactsBooks) {
+			const current = this.#providerReads?.readGuard()
+			if (!current) throw new Error('The native provider turn is unavailable.')
 			const addressBooks = await this.files.nativeProviders.contactsBooks(signal ?? new AbortController().signal)
+			signal?.throwIfAborted()
+			current()
+			if (!Array.isArray(addressBooks) || addressBooks.length > 8 || addressBooks.some(resource => resource.provider !== 'contacts')) throw new Error('Invalid native Contacts result.')
+			for (const resource of addressBooks) this.#providerReads!.recordSource(resource)
 			return { addressBooks, complete: true }
 		}
 		const addressBooks = await this.files.contacts!.listAddressBooks(signal)
@@ -1749,7 +1760,14 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (!this.files.contacts && !this.files.nativeProviders?.contactsFind) throw new Error('Contacts app is unavailable.')
 		await this.files.assertIdentity(signal)
 		if (this.files.nativeProviders?.contactsFind) {
-			return await this.files.nativeProviders.contactsFind(query, signal ?? new AbortController().signal)
+			const current = this.#providerReads?.readGuard()
+			if (!current) throw new Error('The native provider turn is unavailable.')
+			const contacts = await this.files.nativeProviders.contactsFind(query, signal ?? new AbortController().signal)
+			signal?.throwIfAborted()
+			current()
+			if (!Array.isArray(contacts) || contacts.length > 20 || contacts.some(resource => resource.provider !== 'contacts')) throw new Error('Invalid native Contacts result.')
+			for (const resource of contacts) this.#providerReads!.recordSource(resource)
+			return contacts
 		}
 		return await this.files.contacts!.findContacts(query, signal)
 	}
@@ -1758,20 +1776,43 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (!this.files.contacts && !this.files.nativeProviders?.contactsRead) throw new Error('Contacts app is unavailable.')
 		await this.files.assertIdentity(signal)
 		if (this.files.nativeProviders?.contactsRead) {
+			const current = this.#providerReads?.readGuard()
+			if (!current) throw new Error('The native provider turn is unavailable.')
 			const res = await this.files.nativeProviders.contactsRead(bookId, filename, signal ?? new AbortController().signal)
+			signal?.throwIfAborted()
+			current()
 			if (filename) {
-				const raw = res.content ?? res.raw ?? ''
+				if (!('content' in res) || res.provider !== 'contacts' || res.collectionId !== bookId || res.filename !== filename
+					|| typeof res.content !== 'string' || res.content.length > 65536 || res.etag !== res.revision) throw new Error('Invalid native Contacts result.')
+				this.#providerReads!.recordSource(res)
+				const raw = res.content
 				const parsed = parseDavProperties(raw, 'VCARD')
+				if (parsed.instances !== 1) throw new Error('Invalid native contact content.')
 				return {
 					etag: res.etag,
 					raw,
 					values: parsed.values,
 				}
 			}
-			return res.contacts ?? res
+			if (!('contacts' in res) || !Array.isArray(res.contacts) || res.contacts.length > 50
+				|| res.contacts.some(resource => resource.collectionId !== bookId)) throw new Error('Invalid native Contacts result.')
+			for (const resource of res.contacts) this.#providerReads!.recordSource(resource)
+			return res.contacts
 		}
 		const contact = await this.files.contacts!.readContact(bookId, filename, signal)
 		return { bookId, filename, contact }
+	}
+
+	private async contactForProposal(bookId: string, filename: string, signal: AbortSignal) {
+		const current = this.#providerReads?.readGuard()
+		if (!current || !this.files.nativeProviders?.contactsRead) throw new Error('The native provider turn is unavailable.')
+		const contact = await this.files.nativeProviders.contactsRead(bookId, filename, signal)
+		signal.throwIfAborted()
+		current()
+		if (!('content' in contact) || contact.provider !== 'contacts' || contact.collectionId !== bookId || contact.filename !== filename
+			|| contact.etag !== contact.revision) throw new Error('Invalid native Contacts result.')
+		this.#providerReads!.inspectLocalSource(contact)
+		return { etag: contact.etag, raw: contact.content, values: parseDavProperties(contact.content, 'VCARD').values }
 	}
 
 	async planContactsMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DavProposal> {
@@ -1813,12 +1854,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		} else if (name === 'nc_contacts_patch') {
 			const v = validateContactsPatchArgs(args)
 			const current = this.files.nativeProviders?.contactsRead
-				? await (async () => {
-					const c = await this.files.nativeProviders!.contactsRead!(v.bookId, v.filename, signal)
-					const raw = c.content ?? c.raw ?? ''
-					const parsed = parseDavProperties(raw, 'VCARD')
-					return { etag: c.etag, raw, values: parsed.values }
-				})()
+				? await this.contactForProposal(v.bookId, v.filename, signal)
 				: await this.files.contacts!.readContact(v.bookId, v.filename, signal)
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Contact resource changed. Read it again before proposing a write.')
@@ -1864,12 +1900,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		} else if (name === 'nc_contacts_delete') {
 			const v = validateContactsDeleteArgs(args)
 			const current = this.files.nativeProviders?.contactsRead
-				? await (async () => {
-					const c = await this.files.nativeProviders!.contactsRead!(v.bookId, v.filename, signal)
-					const raw = c.content ?? c.raw ?? ''
-					const parsed = parseDavProperties(raw, 'VCARD')
-					return { etag: c.etag, raw, values: parsed.values }
-				})()
+				? await this.contactForProposal(v.bookId, v.filename, signal)
 				: await this.files.contacts!.readContact(v.bookId, v.filename, signal)
 			if (current.etag !== v.expectedEtag) {
 				throw new Error('Contact resource changed. Read it again before proposing a write.')
