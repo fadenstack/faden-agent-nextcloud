@@ -19,6 +19,7 @@ const identity: Identity = { userId: 'alice', binding: 'native-binding', serverU
 const proposal = (operation: FileOperationProposal['operation']): FileOperationProposal => ({
 	id: 'a'.repeat(48), digest: 'b'.repeat(64), toolName: 'nc_files_' + operation, operation, sourceResourceId: 'nextcloud:files:51', sourcePath: source.path,
 	destinationResourceId: 'nextcloud:files:50', destinationName: 'copy.md', recipientUserId: operation === 'share_readonly' ? 'bob' : '', expectedEtag: source.etag,
+	sourceAudience: 'private', destinationAudience: operation === 'share_readonly' ? 'shared' : 'private',
 	target: operation === 'share_readonly' ? '/Project/brief.md → bob' : '/Project/copy.md', expires: Math.floor(Date.now() / 1000) + 600, history: 'audit-only', limitation: 'Native limitations; no Undo.',
 })
 
@@ -72,6 +73,8 @@ describe('Typed native Files organization through the published SDK', () => {
 			const part = await pending(run.agent)
 			expect(run.native.commit).not.toHaveBeenCalled()
 			expect(part.request).toMatchObject({ canAllowAlways: false, canAllowForSession: false, arguments: { digest: 'b'.repeat(64), limitation: 'Native limitations; no Undo.' } })
+			expect(part.request.arguments.before).toMatchObject({ audience: 'private' })
+			expect(part.request.arguments.content).toMatchObject({ audience: name === 'nc_files_share_readonly' ? 'shared' : 'private' })
 			await run.agent.approve(part); await run.send
 			expect(run.native.approve).toHaveBeenCalledTimes(1)
 			expect(run.native.commit).toHaveBeenCalledTimes(1)
@@ -79,13 +82,17 @@ describe('Typed native Files organization through the published SDK', () => {
 			expect(run.agent.chat.turns.flatMap(turn => [...turn.parts]).filter(p => p instanceof ToolCallPart && p.name === name)[0]).toMatchObject({ state: 'succeeded' })
 		} finally { run.agent.stop(); await run.agent.dispose() }
 	})
-	it.each(['deny', 'stop', 'changed-preview'])('has no native effect after %s', async decision => {
+	it.each(['deny', 'stop', 'changed-preview', 'changed-audience'])('has no native effect after %s', async decision => {
 		const run = await flow(names[0]!)
 		try {
 			const part = await pending(run.agent)
 			if (decision === 'deny') await run.agent.deny(part)
 			else if (decision === 'stop') run.agent.stop()
-			else { part.request.arguments.target = '/Different'; await expect(run.agent.approve(part)).rejects.toThrow('proposal changed'); await run.agent.deny(part) }
+			else {
+				if (decision === 'changed-audience') part.request.arguments.content = { ...(part.request.arguments.content as object), audience: 'public' }
+				else part.request.arguments.target = '/Different'
+				await expect(run.agent.approve(part)).rejects.toThrow('proposal changed'); await run.agent.deny(part)
+			}
 			await run.send
 			expect(run.native.commit).not.toHaveBeenCalled()
 			expect(run.native.cancel).toHaveBeenCalled()
@@ -114,7 +121,7 @@ describe('Native Files proposal transport', () => {
 		stop.abort(); finish(proposal('copy')); await rejection
 		expect(cleanup).toHaveBeenCalledWith(expect.stringMatching(/^request-/))
 	})
-	it.each([{ destinationResourceId: 'nextcloud:files:999' }, { expectedEtag: 'different' }, { toolName: 'nc_files_move' }])('refuses a changed native preview: %j', async change => {
+	it.each([{ destinationResourceId: 'nextcloud:files:999' }, { expectedEtag: 'different' }, { toolName: 'nc_files_move' }, { destinationAudience: 'made-up' }])('refuses a changed native preview: %j', async change => {
 		const cleanup = vi.fn(async () => {})
 		const api = fileOperationsApi((async () => ({ ...proposal('copy'), ...change })) as never, cleanup)
 		await expect(api.propose({ operation: 'copy', sourceResourceId: 'nextcloud:files:51', destinationResourceId: 'nextcloud:files:50', destinationName: 'copy.md', expectedEtag: source.etag }, new AbortController().signal)).rejects.toThrow('Invalid native Files preview')

@@ -827,10 +827,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				target: native.target,
 				revision: native.digest,
 				native,
-				before: { source: native.sourcePath, revision: native.expectedEtag },
+				before: { source: native.sourcePath, revision: native.expectedEtag, audience: native.sourceAudience },
 				after: operation === 'share_readonly'
-					? { recipientUserId: native.recipientUserId, permissions: 'Read only', email: 'Disabled', history: 'Audit only' }
-					: { destination: native.target, overwrite: 'Never', history: 'Audit only' },
+					? { recipientUserId: native.recipientUserId, permissions: 'Read only', email: 'Disabled', history: 'Audit only', audience: native.destinationAudience }
+					: { destination: native.target, overwrite: 'Never', history: 'Audit only', audience: native.destinationAudience },
 			}
 		}
 		if (name === 'nc_files_create_folder') {

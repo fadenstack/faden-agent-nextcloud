@@ -20,6 +20,7 @@ export function fileOperationsApi(post: <T>(path: string, body: unknown, signal?
 				|| value.toolName !== 'nc_files_' + args.operation || value.sourceResourceId !== args.sourceResourceId || value.history !== 'audit-only'
 				|| typeof value.target !== 'string' || value.target.length > 4096 || typeof value.sourcePath !== 'string' || value.sourcePath.length > 4096
 				|| typeof value.limitation !== 'string' || !value.limitation || value.limitation.length > 2048
+				|| !['private', 'shared', 'public', 'unknown'].includes(value.sourceAudience) || !['private', 'shared', 'public', 'unknown'].includes(value.destinationAudience)
 				|| strongEtagHeader(value.expectedEtag) !== strongEtagHeader(args.expectedEtag) || !Number.isInteger(value.expires) || value.expires * 1000 <= Date.now()
 				|| (args.operation === 'share_readonly' ? value.recipientUserId !== args.recipientUserId : value.destinationResourceId !== args.destinationResourceId || value.destinationName !== args.destinationName)) throw new Error('Invalid native Files preview.')
 				signal.throwIfAborted()

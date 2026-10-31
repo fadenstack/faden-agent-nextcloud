@@ -13,6 +13,12 @@ import DavApprovalFields from './DavApprovalFields.vue'
 const props = defineProps<{ part: ApprovalPart; strings: UiStrings; host: NextcloudAgent }>()
 const part = useViewModel(() => props.part)
 const chat = useViewModel(() => props.host.chat)
+function audience(value: unknown): string {
+	if (value === 'private') return t('fadenstack_agent', 'Private')
+	if (value === 'shared') return t('fadenstack_agent', 'Shared in Nextcloud')
+	if (value === 'public') return t('fadenstack_agent', 'Public link access')
+	return t('fadenstack_agent', 'Access could not be determined')
+}
 // RC2 represents an aborted pending approval as expired. Use the matching
 // public tool outcome to distinguish Stop from an actual unanswered timeout.
 const stateText = computed(() => {
@@ -103,13 +109,17 @@ function deny() {
 			</p>
 		</template>
 		<template v-else-if="organization">
-			<dl class="fdn-approval-description">
+			<dl class="fadenstack-file-fields">
 				<dt>{{ t('fadenstack_agent', 'Source file') }}</dt>
 				<dd>{{ (part.request.arguments.before as { source?: string })?.source }}</dd>
+				<dt>{{ t('fadenstack_agent', 'Current access') }}</dt>
+				<dd>{{ audience((part.request.arguments.before as { audience?: string })?.audience) }}</dd>
+				<dt>{{ t('fadenstack_agent', 'Destination access') }}</dt>
+				<dd>{{ audience((part.request.arguments.content as { audience?: string })?.audience) }}</dd>
 				<template v-if="part.toolName === 'nc_files_share_readonly'">
 					<dt>{{ t('fadenstack_agent', 'Recipient account') }}</dt>
 					<dd>{{ (part.request.arguments.content as { recipientUserId?: string })?.recipientUserId }}</dd>
-					<dt>{{ t('fadenstack_agent', 'Access') }}</dt><dd>{{ t('fadenstack_agent', 'Read only · no email') }}</dd>
+					<dt>{{ t('fadenstack_agent', 'New grant') }}</dt><dd>{{ t('fadenstack_agent', 'Read only · no email') }}</dd>
 				</template>
 				<template v-else>
 					<dt>{{ t('fadenstack_agent', 'Existing items') }}</dt><dd>{{ t('fadenstack_agent', 'Never overwritten') }}</dd>
@@ -182,3 +192,13 @@ function deny() {
 		</p>
 	</div>
 </template>
+
+<style scoped>
+.fadenstack-file-fields { display: grid; grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1.5fr); gap: 8px 12px; margin: 12px 0; line-height: 1.5; }
+
+.fadenstack-file-fields > dt, .fadenstack-file-fields > dd { float: none; width: auto; min-width: 0; margin: 0; text-align: start; overflow-wrap: anywhere; }
+
+.fadenstack-file-fields > dt { grid-column: 1; align-self: start; color: var(--color-text-maxcontrast); }
+
+.fadenstack-file-fields > dd { grid-column: 2; align-self: start; }
+</style>

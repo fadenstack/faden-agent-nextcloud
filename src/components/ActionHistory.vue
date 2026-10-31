@@ -59,7 +59,10 @@ function operation(item: HistoryItem): string {
 </script>
 
 <template>
-	<NcDialog :open="true" size="large" :name="t('fadenstack_agent', 'Agent actions')" @update:open="!$event && emit('close')">
+	<NcDialog :open="true"
+		size="large"
+		:name="t('fadenstack_agent', 'Agent actions')"
+		@update:open="!$event && emit('close')">
 		<div class="fadenstack-action-history" :data-version="version">
 			<p>{{ t('fadenstack_agent', 'Review recorded actions and inspect their current native state. Restoration is available only for certified private text-file changes.') }}</p>
 			<p>{{ t('fadenstack_agent', 'Nextcloud also keeps native file versions and deleted files. Open a file and choose Details → Versions for manual recovery. Native retention applies; versions do not represent every agent action.') }}</p>

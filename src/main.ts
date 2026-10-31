@@ -11,6 +11,7 @@ import HeaderButton from './components/HeaderButton.vue'
 import AssistantActivity from './components/AssistantActivity.vue'
 import mascot from '../img/app.svg?raw'
 import { installViewerIntegration, type ViewedDocument } from './integrations/nextcloud/viewer.ts'
+import { currentFileSelection, observeFileSelection } from './workspace/fileSelection.ts'
 
 const state = shallowReactive({ open: false, loading: false, error: '', runtime: undefined as Runtime | undefined, fileId: undefined as number | undefined, documentName: undefined as string | undefined, selectionEpoch: 0 })
 const icon = mascot.replaceAll('#FFFFFF', 'currentColor')
@@ -19,7 +20,7 @@ let closeFileDetails: (() => void) | undefined
 
 async function openDrawer(fileId?: number, documentName?: string) {
 	state.documentName = documentName
-	state.fileId = documentName ? fileId : fileId ?? currentFileSelection() ?? sidebarSelection?.() ?? state.fileId
+	state.fileId = documentName ? fileId : fileId ?? currentFileSelection() ?? (document.querySelector('#fadenstack-native-frame') ? undefined : sidebarSelection?.()) ?? state.fileId
 	state.selectionEpoch++
 	state.open = true
 	document.body.classList.add('fadenstack-agent-open')
@@ -68,33 +69,6 @@ async function registerFilesIntegration() {
 	}
 }
 
-/**
- * Files exposes actions/sidebar, but no public selection getter in 31–35.
- * Read only the visible selected row's ID; the PHP capability lookup authorizes it.
- * Never access private Vue/Pinia stores. File actions remain the public fallback.
- */
-function currentFileSelection(): number | undefined {
-	const rows = [...document.querySelectorAll<HTMLElement>('.files-list__row')]
-		.filter(row => row.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked)
-	if (rows.length !== 1) return undefined
-	const id = Number(rows[0].getAttribute('data-cy-files-list-row-fileid'))
-	return Number.isSafeInteger(id) && id > 0 ? id : undefined
-}
-
-function observeSelection() {
-	let previous = currentFileSelection()
-	const update = () => {
-		if (state.documentName) return
-		const id = currentFileSelection()
-		if (id === previous) return
-		previous = id
-		state.fileId = id
-	}
-	document.addEventListener('change', update)
-	// The Files app mounts after global init scripts. Observe its later row rendering too.
-	new MutationObserver(update).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-selected', 'class'] })
-}
-
 function mount() {
 	if (window.parent !== window && window.frameElement?.id === 'fadenstack-native-frame') {
 		document.body.classList.add('fadenstack-workspace-child')
@@ -125,7 +99,7 @@ function mount() {
 		header.prepend(button)
 		createApp(HeaderButton, { state, onToggle: () => { if (state.open) closeDrawer(); else void openDrawer() } }).mount(button)
 	}
-	observeSelection()
+	const stopSelection = observeFileSelection(document, id => { state.fileId = id }, () => !!state.documentName || !!state.runtime?.state.host?.chat.isBusy)
 	const disconnectViewer = installViewerIntegration({
 		drawer: root,
 		activity,
@@ -136,7 +110,7 @@ function mount() {
 			state.selectionEpoch++
 		},
 	})
-	window.addEventListener('pagehide', disconnectViewer, { once: true })
+	window.addEventListener('pagehide', () => { disconnectViewer(); stopSelection() }, { once: true })
 	subscribe('files:node:updated', node => {
 		if (node && typeof node === 'object' && 'fileid' in node && node.fileid === state.fileId && !state.runtime?.state.host?.chat.isBusy) state.selectionEpoch++
 	})

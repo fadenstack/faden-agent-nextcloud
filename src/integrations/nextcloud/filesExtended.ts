@@ -293,7 +293,7 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 		defineTool({
 			name: 'nc_files_share_readonly',
 			toolClass: 'destructive',
-			description: 'Create an explicitly approved read-only share of one file with an authorized Nextcloud user ID. Email notifications are disabled and link sharing is excluded.',
+			description: 'Create an individually approved read-only direct share of one file with an allowed Nextcloud user. Refuses an existing native grant; never reduces existing access. Share email and public links are excluded.',
 			parameters: {
 				type: 'object',
 				properties: {

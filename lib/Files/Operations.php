@@ -127,7 +127,7 @@ final class Operations {
 		if (!$source instanceof File) throw new Problem('Choose one file, not a folder.', 415);
 		$this->supported($source);
 		$grant = $this->scope->describeNode($source, 'read', $probe);
-		if ($grant['sourceClass'] !== $proposal['sourceClass'] || $this->audience($source) !== $proposal['sourceAudienceHash']
+		if ($grant['sourceClass'] !== $proposal['sourceClass'] || $grant['audience'] !== $proposal['sourceAudience'] || $this->audience($source) !== $proposal['sourceAudienceHash']
 			|| $this->home()->getRelativePath($source->getPath()) !== $proposal['sourcePath']
 			|| NativeRequest::strongEtag($source->getEtag()) !== NativeRequest::strongEtag($proposal['expectedEtag'])
 			|| ($probe && !hash_equals($proposal['contentHash'], $this->digest($source)))) throw new Problem('The approved source changed.', 409);
@@ -136,6 +136,9 @@ final class Operations {
 			if (!$this->sharingEnabled() || ($source->getPermissions() & Constants::PERMISSION_SHARE) === 0
 				|| !in_array($proposal['recipientUserId'], $this->recipients(), true)
 				|| $proposal['recipientUserId'] === $this->uid() || !($this->directory->get($proposal['recipientUserId'])?->isEnabled() ?? false)) throw new Problem('This recipient or native sharing capability is unavailable.', 403);
+			if (in_array($proposal['recipientUserId'], $this->shares->getAccessList($source, true, false)['users'] ?? [], true)) {
+				throw new Problem('This account already has direct or inherited native access. Existing access will not be changed or relabelled read only.', 409);
+			}
 			foreach ($this->shares->getSharesBy($this->uid(), IShare::TYPE_USER, $source, false, 101, 0) as $share) {
 				if ($share->getSharedWith() === $proposal['recipientUserId']) throw new Problem('This user already has a direct share. No existing share will be modified.', 409);
 			}
@@ -145,7 +148,8 @@ final class Operations {
 		if (!$parent instanceof Folder) throw new Problem('Choose an explicit destination folder.', 415);
 		$this->supported($parent);
 		$this->scope->assertMovement($source, $parent, $probe);
-		if ($this->home()->getRelativePath($parent->getPath()) !== $proposal['parentPath'] || $parent->getEtag() !== $proposal['parentEtag']
+		if ($this->scope->describeNode($parent, 'write', false)['audience'] !== $proposal['destinationAudience']
+			|| $this->home()->getRelativePath($parent->getPath()) !== $proposal['parentPath'] || $parent->getEtag() !== $proposal['parentEtag']
 			|| $this->audience($parent) !== $proposal['destinationAudienceHash'] || !$parent->isCreatable()
 			|| $parent->nodeExists($proposal['destinationName'])) throw new Problem('The approved destination changed or already exists.', 409);
 		if ($proposal['operation'] === 'move' && !$source->isDeletable()) throw new Problem('The source cannot be moved by this native role.', 403);
@@ -169,6 +173,8 @@ final class Operations {
 		$proposal = ['id' => bin2hex(random_bytes(24)), 'operation' => $operation, 'toolName' => $tool, 'sourceResourceId' => $sourceResourceId,
 			'sourcePath' => $this->home()->getRelativePath($source->getPath()), 'expectedEtag' => $source->getEtag(), 'sourceClass' => $grant['sourceClass'],
 			'contentHash' => $this->digest($source), 'sourceAudienceHash' => $this->audience($source),
+			'sourceAudience' => $grant['audience'], 'destinationAudience' => $operation === 'share_readonly'
+				? ($grant['audience'] === 'private' ? 'shared' : $grant['audience']) : $this->scope->describeNode($parent, 'write')['audience'],
 			'destinationResourceId' => 'nextcloud:files:' . $parent->getId(), 'parentPath' => $this->home()->getRelativePath($parent->getPath()),
 			'parentEtag' => $parent->getEtag(), 'destinationAudienceHash' => $this->audience($parent), 'destinationName' => $destinationName,
 			'recipientUserId' => $operation === 'share_readonly' ? $recipientUserId : '', 'clientRequestId' => $clientRequestId,
@@ -186,10 +192,12 @@ final class Operations {
 		return $this->view($proposal);
 	}
 	private function view(array $proposal): array {
-		return array_intersect_key($proposal, array_flip(['id', 'digest', 'operation', 'toolName', 'target', 'sourceResourceId', 'sourcePath', 'destinationResourceId', 'destinationName', 'expectedEtag', 'recipientUserId', 'expires']))
+		return array_intersect_key($proposal, array_flip(['id', 'digest', 'operation', 'toolName', 'target', 'sourceResourceId', 'sourcePath', 'sourceAudience', 'destinationAudience', 'destinationResourceId', 'destinationName', 'expectedEtag', 'recipientUserId', 'expires']))
 			+ ['history' => 'audit-only', 'conflict' => 'native-conditions-with-preflight', 'limitation' => $proposal['operation'] === 'share_readonly'
-				? 'This account will gain read access. Nextcloud activity notifications may occur; no share email is sent. Other people can change access while this runs. This action is recorded for inspection and has no agent Undo.'
-				: 'Nextcloud checks the file revision and refuses to overwrite an existing destination. Other people can still change access while this runs; moving a file does not lock out all source changes. Review this action individually. It is recorded for inspection and has no agent Undo.'];
+				? 'This creates a read-only direct grant without reducing existing access. Nextcloud activity notifications may occur; no share email is sent. Other people can change access while this runs. This action is recorded for inspection and has no agent Undo.'
+				: 'Nextcloud checks the file revision and refuses to overwrite an existing destination. Other people can still change access while this runs.'
+					. ($proposal['operation'] === 'move' ? ' Moving a file does not lock out all source changes.' : '')
+					. ' Review this action individually. It is recorded for inspection and has no agent Undo.'];
 	}
 	private function load(string $id, string $digest): array {
 		if (!preg_match('/^[a-f0-9]{48}$/D', $id) || !preg_match('/^[a-f0-9]{64}$/D', $digest)) throw new Problem('Invalid Files preview.', 400);

@@ -81,6 +81,7 @@ export interface WriteResult { operation: string; file: FileMetadata; actionId?:
 export interface FileOperationProposal {
 	id: string; digest: string; operation: 'copy' | 'move' | 'share_readonly'; toolName: string; target: string
 	sourceResourceId: string; sourcePath: string; destinationResourceId: string; destinationName: string
+	sourceAudience: import('../../platform/scope.ts').DestinationAudience; destinationAudience: import('../../platform/scope.ts').DestinationAudience
 	expectedEtag: string; recipientUserId: string; expires: number; history: 'audit-only'; limitation: string
 }
 export interface FileOperationOutcome {
