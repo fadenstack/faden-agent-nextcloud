@@ -37,6 +37,19 @@ final class NativeRequest {
 		return $etag;
 	}
 
+	/** Fixed same-instance Files operation; only our authenticated guard consumes this ticket. */
+	public static function fileOperation(string $actor, string $operation, string $source, string $base, string $parent, string $name,
+		string $etag, string $ticket, string $binding, #[\SensitiveParameter] string $token): self {
+		if (!in_array($operation, ['copy', 'move'], true) || !preg_match('/^[a-f0-9]{48}$/D', $ticket)) throw new Problem('Invalid native Files operation.', 400);
+		$encode = static fn (string $path): string => implode('/', array_map(self::segment(...), explode('/', trim($path, '/'))));
+		$prefix = '/remote.php/dav/files/' . self::segment($actor) . '/';
+		return new self($actor, strtoupper($operation), $prefix . $encode($source), '', [
+			'Destination' => $base . $prefix . ($parent === '/' || $parent === '' ? '' : $encode($parent) . '/') . self::segment($name),
+			'Overwrite' => 'F', 'If-Match' => self::strongEtag($etag), 'X-Fadenstack-File-Ticket' => $ticket,
+			'X-Fadenstack-Session' => $binding, 'X-Fadenstack-Agent-Token' => $token,
+		]);
+	}
+
 	public static function calendarCollections(string $actor): self {
 		$body = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:a="http://apple.com/ns/ical/" xmlns:o="http://owncloud.org/ns"><d:prop><d:displayname/><d:resourcetype/><d:current-user-privilege-set/><d:owner/><d:acl/><c:supported-calendar-component-set/><o:calendar-enabled/><a:calendar-color/></d:prop></d:propfind>';
 		return new self($actor, 'PROPFIND', '/remote.php/dav/calendars/' . self::segment($actor) . '/', $body,

@@ -16,6 +16,7 @@ export interface Identity extends AppConfig {
 	filesReadsEnabled?: boolean
 	folderCreateEnabled?: boolean
 	providerReadsEnabled?: boolean
+	filesMutationsEnabled?: boolean
 	/** Development fixtures only until native provider scope/history acceptance. */
 	extendedFilesEnabled?: boolean
 	tablesEnabled?: boolean
@@ -75,9 +76,28 @@ export interface Proposal extends WriteArguments {
 	before: string | null
 	contextId: string
 }
-export interface WriteResult { operation: string; file: FileMetadata; actionId?: string; provider?: { app: 'calendar' | 'tasks' | 'contacts'; collectionId: string; filename: string; date?: string } }
+export interface WriteResult { operation: string; file: FileMetadata; actionId?: string; provider?: { app: 'files' | 'calendar' | 'tasks' | 'contacts'; collectionId: string; filename: string; date?: string } }
+
+export interface FileOperationProposal {
+	id: string; digest: string; operation: 'copy' | 'move' | 'share_readonly'; toolName: string; target: string
+	sourceResourceId: string; sourcePath: string; destinationResourceId: string; destinationName: string
+	expectedEtag: string; recipientUserId: string; expires: number; history: 'audit-only'; limitation: string
+}
+export interface FileOperationOutcome {
+	outcome: 'verified' | 'unknown' | 'not-dispatched'; status?: string; actionId?: string; history: 'audit-only'
+	file?: FileMetadata; parentResourceId?: string; shareId?: number | null; message?: string; disclosure?: 'restricted'
+}
 export type HistoryDirection = 'undo' | 'redo' | 'reconcile' | 'revalidate'
-export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number; auditOnly?: boolean; provider?: 'calendar' | 'tasks' | 'contacts' }
+export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number; auditOnly?: boolean; provider?: 'files' | 'calendar' | 'tasks' | 'contacts'; fileUrl?: string; operation?: string }
+export interface FileOperationsApi {
+	actions?(signal: AbortSignal): Promise<HistoryItem[]>
+	inspect?(id: string, signal: AbortSignal): Promise<import('../../providers/client.ts').ProviderInspection>
+	capabilities(signal: AbortSignal): Promise<{ tools: string[] }>
+	propose(args: { operation: 'copy' | 'move' | 'share_readonly'; sourceResourceId: string; expectedEtag: string; destinationResourceId?: string; destinationName?: string; recipientUserId?: string }, signal: AbortSignal): Promise<FileOperationProposal>
+	approve(proposal: FileOperationProposal, signal: AbortSignal): Promise<void>
+	commit(proposal: FileOperationProposal, signal: AbortSignal): Promise<FileOperationOutcome>
+	cancel(proposal: FileOperationProposal): Promise<void>
+}
 export interface HistoryPreview { id: string; actionId: string; direction: HistoryDirection; digest: string; target: string; before: string; content: string; expires: number; resolution?: { outcome: 'verified' | 'unchanged'; state: 'applied' | 'undone' | 'failed' }; revalidation?: { state: 'applied' | 'undone'; recordedRevision: string; currentRevision: string } }
 export interface HistoryAvailability { unavailableCount: number; earlierScopeCount: number; earlierContentExpiresBy: number | null; writesPaused?: boolean }
 export interface HistoryApi {
@@ -105,7 +125,7 @@ export interface SearchFilters {
 	cursor?: string
 }
 export interface SearchPlan { filters: Required<Pick<SearchFilters, 'query' | 'scope' | 'limit' | 'sort_by' | 'sort_direction'>> & SearchFilters; queries: string[]; backend: string; next_cursor?: string | null }
-export interface SearchCapabilities { filename_search: boolean; document_search: boolean; indexed_content_search: boolean; provider: string | null; explanation: string }
+export interface SearchCapabilities { filename_search: boolean; document_search: boolean; indexed_content_search: boolean; bounded_content_search?: boolean; provider: string | null; explanation: string }
 export interface NativeContentResults { available: boolean; provider: string | null; explanation: string; results: { file: FileMetadata; excerpt: string | null }[]; partial?: boolean; next_page?: number | null }
 export interface SearchTransport {
 	plan(filters: SearchFilters, signal: AbortSignal): Promise<SearchPlan>
@@ -129,7 +149,7 @@ export interface FileResource {
 }
 export interface SearchResults {
 	kind: 'nextcloud-search-results'
-	search_mode: 'filenames' | 'indexed-content' | 'document'
+	search_mode: 'filenames' | 'indexed-content' | 'bounded-content' | 'document'
 	provider: string
 	ordering: string
 	results: FileResource[]
@@ -244,7 +264,8 @@ export interface FolderCreateProposal {
 }
 
 interface FolderCreateReceipt {
-	history: 'not-integrated'
+	history: 'not-integrated' | 'audit-only'
+	actionId?: string
 	name: string
 	parentResourceId: string
 	proposalId: string
@@ -600,6 +621,7 @@ export interface BookmarksApi {
 }
 
 export interface FileApi {
+	readonly fileOperations?: FileOperationsApi
 	readonly nativeProviders?: NativeProvidersApi
 	history?: HistoryApi
 	tables?: TablesApi

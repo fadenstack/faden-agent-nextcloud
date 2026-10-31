@@ -108,7 +108,11 @@ class SearchAccessService {
 			}
 			$offset = $data['offset'];
 		}
-		$conditions = [self::comparison('gte', 'oc:size', '0'), '<d:not>' . self::comparison('eq', 'oc:fileid', (string)$scope['id']) . '</d:not>'];
+		// The scoped native Folder search excludes its own root. Resolve also
+		// checks the descendant path. Avoid NOT tiers: tested NC35/PostgreSQL
+		// SearchDAV returns empty results for those predicates. The client merges
+		// bounded exact/prefix/substring tiers and removes duplicate file IDs.
+		$conditions = [self::comparison('gte', 'oc:size', '0')];
 		foreach (['modified_after' => ['gte', 'd:getlastmodified'], 'modified_before' => ['lte', 'd:getlastmodified'], 'created_after' => ['gte', 'd:creationdate'], 'min_size' => ['gte', 'oc:size'], 'max_size' => ['lte', 'oc:size']] as $key => [$op, $property]) {
 			if (isset($f[$key])) {
 				$conditions[] = self::comparison($op, $property, (string)$f[$key]);
@@ -130,10 +134,7 @@ class SearchAccessService {
 		$exact = self::comparison('eq', 'd:displayname', $f['query']);
 		$prefix = self::comparison('like', 'd:displayname', $q . '%');
 		$contains = self::comparison('like', 'd:displayname', '%' . $q . '%');
-		$tiers = $f['query'] === '' ? [''] : ($f['sort_by'] !== 'relevance' ? [$contains] : [
-			$exact, '<d:and>' . $prefix . '<d:not>' . $exact . '</d:not></d:and>',
-			'<d:and>' . $contains . '<d:not>' . $prefix . '</d:not></d:and>',
-		]);
+		$tiers = $f['query'] === '' ? [''] : ($f['sort_by'] !== 'relevance' ? [$contains] : [$exact, $prefix, $contains]);
 		$property = ['modified' => 'd:getlastmodified', 'name' => 'd:displayname', 'size' => 'oc:size', 'relevance' => 'd:getlastmodified'][$f['sort_by']];
 		$direction = $f['sort_by'] === 'relevance' ? 'descending' : ($f['sort_direction'] === 'asc' ? 'ascending' : 'descending');
 		$order = '<d:order><d:prop><' . $property . '/></d:prop><d:' . $direction . '/></d:order>'
@@ -199,10 +200,11 @@ class SearchAccessService {
 		$available = $this->files->indexedContentAllowed() && $this->apps->isEnabledForUser('fulltextsearch')
 			&& $this->apps->isEnabledForUser('files_fulltextsearch')
 			&& $this->fulltext->isAvailable() && $this->fulltext->isProviderIndexed('files');
-		return ['filename_search' => true, 'document_search' => true, 'indexed_content_search' => $available,
-			'provider' => $available ? 'nextcloud-fulltextsearch:files' : null,
+		$bounded = !$available && $this->files->boundedContentEnabled();
+		return ['filename_search' => true, 'document_search' => true, 'indexed_content_search' => $available, 'bounded_content_search' => $bounded,
+			'provider' => $available ? 'nextcloud-fulltextsearch:files' : ($bounded ? 'nextcloud-bounded-text' : null),
 			'explanation' => $available ? 'Searches the native file index. Verify passages with document search; provider metadata/comments may also match.'
-				: 'Cross-document content search is unavailable: no registered, indexed native Files full-text provider was detected. Filename search is a separate capability.'];
+				: ($bounded ? 'Explicitly enabled bounded local UTF-8 text scan. No full-text index is available.' : 'Cross-document content search is unavailable: no registered, indexed native Files full-text provider was detected. Filename search is a separate capability.')];
 	}
 
 	public function content(string $query, int $limit = 20, int $page = 1): array {
@@ -210,6 +212,7 @@ class SearchAccessService {
 			throw new Problem('Use a search phrase of 1–200 characters, limit 1–50 and page 1–100.');
 		}
 		$status = $this->capabilities();
+		if ($status['bounded_content_search']) return $this->files->boundedContent($query, $limit, $page);
 		if (!$status['indexed_content_search']) {
 			return ['available' => false, ...$status, 'results' => []];
 		}

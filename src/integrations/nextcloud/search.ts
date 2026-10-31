@@ -196,11 +196,11 @@ export class NextcloudSearchService {
 		for (const { file } of data.results.slice(0, bounded.rows.length)) this.remember(file)
 		return {
 			kind: 'nextcloud-search-results',
-			search_mode: 'indexed-content',
+			search_mode: data.provider === 'nextcloud-bounded-text' ? 'bounded-content' : 'indexed-content',
 			provider: data.provider ?? 'unavailable',
 			available: data.available,
 			explanation: data.explanation,
-			ordering: 'native provider relevance',
+			ordering: data.provider === 'nextcloud-bounded-text' ? 'bounded native candidate order; literal text matches' : 'native provider relevance',
 			results: bounded.rows,
 			partial: (data.partial ?? false) || bounded.truncated,
 			next_page: bounded.truncated ? null : data.next_page,

@@ -62,7 +62,7 @@ export class WorkspaceCoordinator {
 			else if (view.editState !== 'clean' || signal.aborted) receipt.view = 'refresh_required'
 			else {
 				this.state.phase = 'refreshing'
-				const refreshing = AbortSignal.any([signal, AbortSignal.timeout(5000)])
+				const refreshing = AbortSignal.any([signal, AbortSignal.timeout(15000)])
 				try { receipt.view = await untilAborted(this.dependencies.refresh(result, refreshing), refreshing) } catch { receipt.view = signal.aborted ? 'refresh_required' : 'refresh_failed' }
 			}
 			this.state.latest = { ...receipt }

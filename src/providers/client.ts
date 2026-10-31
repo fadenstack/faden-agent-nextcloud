@@ -48,7 +48,7 @@ export type ContactReadResult = (ContactSummary & { readonly etag: string })
 
 export interface ProviderAuditItem {
 	readonly id: string
-	readonly provider: 'calendar' | 'tasks' | 'contacts'
+	readonly provider: 'files' | 'calendar' | 'tasks' | 'contacts'
 	readonly name: string
 	readonly target: string
 	readonly state: string

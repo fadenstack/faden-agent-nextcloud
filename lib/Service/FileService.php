@@ -23,6 +23,7 @@ use OCP\IURLGenerator;
 use OCP\IUserSession;
 use OCP\Share\IManager;
 use OCP\Share\IShare;
+use OCP\ServerVersion;
 
 class FileService {
 	public const MAX_TEXT_BYTES = 2097152;
@@ -43,10 +44,11 @@ class FileService {
 		private FilesHistoryPlanner $history,
 		private IAppManager $apps,
 		private IManager $shares,
+		private ServerVersion $version,
 	) {
 	}
 
-	private function journalIdentity(): JournalIdentity {
+	public function journalIdentity(): JournalIdentity {
 		$state = $this->state();
 		$binding = hash('sha256', json_encode([$state['binding'], $this->config->get(), $this->scope->configStamp(), $this->config->historyEnabled()], JSON_THROW_ON_ERROR));
 		return $this->principal === null ? new JournalIdentity($this->uid(), JournalIdentity::nativeScope(), $binding)
@@ -88,7 +90,7 @@ class FileService {
 		}
 		$resource = new JournalResource('files', $reference, ($proposal['operation'] === 'create' ? 'folder:' . $folder->getId() : 'file:' . $node->getId()), $recovery);
 		return $this->journal->prepare($this->journalIdentity(), $resource, $proposal['operation'] === 'create' ? 'nc_create_text_file' : 'nc_update_text_file',
-			['operation' => $proposal['operation'], 'filename' => $proposal['filename'], 'content' => $proposal['content']],
+			['operation' => $proposal['operation'], 'filename' => $proposal['filename'], 'content' => $proposal['content'], 'sourceClass' => $this->scope->describeNode($node, 'history')['sourceClass']],
 			['operation' => $proposal['operation'] === 'create' ? 'delete_created_file' : 'update', 'content' => $proposal['before']],
 			['parentId' => $folder->getId(), 'parentPath' => $this->root->getUserFolder($this->uid())->getRelativePath($folder->getPath()), 'fileId' => $proposal['operation'] === 'create' ? null : $node->getId(),
 				'expectedEtag' => $proposal['expectedEtag'], 'beforeHash' => $proposal['before'] === null ? null : hash('sha256', $proposal['before']),
@@ -122,7 +124,7 @@ class FileService {
 		$s = $this->state();
 		$config = $this->config->get();
 		$policy = $config['enabled'] && $config['agent'] && $config['serverUrl'] ? $this->scope->getPolicy($s['user'], $config['serverUrl']) : null;
-		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled(), 'filesReadsEnabled' => $this->config->filesReadsEnabled(), 'folderCreateEnabled' => $this->config->folderCreateEnabled(), 'providerReadsEnabled' => $this->config->providerReadsEnabled()];
+		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled(), 'filesReadsEnabled' => $this->config->filesReadsEnabled(), 'folderCreateEnabled' => $this->config->folderCreateEnabled(), 'providerReadsEnabled' => $this->config->providerReadsEnabled(), 'filesMutationsEnabled' => $this->config->filesMutationsEnabled()];
 	}
 
 	public function check(string $binding): void {
@@ -179,12 +181,65 @@ class FileService {
 		return $this->scope->indexedContentAllowed();
 	}
 
+	public function boundedContentEnabled(): bool {
+		if (!$this->config->boundedContentEnabled() || $this->version->getMajorVersion() !== 35) return false;
+		try {
+			$home = $this->root->getUserFolder($this->uid());
+			$reference = $this->scope->searchScope();
+			$folder = $reference === 'all' ? $home : $this->node((int)substr($reference, 16));
+			if (!$folder instanceof Folder || !$folder->getStorage()->isLocal() || $folder->getStorage()->getId() !== $home->getStorage()->getId()
+				|| ($folder->getId() !== $home->getId() && $this->mounts->findIn(rtrim($folder->getPath(), '/') . '/'))) return false;
+			$this->scope->describeNode($folder, 'read', false);
+			return true;
+		} catch (\Throwable) { return false; }
+	}
+
+	/** Local UTF-8 text only. No saved selection/context and no broader-scope index query. */
+	public function boundedContent(string $query, int $limit, int $page): array {
+		if (!$this->config->boundedContentEnabled()) throw new Problem('Bounded native text search is disabled.', 403);
+		if ($this->version->getMajorVersion() !== 35) throw new Problem('Bounded native text search is unavailable on this Nextcloud version.', 422);
+		if ($page !== 1) throw new Problem('Bounded text search has one partial page. Narrow the configured source folder.', 422);
+		$home = $this->root->getUserFolder($this->uid());
+		$reference = $this->scope->searchScope();
+		$folder = $reference === 'all' ? $home : $this->node((int)substr($reference, 16));
+		if (!$folder instanceof Folder || !$folder->getStorage()->isLocal() || $folder->getStorage()->getId() !== $home->getStorage()->getId()) throw new Problem('Bounded text search requires a configured local home folder.', 422);
+		$this->scope->describeNode($folder, 'read', false);
+		if ($folder->getId() !== $home->getId() && $this->mounts->findIn(rtrim($folder->getPath(), '/') . '/')) throw new Problem('Bounded text search requires a local folder without nested mounts.', 422);
+		$candidates = $folder->search(new \OCA\FadenstackAgent\Files\BoundedTextQuery($this->users->getUser(), $folder->getId() === $home->getId()));
+		$results = []; $bytes = 0; $examined = 0; $partial = count($candidates) > 100;
+		foreach ($candidates as $node) {
+			if (++$examined > 100 || count($results) >= $limit) { $partial = true; break; }
+			try {
+				if (!$node instanceof File || $node->getSize() > 1048576 || !$node->getStorage()->isLocal() || $node->getStorage()->getId() !== $home->getStorage()->getId()) { $partial = true; continue; }
+				if ($bytes + $node->getSize() > 4194304) { $partial = true; break; }
+				$this->scope->describeNode($node, 'read');
+				$etag = $node->getEtag();
+				$stream = $node->fopen('rb');
+				if (!is_resource($stream)) { $partial = true; continue; }
+				try { $body = stream_get_contents($stream, 1048577); } finally { fclose($stream); }
+				if (!is_string($body) || strlen($body) > 1048576 || !mb_check_encoding($body, 'UTF-8') || str_contains($body, "\0") || $node->getEtag() !== $etag) { $partial = true; continue; }
+				$bytes += strlen($body);
+				$position = mb_stripos($body, $query);
+				if ($position !== false) $results[] = ['file' => $this->metadata($node, 'read'), 'excerpt' => mb_substr($body, max(0, $position - 100), 600)];
+			} catch (\OCP\Files\NotFoundException|\OCP\Files\ForbiddenException|\OCP\Files\NotPermittedException|Problem) { $partial = true; continue; }
+		}
+		return ['available' => true, 'provider' => 'nextcloud-bounded-text', 'results' => $results, 'partial' => $partial, 'next_page' => null,
+			'explanation' => 'Literal content matches in up to 100 authorized local UTF-8 text files (1 MiB each, 4 MiB total). PDFs, Office files, shared/external mounts, larger files and additional candidates are outside this scan. No ranked index or complete inventory is claimed.'];
+	}
+
 	/** Resolve every resource through the current user's tree, including shares. */
 	public function resource(string $resourceId): array {
 		if (!preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $resourceId, $match)) {
 			throw new Problem('Use a Nextcloud file resource ID, not a path or URL.');
 		}
 		return $this->metadata($this->node((int)$match[1]));
+	}
+
+	/** UI destination only; never introduces a source or destination permission. */
+	public function workspaceTarget(string $resourceId): array {
+		$file = $this->resource($resourceId);
+		$node = $this->node($file['id']);
+		return ['app' => 'files', 'collectionId' => (string)$node->getParent()->getId(), 'filename' => $file['name']];
 	}
 
 	public function assertContentAccess(string $resourceId): void {
@@ -217,7 +272,10 @@ class FileService {
 			$id = $file['id'];
 			$folder = $this->node($id);
 		}
-		return ['href' => '/files/' . rawurlencode($this->uid()) . implode('/', array_map('rawurlencode', explode('/', $path))), 'id' => $id,
+		// SearchDAV treats a relative scope as an already-decoded native tree path.
+		// An absolute DAV URI uses Sabre's canonical URI decoder, including spaces,
+		// Unicode and deployments below a webroot.
+		return ['href' => rtrim($this->urls->linkToRemote('dav'), '/') . '/files/' . rawurlencode($this->uid()) . implode('/', array_map('rawurlencode', explode('/', $path))), 'id' => $id,
 			'can_page' => count($this->mounts->findIn(rtrim($folder->getPath(), '/') . '/')) === 0];
 	}
 
@@ -681,7 +739,8 @@ class FileService {
 			}
 			$this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'verified', new VerifiedReadback($result->getStorage()->getETag($result->getInternalPath())));
 		}
-		return ['operation' => $p['operation'], 'file' => $this->metadata($this->node($result->getId()), 'write'), 'actionId' => $journal['id']];
+		return ['operation' => $p['operation'], 'file' => $this->metadata($this->node($result->getId()), 'write'), 'actionId' => $journal['id'],
+			'provider' => ['app' => 'files', 'collectionId' => (string)$result->getParent()->getId(), 'filename' => $result->getName()]];
 	}
 
 	public function finishCreate(string $receiptId): array {
@@ -704,7 +763,8 @@ class FileService {
 		}
 		$resource = new JournalResource('files', 'parent:' . $folder->getId() . '/name:' . $r['filename'], 'file:' . $file->getId());
 		$this->journal->finish($this->journalIdentity(), $r['journal']['id'], $r['journal']['ticket'], 'verified', new VerifiedReadback($file->getStorage()->getETag($file->getInternalPath()), $resource));
-		return ['operation' => 'create', 'file' => $this->metadata($file, 'write'), 'actionId' => $r['journal']['id']];
+		return ['operation' => 'create', 'file' => $this->metadata($file, 'write'), 'actionId' => $r['journal']['id'],
+			'provider' => ['app' => 'files', 'collectionId' => (string)$file->getParent()->getId(), 'filename' => $file->getName()]];
 	}
 
 	public function proposeFolder(string $resourceId = '', string $name = '', ?string $expectedRevision = null, string $clientRequestId = ''): array {
@@ -937,7 +997,8 @@ class FileService {
 		$createdMetadata = $this->metadata($createdNode, 'metadata');
 		return [
 			'outcome' => 'verified',
-			'history' => 'not-integrated',
+			'history' => 'audit-only',
+			'actionId' => $r['journal']['id'],
 			'resourceId' => 'nextcloud:files:' . $createdNode->getId(),
 			'proposalId' => $r['receiptId'],
 			'name' => $r['name'],
@@ -980,6 +1041,10 @@ class FileService {
 			throw new Problem('The native creation ticket could not be completed.', 409);
 		}
 		$this->assertProposalIdentity($r);
+		$created = $this->node($createdId);
+		if (!$created instanceof Folder || !isset($r['journal'])) throw new Problem('The folder audit could not be confirmed.', 409);
+		$this->journal->finish($this->journalIdentity(), $r['journal']['id'], $r['journal']['ticket'], 'verified',
+			new VerifiedReadback($created->getEtag(), new JournalResource('files', 'parent:' . $r['folderId'] . '/name:' . $r['name'], 'folder:' . $createdId)));
 		$s['folderReceipts'][$id]['dispatchState'] = 'executed';
 		$s['folderReceipts'][$id]['executed'] = true;
 		$s['folderReceipts'][$id]['createdNodeId'] = $createdId;
@@ -991,8 +1056,22 @@ class FileService {
 	public function abandonFolderDispatch(string $id): void {
 		$s = $this->state();
 		if (($s['folderReceipts'][$id]['dispatchState'] ?? '') !== 'executed') {
+			$journal = $s['folderReceipts'][$id]['journal'] ?? null;
+			if ($journal) { try { $this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'unknown'); } catch (\Throwable) { /* Keep durable uncertain intent. */ } }
 			unset($s['folderReceipts'][$id]);
 			$this->session->set(self::KEY, $s);
 		}
+	}
+
+	/** Called after the ticket guard has rechecked the real locked native parent. */
+	public function markFolderDispatched(string $id): void {
+		$s = $this->state(); $r = $s['folderReceipts'][$id] ?? null;
+		if (!$r || $r['dispatchState'] !== 'claimed' || isset($r['journal'])) throw new Problem('The folder attempt was consumed.', 410);
+		$parent = $this->node($r['folderId']);
+		$grant = $this->scope->describeNode($parent, 'write');
+		$journal = $this->journal->prepare($this->journalIdentity(), new JournalResource('files', 'parent:' . $r['folderId'] . '/name:' . $r['name'], 'folder:' . $r['folderId']),
+			'nc_files_create_folder', ['operation' => 'create_folder', 'name' => $r['name'], 'sourceClass' => $grant['sourceClass']], [], ['parentId' => $r['folderId'], 'parentEtag' => $r['parentEtag']]);
+		$s['folderReceipts'][$id]['journal'] = $journal; $this->session->set(self::KEY, $s);
+		$this->journal->markDispatched($this->journalIdentity(), $journal['id'], $journal['ticket']);
 	}
 }

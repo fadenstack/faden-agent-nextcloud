@@ -8,6 +8,7 @@ import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './ad
 import { parseDavProperties, parseDavDocument, contentProperty } from './caldav.ts'
 import { folderDavPlan } from './folderCreate.ts'
 import { nativeProvidersApi } from '../../providers/client.ts'
+import { fileOperationsApi } from './fileOperations.ts'
 
 const MAX_DAV_RESPONSE_BYTES = 512 * 1024
 
@@ -57,6 +58,13 @@ export class NextcloudFiles implements FileApi {
 	#cloudIdentity: ((signal?: AbortSignal) => Promise<string>) | undefined
 	setCloudIdentity(provider?: (signal?: AbortSignal) => Promise<string>): void { this.#cloudIdentity = provider }
 	readonly nativeProviders = nativeProvidersApi((path, body, signal) => this.post(path, body, signal))
+	readonly fileOperations = fileOperationsApi((path, body, signal) => this.post(path, body, signal), async id => {
+		if (!/^(?:[a-f0-9]{48}|request-[a-f0-9-]{36})$/.test(id)) throw new Error('Invalid Files cancellation identifier.')
+		await axios.post(generateUrl(`/apps/fadenstack_agent/files/operations/${id}/cancel`), {}, {
+			headers: { 'X-Fadenstack-Session': this.initial.binding }, timeout: 5000, signal: AbortSignal.timeout(5000),
+		})
+	})
+
 	readonly history: HistoryApi = {
 		availability: signal => this.authenticatedPost('/history/availability', {}, signal),
 		list: signal => this.authenticatedPost('/history/list', {}, signal),
@@ -559,7 +567,7 @@ export class NextcloudFiles implements FileApi {
 			|| now.historyEnabled !== this.initial.historyEnabled
 			|| now.providerReadsEnabled !== this.initial.providerReadsEnabled
 			|| now.development !== this.initial.development
-			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled', 'filesReadsEnabled', 'folderCreateEnabled'] as const).some(key => now[key] !== this.initial[key])
+			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled', 'filesReadsEnabled', 'folderCreateEnabled', 'filesMutationsEnabled'] as const).some(key => now[key] !== this.initial[key])
 			|| now.scopePolicy?.version !== this.initial.scopePolicy?.version
 			|| now.serverUrl !== this.initial.serverUrl || now.agent !== this.initial.agent || !now.enabled) {
 			throw new Error('The Nextcloud session or agent configuration changed. Reload and sign in again.')
@@ -567,7 +575,7 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-		if (this.initial.historyEnabled && (/^\/proposals(?:\/|$)/.test(path) || /^\/files\/folder(?:\/|$)/.test(path) || path === '/creations/finish')) return this.authenticatedPost(path, body, signal)
+		if (this.initial.historyEnabled && (/^\/proposals(?:\/|$)/.test(path) || /^\/files\/(?:folder|operations)(?:\/|$)/.test(path) || path === '/creations/finish')) return this.authenticatedPost(path, body, signal)
 		return (await axios.post<T>(generateUrl(`/apps/fadenstack_agent${path}`), body, {
 			headers: { 'X-Fadenstack-Session': this.initial.binding }, signal, timeout: 20000,
 		})).data

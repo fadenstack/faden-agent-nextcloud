@@ -34,6 +34,8 @@ export interface ScopePolicy {
 	/** Gateway origin does not attest which downstream model/provider it uses. */
 	readonly downstreamPolicy: 'unverified' | 'configured'
 	readonly developmentLoopback?: boolean
+	/** Fixed native backend that narrows before opening any file contents. */
+	readonly boundedContentSearch?: boolean
 	readonly limits?: Partial<TurnLimits>
 }
 
@@ -154,7 +156,7 @@ export class TurnScope {
 
 	get offeredTools(): readonly NextcloudToolName[] {
 		this.assertCurrent()
-		return Object.freeze([...this.#tools.keys()].filter(name => name !== 'nc_search_content' || this.policy.sources.some(source => source.kind === 'user-files'))
+		return Object.freeze([...this.#tools.keys()].filter(name => name !== 'nc_search_content' || this.policy.sources.some(source => source.kind === 'user-files') || this.policy.boundedContentSearch === true)
 			.filter(name => name !== 'nc_search_files' || this.policy.sources.some(source => source.kind !== 'file'))
 			.filter(name => name !== 'nc_list_folder' || this.policy.sources.some(source => source.kind !== 'file'))
 			.filter(name => name !== 'nc_files_organize_read' || this.policy.sources.some(source => source.kind !== 'file'))

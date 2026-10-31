@@ -40,12 +40,29 @@ function state(item: HistoryItem): string {
 	if (item.state === 'failed') return t('fadenstack_agent', 'No content change recorded')
 	return t('fadenstack_agent', 'Needs inspection')
 }
+function fileLink(item: HistoryItem): string | undefined {
+	try {
+		const url = new URL(item.fileUrl ?? '', location.href)
+		if (url.origin === location.origin && /\/(?:index.php\/)?f\/[1-9][0-9]{0,14}$/.test(url.pathname) && !url.search && !url.hash) return url.href
+	} catch { /* An invalid native link never becomes a navigation action. */ }
+	return undefined
+}
+function operation(item: HistoryItem): string {
+	if (item.operation === 'nc_files_copy') return t('fadenstack_agent', 'Copied file')
+	if (item.operation === 'nc_files_move') return t('fadenstack_agent', 'Moved file')
+	if (item.operation === 'nc_files_share_readonly') return t('fadenstack_agent', 'Shared file · read only')
+	if (item.operation === 'nc_files_create_folder') return t('fadenstack_agent', 'Created folder')
+	if (item.operation === 'nc_create_text_file') return t('fadenstack_agent', 'Created file')
+	if (item.operation === 'nc_update_text_file') return t('fadenstack_agent', 'Updated file')
+	return ''
+}
 </script>
 
 <template>
-	<NcDialog :open="true" :name="t('fadenstack_agent', 'Agent actions')" @update:open="!$event && emit('close')">
+	<NcDialog :open="true" size="large" :name="t('fadenstack_agent', 'Agent actions')" @update:open="!$event && emit('close')">
 		<div class="fadenstack-action-history" :data-version="version">
 			<p>{{ t('fadenstack_agent', 'Review recorded actions and inspect their current native state. Restoration is available only for certified private text-file changes.') }}</p>
+			<p>{{ t('fadenstack_agent', 'Nextcloud also keeps native file versions and deleted files. Open a file and choose Details → Versions for manual recovery. Native retention applies; versions do not represent every agent action.') }}</p>
 			<p v-if="host.history.availability?.writesPaused" role="alert">
 				{{ t('fadenstack_agent', 'Agent file changes are paused because an earlier action could not be safely checked. Contact your administrator. You can still inspect available outcomes.') }}
 			</p>
@@ -67,13 +84,24 @@ function state(item: HistoryItem): string {
 			<p v-else-if="!host.history.items.length">
 				{{ t('fadenstack_agent', 'No recorded actions are available with current native access.') }}
 			</p>
-			<ul v-else>
+			<section v-if="host.history.inspection" role="status" class="fadenstack-action-inspection">
+				<strong>{{ host.history.inspection.outcome === 'verified_committed' ? t('fadenstack_agent', 'Recorded commitment verified') : t('fadenstack_agent', 'Completion remains uncertain') }}</strong>
+				<p>{{ host.history.inspection.message }}</p>
+				<p>{{ host.history.inspection.observed === 'matches_saved_content' ? t('fadenstack_agent', 'Current content matches the recorded save.') : host.history.inspection.observed === 'absent' ? t('fadenstack_agent', 'The resource is absent and its parent is accessible.') : host.history.inspection.observed === 'different_content' ? t('fadenstack_agent', 'Current content differs from the recorded save.') : t('fadenstack_agent', 'The resource is present.') }}</p>
+				<small>{{ t('fadenstack_agent', 'Action reference') }}: {{ host.history.inspection.action.id }}</small>
+			</section>
+			<ul v-if="!host.history.loading && host.history.items.length">
 				<li v-for="item in host.history.items" :key="item.id">
 					<div>
 						<strong>{{ item.name }}</strong>
+						<span v-if="operation(item)">{{ operation(item) }}</span>
 						<span v-if="item.target">{{ item.target }}</span>
-						<span v-if="item.auditOnly">{{ t('fadenstack_agent', 'Native Nextcloud account audit') }} · {{ item.provider }}</span>
+						<span v-if="item.auditOnly">{{ t('fadenstack_agent', 'Action audit') }} · {{ item.provider }}</span>
 						<span>{{ state(item) }} · {{ new Date(item.createdAt * 1000).toLocaleString() }}</span>
+						<a v-if="fileLink(item)"
+							:href="fileLink(item)"
+							target="_blank"
+							rel="noopener noreferrer">{{ t('fadenstack_agent', 'Open native file') }}</a>
 					</div>
 					<NcButton v-if="item.auditOnly" :disabled="host.chat.isBusy" @click="inspect(item)">
 						{{ t('fadenstack_agent', 'Inspect outcome') }}
@@ -86,12 +114,6 @@ function state(item: HistoryItem): string {
 					</NcButton>
 				</li>
 			</ul>
-			<section v-if="host.history.inspection" role="status" class="fadenstack-action-inspection">
-				<strong>{{ host.history.inspection.outcome === 'verified_committed' ? t('fadenstack_agent', 'Recorded commitment verified') : t('fadenstack_agent', 'Completion remains uncertain') }}</strong>
-				<p>{{ host.history.inspection.message }}</p>
-				<p>{{ host.history.inspection.observed === 'matches_saved_content' ? t('fadenstack_agent', 'Current content matches the recorded save.') : host.history.inspection.observed === 'absent' ? t('fadenstack_agent', 'The resource is absent and its parent is accessible.') : host.history.inspection.observed === 'different_content' ? t('fadenstack_agent', 'Current content differs from the recorded save.') : t('fadenstack_agent', 'The resource is present.') }}</p>
-				<small>{{ t('fadenstack_agent', 'Action reference') }}: {{ host.history.inspection.action.id }}</small>
-			</section>
 		</div>
 		<template #actions>
 			<NcButton @click="emit('close')">

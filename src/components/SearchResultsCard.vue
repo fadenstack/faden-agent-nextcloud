@@ -30,7 +30,7 @@ async function attach(file: FileResource) {
 <template>
 	<section class="fdn-search-results" :data-version="version" :aria-label="t('fadenstack_agent', 'Search results')">
 		<header class="fdn-search-title">
-			<strong>{{ result.search_mode === 'filenames' ? t('fadenstack_agent', 'Filename matches') : result.search_mode === 'document' ? t('fadenstack_agent', 'Document passages') : t('fadenstack_agent', 'Indexed content matches') }}</strong>
+			<strong>{{ result.search_mode === 'filenames' ? t('fadenstack_agent', 'Filename matches') : result.search_mode === 'document' ? t('fadenstack_agent', 'Document passages') : result.search_mode === 'bounded-content' ? t('fadenstack_agent', 'Text content matches · bounded scan') : t('fadenstack_agent', 'Indexed content matches') }}</strong>
 			<span class="fdn-muted">{{ result.duration_ms }} ms</span>
 		</header>
 		<p v-if="result.kind === 'nextcloud-search-results' && result.available === false" role="status">

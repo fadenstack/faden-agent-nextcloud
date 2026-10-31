@@ -90,7 +90,7 @@ final class HistoryService {
 					$command = 'none';
 				}
 				$result[] = ['id' => $item['id'], 'name' => $file['name'], 'target' => $file['path'], 'state' => $item['state'],
-					'eligible' => $eligible ? $command : 'none', 'version' => $item['version'], 'createdAt' => $item['createdAt']];
+					'eligible' => $eligible ? $command : 'none', 'version' => $item['version'], 'createdAt' => $item['createdAt'], 'fileUrl' => $file['url']];
 			} catch (Problem) {
 				continue;
 			}
@@ -208,7 +208,8 @@ final class HistoryService {
 			$plan instanceof FilesReconciliationPlan => $this->reconciler->execute($identity, $plan),
 			default => $this->executor->execute($identity, $plan),
 		};
-		return [...$result, 'operation' => $pending['direction'], 'file' => $this->files->resource('nextcloud:files:' . $result['fileId'])];
+		return [...$result, 'operation' => $pending['direction'], 'file' => $this->files->resource('nextcloud:files:' . $result['fileId']),
+			'provider' => $this->files->workspaceTarget('nextcloud:files:' . $result['fileId'])];
 	}
 
 	public function cancel(#[\SensitiveParameter] string $token, string $id, string $digest): array {

@@ -87,7 +87,7 @@ export function nextcloudTools(host: ToolHost) {
 		defineTool({
 			name: 'nc_search_content',
 			toolClass: 'read',
-			description: 'Search the native indexed contents of authorized Nextcloud files, if a supported Files full-text provider is installed and indexed. Reports unavailable otherwise; never substitutes filenames or downloads every file. Native index may include metadata/comments: verify facts with nc_search_in_file or nc_read_file. Supports bounded native page pagination.',
+			description: 'Search authorized Nextcloud file contents using the native index when available, or an explicitly enabled bounded local UTF-8 text scan (up to 100 files, 1 MiB each, 4 MiB total; one page). Reports the actual backend and incomplete coverage; never substitutes filenames. Native index may include metadata/comments: verify passages with nc_search_in_file or nc_read_file.',
 			parameters: { type: 'object', properties: { query: { type: 'string', minLength: 1, maxLength: 200 }, limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 }, page: { type: 'integer', minimum: 1, maximum: 100, default: 1 } }, required: ['query'], additionalProperties: false },
 			run: (args, c) => capture(host.contentSearch(args, c.signal), c),
 		}),

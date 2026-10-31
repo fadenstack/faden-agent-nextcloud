@@ -30,8 +30,8 @@ final class FilesAccessResolver implements AccessResolver {
 				if (!$node->isReadable()) {
 					continue;
 				}
-				if ($match[1] === 'folder' && $node instanceof Folder && $node->isCreatable()) {
-					$this->scope->describeNode($node, 'write');
+				if ($match[1] === 'folder' && $node instanceof Folder) {
+					$this->scope->describeNode($node, in_array($purpose, ['prepare', 'dispatch'], true) ? 'write' : 'read');
 					return;
 				}
 				if ($match[1] === 'file' && $node instanceof File) {

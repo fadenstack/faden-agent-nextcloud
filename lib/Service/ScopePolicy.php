@@ -20,6 +20,7 @@ class ScopePolicy {
 		'nc_get_selected_file', 'nc_read_file', 'nc_list_folder', 'nc_create_text_file', 'nc_update_text_file'];
 	public const HISTORY_TOOLS = ['nc_actions_undo', 'nc_actions_redo', 'nc_actions_reconcile', 'nc_actions_revalidate'];
 	public const EXTENDED_READ_TOOLS = ['nc_files_organize_read', 'nc_files_shares_read'];
+	public const FILE_MUTATION_TOOLS = ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'];
 	public const DAV_TOOLS = ['nc_calendar_list', 'nc_calendar_read', 'nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete',
 		'nc_tasks_read', 'nc_tasks_create', 'nc_tasks_patch', 'nc_tasks_delete',
 		'nc_contacts_list', 'nc_contacts_find', 'nc_contacts_read', 'nc_contacts_create', 'nc_contacts_patch', 'nc_contacts_delete'];
@@ -57,9 +58,10 @@ class ScopePolicy {
 		$settings = $this->settings();
 		$policy = array_intersect_key($settings, array_flip(['sources', 'destinations', 'tools', 'sourceClasses', 'downstreamPolicy', 'destinationAudiences', 'movements', 'limits']));
 		$stamp = [$uid, $configured, $this->config->getAppValue(Application::APP_ID, 'agent', ''),
-			$this->config->getAppValue(Application::APP_ID, 'installed_version', ''), $settings, $development];
+			$this->config->getAppValue(Application::APP_ID, 'installed_version', ''), $settings, $development,
+			$this->config->getAppValue(Application::APP_ID, 'files_bounded_content_enabled', '0')];
 		return ['version' => hash('sha256', json_encode($stamp, JSON_THROW_ON_ERROR)), 'gatewayOrigin' => $configured,
-			'developmentLoopback' => $development, ...$policy];
+			'developmentLoopback' => $development, 'boundedContentSearch' => $development && $this->config->getAppValue(Application::APP_ID, 'files_bounded_content_enabled', '0') === '1', ...$policy];
 	}
 
 	public function configStamp(): string {
@@ -86,6 +88,25 @@ class ScopePolicy {
 
 	private function currentPolicy(): array {
 		return $this->getPolicy($this->uid(), $this->config->getAppValue(Application::APP_ID, 'server_url', ''));
+	}
+
+	public function assertFileMutationTool(string $name): void {
+		if ($this->config->getAppValue(Application::APP_ID, 'development', '0') !== '1'
+			|| $this->config->getAppValue(Application::APP_ID, 'files_mutations_enabled', '0') !== '1'
+			|| !in_array($name, self::FILE_MUTATION_TOOLS, true) || !in_array($name, $this->currentPolicy()['tools'], true)) {
+			throw new Problem('This Files operation is outside the configured native tool scope.', 403);
+		}
+	}
+
+	/** Sharing changes the audience even when the content is unchanged. */
+	public function assertShareMovement(File $file): void {
+		$policy = $this->currentPolicy();
+		$grant = $this->describeNode($file, 'read');
+		$this->describeNode($file, 'write');
+		if (!in_array('shared', $policy['destinationAudiences'], true)
+			|| !in_array(['source' => $grant['sourceClass'], 'destination' => 'shared'], $policy['movements'], true)) {
+			throw new Problem('Sharing this content with another user is outside the configured movement policy.', 403);
+		}
 	}
 
 	/** Empty configuration preserves the existing native-user Files integration, without downstream attestation. */
@@ -119,12 +140,16 @@ class ScopePolicy {
 			$this->keys($value, ['revision', 'sources', 'destinations', 'tools', 'sourceClasses', 'downstreamPolicy', 'destinationAudiences', 'movements', 'classificationDefault', 'classificationRules', 'limits']);
 			$sources = $this->scopes($value['sources'] ?? []);
 			$destinations = $this->scopes($value['destinations'] ?? []);
-			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS, ...self::DAV_TOOLS, 'nc_files_create_folder']);
+			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS, ...self::FILE_MUTATION_TOOLS, ...self::DAV_TOOLS, 'nc_files_create_folder']);
 			if (!$sources || !$tools || !is_string($value['revision'] ?? null) || strlen($value['revision']) < 1 || strlen($value['revision']) > 100) {
 				throw new \InvalidArgumentException();
 			}
 			if ($this->config->getAppValue(Application::APP_ID, 'files_reads_enabled', '0') !== '1') {
 				$tools = array_values(array_diff($tools, self::EXTENDED_READ_TOOLS));
+			}
+			if ($this->config->getAppValue(Application::APP_ID, 'development', '0') !== '1'
+				|| $this->config->getAppValue(Application::APP_ID, 'files_mutations_enabled', '0') !== '1') {
+				$tools = array_values(array_diff($tools, self::FILE_MUTATION_TOOLS));
 			}
 			if ($this->config->getAppValue(Application::APP_ID, 'development', '0') !== '1'
 				|| $this->config->getAppValue(Application::APP_ID, 'provider_reads_enabled', '0') !== '1') {

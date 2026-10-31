@@ -59,6 +59,16 @@ class Configuration {
 		return $this->get()['development'] && $this->config->getAppValue(Application::APP_ID, 'provider_writes_enabled', '0') === '1';
 	}
 
+	/** Typed Files organization pilot; separate from the legacy adapter switch. */
+	public function filesMutationsEnabled(): bool {
+		return $this->get()['development'] && $this->config->getAppValue(Application::APP_ID, 'files_mutations_enabled', '0') === '1';
+	}
+
+	/** Explicit alternative when a native index is absent; never a filename fallback. */
+	public function boundedContentEnabled(): bool {
+		return $this->get()['development'] && $this->config->getAppValue(Application::APP_ID, 'files_bounded_content_enabled', '0') === '1';
+	}
+
 	/** Distinct server-controlled opt-in for experimental single-folder creation (nc_files_create_folder). Default false, development-only. */
 	public function folderCreateEnabled(): bool {
 		return $this->get()['development']

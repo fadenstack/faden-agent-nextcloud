@@ -1,6 +1,6 @@
 {
   "name": "fadenstack_agent",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {

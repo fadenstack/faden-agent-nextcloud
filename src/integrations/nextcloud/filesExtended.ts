@@ -1,6 +1,6 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
-import type { FileApi, FileContext, ShareEntry, FolderOverviewResults, ShareOverviewResults } from './types.ts'
+import type { FileApi, FileContext, ShareEntry, FolderOverviewResults, ShareOverviewResults, FileOperationProposal } from './types.ts'
 import { fileReference } from '../../platform/scope.ts'
 import { folderReadResult } from './fileReadResults.ts'
 
@@ -11,6 +11,7 @@ export interface ExtendedProposal {
 	before?: unknown
 	after?: unknown
 	revision: string
+	native?: FileOperationProposal
 }
 
 export interface ExtendedFilesHost {
@@ -240,6 +241,7 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 	const textSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 200 }
 	const nameSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 100, pattern: '^[^/\\\\?#:<>"|*]+$' }
 	const etagSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 150 }
+	const native = !!host.files.fileOperations
 
 	return [
 		defineTool({
@@ -249,13 +251,13 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 			parameters: {
 				type: 'object',
 				properties: {
-					source: textSchema,
-					destination: nameSchema,
-					expectedEtag: etagSchema,
+					...(!native ? { source: textSchema, destination: nameSchema, expectedEtag: etagSchema } : {}),
 					source_resource_id: textSchema,
 					destination_name: nameSchema,
 					expected_etag: etagSchema,
+					destination_resource_id: textSchema,
 				},
+				...(native ? { required: ['source_resource_id', 'destination_resource_id', 'destination_name', 'expected_etag'] } : {}),
 				additionalProperties: false,
 			},
 			run: async (args, c) => {
@@ -272,13 +274,13 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 			parameters: {
 				type: 'object',
 				properties: {
-					source: textSchema,
-					destination: nameSchema,
-					expectedEtag: etagSchema,
+					...(!native ? { source: textSchema, destination: nameSchema, expectedEtag: etagSchema } : {}),
 					source_resource_id: textSchema,
 					destination_name: nameSchema,
 					expected_etag: etagSchema,
+					destination_resource_id: textSchema,
 				},
+				...(native ? { required: ['source_resource_id', 'destination_resource_id', 'destination_name', 'expected_etag'] } : {}),
 				additionalProperties: false,
 			},
 			run: async (args, c) => {
@@ -295,14 +297,12 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 			parameters: {
 				type: 'object',
 				properties: {
-					path: textSchema,
-					filename: nameSchema,
+					...(!native ? { path: textSchema, filename: nameSchema, recipientUserId: textSchema, expectedEtag: etagSchema } : {}),
 					resource_id: textSchema,
-					recipientUserId: textSchema,
 					recipient_user_id: textSchema,
-					expectedEtag: etagSchema,
 					expected_etag: etagSchema,
 				},
+				...(native ? { required: ['resource_id', 'recipient_user_id', 'expected_etag'] } : {}),
 				additionalProperties: false,
 			},
 			run: async (args, c) => {

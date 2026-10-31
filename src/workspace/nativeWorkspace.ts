@@ -3,7 +3,7 @@ import { NativeViewGuard, type NativeView } from './nativeView.ts'
 import type { WriteResult } from '../integrations/nextcloud/types.ts'
 import type { ViewOutcome } from './coordinator.ts'
 
-const APPS = ['calendar', 'tasks', 'contacts'] as const
+const APPS = ['files', 'calendar', 'tasks', 'contacts'] as const
 type NativeApp = typeof APPS[number]
 
 /** Own only the native child. Original DOM, parent chat and token memory remain mounted. */
@@ -104,26 +104,34 @@ export class NativeWorkspace {
 
 	async refresh(result: WriteResult, signal: AbortSignal): Promise<ViewOutcome> {
 		if (!result.provider || !this.#frame || this.#app !== result.provider.app) return 'refresh_required'
+		if (result.provider.app === 'files' && !/^[1-9][0-9]{0,14}$/.test(result.provider.collectionId)) return 'refresh_required'
 		if (this.snapshot().editState !== 'clean') return 'refresh_required'
 		const target = new URL(this.#frame.contentDocument!.location.href)
 		if (result.provider.app === 'tasks' && result.provider.collectionId) target.href = new URL(generateUrl('/apps/tasks/calendars/' + encodeURIComponent(result.provider.collectionId)), this.page.location.href).href
+		if (result.provider.app === 'files' && /^[1-9][0-9]{0,14}$/.test(result.provider.collectionId)) target.href = new URL(generateUrl('/f/' + result.provider.collectionId), this.page.location.href).href
 		if (result.provider.app === 'calendar' && result.provider.date && /^\d{4}-\d{2}-\d{2}$/.test(result.provider.date)) target.href = new URL(generateUrl('/apps/calendar/dayGridMonth/' + result.provider.date), this.page.location.href).href
 		target.searchParams.set('fadenstack-workspace-child', '1')
-		const oldDocument = this.#frame.contentDocument
-		this.#frame.src = target.href
-		while (this.#frame.contentDocument === oldDocument) {
+		await this.reload(target, signal)
+		return 'refreshed'
+	}
+
+	private async reload(target: URL, signal: AbortSignal): Promise<void> {
+		const frame = this.#frame
+		if (!frame) throw new Error('The native workspace is unavailable.')
+		const oldDocument = frame.contentDocument
+		frame.src = target.href
+		while (frame.contentDocument === oldDocument) {
 			signal.throwIfAborted()
 			await new Promise(resolve => setTimeout(resolve, 25))
 		}
 		await this.ready(signal)
-		return 'refreshed'
 	}
 
 	async refreshAcknowledged(): Promise<void> {
 		if (!this.#frame) return
 		this.#child?.acknowledgeNavigation()
 		if (this.snapshot().editState !== 'clean') throw new Error('Close the native editor after saving or cancelling before refreshing.')
-		await this.refresh({ operation: 'native_refresh', file: {} as WriteResult['file'], provider: { app: this.#app!, collectionId: '', filename: '' } }, AbortSignal.timeout(15000))
+		await this.reload(new URL(this.#frame.contentDocument!.location.href), AbortSignal.timeout(15000))
 	}
 
 	dispose(): void {

@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 return ['routes' => [
+	['name' => 'file_operations#capabilities', 'url' => '/files/operations/capabilities', 'verb' => 'POST'],
+	['name' => 'file_operations#actions', 'url' => '/files/operations/actions', 'verb' => 'POST'],
+	['name' => 'file_operations#inspect', 'url' => '/files/operations/actions/{id}/inspect', 'verb' => 'POST'],
+	['name' => 'file_operations#propose', 'url' => '/files/operations/propose', 'verb' => 'POST'],
+	['name' => 'file_operations#approve', 'url' => '/files/operations/{id}/approve', 'verb' => 'POST'],
+	['name' => 'file_operations#cancel', 'url' => '/files/operations/{id}/cancel', 'verb' => 'POST'],
+	['name' => 'file_operations#commit', 'url' => '/files/operations/{id}/commit', 'verb' => 'POST'],
 	['name' => 'providers#actions', 'url' => '/providers/actions', 'verb' => 'POST'],
 	['name' => 'providers#inspectAction', 'url' => '/providers/actions/{id}/inspect', 'verb' => 'POST'],
 	['name' => 'providers#capabilities', 'url' => '/providers/capabilities', 'verb' => 'POST'],

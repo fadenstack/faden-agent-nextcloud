@@ -33,7 +33,7 @@ export function folderProposal(value: FolderCreateProposal, reference: string, n
 }
 
 export function folderOutcome(value: FolderCreateOutcome, proposal: FolderCreateProposal): FolderCreateOutcome {
-	if (!value || value.proposalId !== proposal.id || value.history !== 'not-integrated'
+	if (!value || value.proposalId !== proposal.id || !['not-integrated', 'audit-only'].includes(value.history)
 		|| value.name !== proposal.name || value.parentResourceId !== proposal.resourceId) throw new Error('Invalid native folder receipt. Inspect the destination before trying again.')
 	if (value.outcome === 'not-dispatched' || value.outcome === 'ambiguous') {
 		if (value.target !== proposal.target || typeof value.message !== 'string' || !value.message || value.message.length > 1000) throw new Error('Invalid native folder receipt.')
@@ -51,7 +51,8 @@ export function folderOutcome(value: FolderCreateOutcome, proposal: FolderCreate
 		|| value.observedState.permissions !== value.folder.permissions || !Number.isFinite(value.folder.size) || value.folder.size < -1) throw new Error('Invalid native folder metadata.')
 	return {
 		outcome: 'verified',
-		history: 'not-integrated',
+		history: value.history,
+		...(value.actionId ? { actionId: value.actionId } : {}),
 		proposalId: proposal.id,
 		name: proposal.name,
 		resourceId: value.resourceId,

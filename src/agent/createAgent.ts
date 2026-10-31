@@ -83,7 +83,7 @@ import {
 import type { FileApi, FileContext, Identity, Proposal, WriteArguments, ToolViewResults, HistoryDirection, HistoryItem, HistoryPreview, HistoryAvailability, TableSnapshot, TableReadResult, DeckCard, FolderCreateProposal } from '../integrations/nextcloud/types.ts'
 import { NextcloudSearchService, fileResource, resourceId } from '../integrations/nextcloud/search.ts'
 import type { MutationBinding, WorkspaceCoordinator } from '../workspace/coordinator.ts'
-import { TurnScope, type ScopeIdentity } from '../platform/scope.ts'
+import { TurnScope, fileReference, type ScopeIdentity } from '../platform/scope.ts'
 import { fileCapability, type ToolRisk } from '../platform/catalog.ts'
 import { interruptibleRead } from '../platform/cancellation.ts'
 import { SourceLedger } from '../platform/sourceLedger.ts'
@@ -175,7 +175,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const filesReadsActive = config.filesReadsEnabled === true && !!config.scopePolicy && !!files.organizeRead && !!files.sharesRead
 		const folderCreateActive = (config.development === true && config.folderCreateEnabled === true && !!config.scopePolicy && !!files.scopeResource && !!files.proposeFolderCreate && !!files.approveFolderCreate && !!files.commitFolderCreate)
 			|| (experimental && config.extendedFilesEnabled === true && !files.proposeFolderCreate && !!files.createFolder)
-		const extendedFilesMutations = experimental && config.extendedFilesEnabled === true && (!!files.createFolder || (!!files.copyFile && !!files.moveFile))
+		const extendedFilesMutations = (config.development === true && config.filesMutationsEnabled === true && !!config.scopePolicy && !!files.fileOperations)
+			|| (experimental && config.extendedFilesEnabled === true && (!!files.createFolder || (!!files.copyFile && !!files.moveFile)))
 		const tablesEnabled = experimental && config.tablesEnabled === true && !!files.tables
 		const deckEnabled = experimental && config.deckEnabled === true && !!files.deck
 		const calendarEnabled = !this.#providerReads && experimental && config.calendarEnabled === true && !!files.calendar
@@ -263,6 +264,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.useSessionStore(new MemorySessionStore()).useApprovalStore(new MemoryApprovalStore())
 			.useApprovals({
 				request: async (request, signal) => {
+					if (request.source === 'host' && this.files.fileOperations && this.config.filesMutationsEnabled && ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(request.toolName)
+						&& !this.#scope?.offeredTools.some(name => name === request.toolName)) throw new Error('This native Files operation is not available under the current capability and tool contract.')
 					if (request.source === 'host' && this.#providerReads?.hasSources && fileCapability(request.toolName)?.subsystem === 'files' && fileCapability(request.toolName)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
 					const nativeProviderMutation = (CALENDAR_MUTATIONS.has(request.toolName) && !!this.files.nativeProviders?.calendarPropose)
 						|| (TASKS_MUTATIONS.has(request.toolName) && !!this.files.nativeProviders?.tasksPropose)
@@ -276,13 +279,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						|| (EXTENDED_FILES_MUTATIONS.has(request.toolName) && (!files.proposeFolderCreate || request.toolName !== 'nc_files_create_folder')))
 						&& request.source === 'host'
 					if (expanded) {
-						if (!experimentalAdaptersAllowed(this.config)) throw new Error('Expanded adapters require isolated development acceptance.')
+						if (!experimentalAdaptersAllowed(this.config) && !(files.fileOperations && this.config.filesMutationsEnabled && EXTENDED_FILES_MUTATIONS.has(request.toolName))) throw new Error('Expanded adapters require isolated development acceptance.')
 						this.#expandedInputs.set(request.callId, canonical(request.arguments))
 						request = { ...request, arguments: structuredClone(request.arguments) }
 					}
 					if (HISTORY_TOOLS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked || !files.history || typeof request.arguments.action_id !== 'string' || !/^[a-f0-9]{32}$/.test(request.arguments.action_id)) throw new Error('A valid, available history action is required.')
-						const binding = this.workspace?.prepare('files')
+						const binding = await this.workspace?.prepareProvider('files')
 						const direction = request.toolName === 'nc_actions_undo' ? 'undo' : request.toolName === 'nc_actions_redo' ? 'redo' : request.toolName === 'nc_actions_revalidate' ? 'revalidate' : 'reconcile'
 						const preview = await files.history.prepare(request.arguments.action_id, direction, signal)
 						this.history.target = preview.target
@@ -300,7 +303,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if (request.toolName === 'nc_files_create_folder' && request.source === 'host' && files.proposeFolderCreate) {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						this.#folderCreateInputs.set(request.callId, canonical(request.arguments))
-						const binding = this.workspace?.prepare('files')
+						const binding = await this.workspace?.prepareProvider('files')
 						const plan = await this.planFolderCreateMutation(request.arguments, signal)
 						this.#folderCreateProposals.set(request.callId, plan)
 						if (binding) this.#proposalViews.set(request.callId, binding)
@@ -313,7 +316,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						this.#folderCreatePreviews.set(request.callId, canonical(request.arguments))
 					} else if (EXTENDED_FILES_MUTATIONS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-						const binding = this.workspace?.prepare('files')
+						const binding = this.files.fileOperations && this.config.filesMutationsEnabled ? await this.workspace?.prepareProvider('files') : this.workspace?.prepare('files')
 						const plan = await this.planExtendedMutation(request.toolName, request.arguments, signal)
 						this.#extendedProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
@@ -321,7 +324,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							...request,
 							canAllowAlways: false,
 							canAllowForSession: false,
-							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after },
+							arguments: { ...request.arguments, proposalId: plan.native?.id ?? plan.revision, digest: plan.native?.digest, target: plan.target, before: plan.before, content: plan.after, limitation: plan.native?.limitation },
 						}
 					}
 					if (TABLES_MUTATIONS.has(request.toolName) && request.source === 'host') {
@@ -433,7 +436,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					}
 					if (WRITE_TOOLS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-						const binding = this.workspace?.prepare('files')
+						const binding = await this.workspace?.prepareProvider('files')
 						const target = await this.writeContext(request.toolName, request.arguments.resource_id, signal)
 						if (this.#scope) {
 							const destination = await this.#scope.bindDestination(`nextcloud:files:${request.toolName === 'nc_create_text_file' ? target.parentId : target.file.id}`, signal)
@@ -456,6 +459,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if (expanded) this.#expandedPreviews.set(request.callId, canonical(request.arguments))
 					const result = await this.approvals.request(request, signal)
 					if (!result.approved) {
+						const native = this.#extendedProposals.get(request.callId)?.native
+						if (native) this.files.fileOperations?.cancel(native).catch(() => {})
 						const folder = this.#folderCreateProposals.get(request.callId)
 						if (folder) this.files.cancelFolderCreate?.(folder.id).catch(() => {})
 						this.#expandedInputs.delete(request.callId)
@@ -529,7 +534,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		return this.#active
 	}
 
-	get historyAvailable(): boolean { return (this.config.historyEnabled === true && !!this.files.history) || (this.config.development === true && !!this.files.nativeProviders?.actions) }
+	get historyAvailable(): boolean { return (this.config.historyEnabled === true && !!this.files.history) || (this.config.development === true && (!!this.files.nativeProviders?.actions || !!this.files.fileOperations?.actions)) }
 	get historyCommandsAvailable(): boolean {
 		if (!this.config.historyEnabled || !this.files.history || !this.chat.isReady || !commandChat(this.chat)) return false
 		const profile = this.agent.profile
@@ -542,25 +547,28 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.history.error = ''
 		this.history.availability = undefined
 		try {
-			const [fileResult, nativeResult] = await Promise.allSettled([
+			const [fileResult, nativeResult, filesAudit] = await Promise.allSettled([
 				this.config.historyEnabled && this.files.history ? Promise.all([this.files.history.list(signal), this.files.history.availability?.(signal)]) : Promise.resolve([[], undefined] as const),
 				this.config.development && this.files.nativeProviders?.actions ? this.files.nativeProviders.actions(signal) : Promise.resolve([]),
+				this.config.development && this.files.fileOperations?.actions ? this.files.fileOperations.actions(signal) : Promise.resolve([]),
 			])
 			signal.throwIfAborted()
 			const items: HistoryItem[] = fileResult.status === 'fulfilled' ? [...fileResult.value[0]] : []
 			if (nativeResult.status === 'fulfilled') items.push(...nativeResult.value)
+			if (filesAudit.status === 'fulfilled') items.push(...filesAudit.value)
 			if (!items.length && fileResult.status === 'rejected') throw fileResult.reason
 			if (!items.length && nativeResult.status === 'rejected') throw nativeResult.reason
-			this.history.items = items.sort((a, b) => b.createdAt - a.createdAt)
+			this.history.items = items.filter((item, index) => items.findIndex(other => other.id === item.id) === index).sort((a, b) => b.createdAt - a.createdAt)
 			this.history.availability = fileResult.status === 'fulfilled' ? fileResult.value[1] : undefined
 		} catch (error) { this.history.items = []; if (!signal.aborted) this.history.error = errorMessage(error) } finally { this.history.loading = false }
 	}
 
 	async inspectProviderAction(item: HistoryItem, signal: AbortSignal): Promise<void> {
-		if (!item.auditOnly || !item.provider || !this.config.development || !this.files.nativeProviders?.inspectAction) throw new Error('This native action cannot be inspected.')
+		const inspect = item.provider === 'files' ? this.files.fileOperations?.inspect : this.files.nativeProviders?.inspectAction
+		if (!item.auditOnly || !item.provider || !this.config.development || !inspect) throw new Error('This native action cannot be inspected.')
 		this.history.inspection = undefined
 		try {
-			const inspection = await this.files.nativeProviders.inspectAction(item.id, signal)
+			const inspection = await inspect(item.id, signal)
 			signal.throwIfAborted()
 			if (inspection.action.id !== item.id || inspection.action.provider !== item.provider || inspection.repeatedDispatch !== false) throw new Error('The native action inspection is invalid.')
 			this.history.inspection = inspection
@@ -728,6 +736,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		try {
 			const result = await this.files.commit(proposal.id, call.signal)
 			const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, result, call.signal) : undefined
+			if (!call.signal.aborted) {
+				try { this.discovery.remember(result.file); await this.rememberSource(`nextcloud:files:${result.file.id}`, call.signal) } catch { this.#providerCompletion = 'Nextcloud confirmed the file save. Start a new conversation; its current disclosure could not be safely checked.' }
+			}
 			const current = this.selection.snapshot()
 			if (!call.signal.aborted && current && (current.file.id === result.file.id || current.file.id === parentId)) {
 				try {
@@ -787,6 +798,41 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	private async planExtendedMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<ExtendedProposal> {
 		await this.files.assertIdentity(signal)
+		if (this.files.fileOperations && this.config.filesMutationsEnabled && name !== 'nc_files_create_folder') {
+			if (!this.#scope) throw new Error('The native Files scope is unavailable.')
+			const allowed = name === 'nc_files_share_readonly' ? ['resource_id', 'recipient_user_id', 'expected_etag'] : ['source_resource_id', 'destination_resource_id', 'destination_name', 'expected_etag']
+			if (Object.keys(args).some(key => !allowed.includes(key)) || allowed.some(key => typeof args[key] !== 'string' || !args[key])) throw new Error('Use the exact canonical native Files arguments.')
+			const sourceResourceId = fileReference(args.source_resource_id ?? args.resource_id ?? args.source ?? args.path)
+			const source = await this.#scope.authorize(sourceResourceId, 'read', signal)
+			const expectedEtag = args.expected_etag ?? args.expectedEtag
+			if (typeof expectedEtag !== 'string' || strongEtagHeader(expectedEtag) !== strongEtagHeader(source.revision)) throw new Error('The source changed. Read its current revision before proposing the action.')
+			const operation = name === 'nc_files_copy' ? 'copy' : name === 'nc_files_move' ? 'move' : 'share_readonly'
+			let destinationResourceId: string | undefined, destinationName: string | undefined, recipientUserId: string | undefined
+			if (operation === 'share_readonly') {
+				recipientUserId = validateShareReadonlyArgs(args).recipientUserId
+				this.#sources.assertMovement(this.#scope.policy, 'shared')
+				if (!this.#scope.policy.destinationAudiences.includes('shared') || !this.#scope.policy.movements.some(rule => rule.source === source.sourceClass && rule.destination === 'shared')) throw new Error('This source cannot be shared under the configured movement policy.')
+			} else {
+				destinationResourceId = fileReference(args.destination_resource_id)
+				destinationName = validateFolderName(args.destination_name ?? args.destination)
+				const destination = await this.authorizeFolderDestination(destinationResourceId, signal)
+				await this.#scope.assertMovement([source], destination, signal)
+			}
+			const native = await this.files.fileOperations.propose({ operation, sourceResourceId, expectedEtag, destinationResourceId, destinationName, recipientUserId }, signal)
+			if (signal.aborted) void this.files.fileOperations.cancel(native).catch(() => {})
+			signal.throwIfAborted()
+			return {
+				name,
+				args: { ...args },
+				target: native.target,
+				revision: native.digest,
+				native,
+				before: { source: native.sourcePath, revision: native.expectedEtag },
+				after: operation === 'share_readonly'
+					? { recipientUserId: native.recipientUserId, permissions: 'Read only', email: 'Disabled', history: 'Audit only' }
+					: { destination: native.target, overwrite: 'Never', history: 'Audit only' },
+			}
+		}
 		if (name === 'nc_files_create_folder') {
 			const folderName = validateFolderName(args.name)
 			const parent = String(args.resource_id ?? (this.turnContext ? this.turnContext.file.path : '/'))
@@ -842,6 +888,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					? await this.workspace!.committed(call.callId, generation, binding, {
 						operation: 'create_folder',
 						file: outcome.folder,
+						provider: { app: 'files', collectionId: proposal.resourceId.slice(16), filename: outcome.name },
 					}, call.signal)
 					: undefined
 				// A confirmed creation stays confirmed if Stop or reauthorization
@@ -866,6 +913,28 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		call.signal.throwIfAborted()
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
 		try {
+			if (proposal.native && this.files.fileOperations) {
+				const result = await this.files.fileOperations.commit(proposal.native, call.signal)
+				if (result.outcome !== 'verified') throw new Error(result.message ?? 'The native Files effect could not be verified. Inspect before retrying.')
+				const activity = binding && generation !== undefined
+					? await this.workspace!.committed(call.callId, generation, binding, {
+						operation: name,
+						file: result.file ?? { id: 0, name: 'Files action saved', path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
+						...(result.file ? { provider: { app: 'files' as const, collectionId: result.parentResourceId?.slice(16) ?? '', filename: result.file.name } } : {}),
+					}, call.signal)
+					: undefined
+				if (!call.signal.aborted) {
+					try {
+						if (result.file) { this.discovery.remember(result.file); await this.rememberSource(`nextcloud:files:${result.file.id}`, call.signal) }
+						for (const reference of this.#sources.references) await this.authorizeSource(reference, call.signal, this.#sources.purpose(reference))
+						if (result.file && this.selection.snapshot()?.file.id === result.file.id) {
+							const selected = await this.selection.select(result.file.id, call.signal)
+							if (selected) this.offerSelection(selected)
+						}
+					} catch { this.#providerCompletion = 'Nextcloud confirmed the Files action. Start a new conversation; earlier source content can no longer be safely sent.' }
+				}
+				return { ...result, ...(activity ? { view: activity.view } : {}) }
+			}
 			let result: unknown
 			if (name === 'nc_files_create_folder') {
 				const parent = String(args.resource_id ?? (this.turnContext ? this.turnContext.file.path : ''))
@@ -925,6 +994,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const proposal = this.#extendedProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
+			if (proposal.native && this.files.fileOperations) await this.files.fileOperations.approve(proposal.native, this.#stop.signal)
+			if (!part.isPending || this.#extendedProposals.get(part.request.callId) !== proposal || !this.chat.isBusy) throw new Error('This proposal is no longer pending.')
 		}
 		if (TABLES_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
 			const proposal = this.#tablesProposals.get(part.request.callId)
@@ -988,6 +1059,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	async deny(part: ApprovalPart): Promise<void> {
 		if (!part.isPending) return
+		const native = this.#extendedProposals.get(part.request.callId)?.native
+		if (native) { this.#extendedProposals.delete(part.request.callId); void this.files.fileOperations?.cancel(native).catch(() => {}) }
 		if (part.toolName === 'nc_files_create_folder' && part.request.source === 'host') {
 			const proposal = this.#folderCreateProposals.get(part.request.callId)
 			this.#folderCreateProposals.delete(part.request.callId)
@@ -1011,7 +1084,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const approved = this.#expandedApproved.delete(callId)
 		this.#expandedInputs.delete(callId)
 		this.#expandedPreviews.delete(callId)
-		if (!experimentalAdaptersAllowed(this.config) || !approved || expected === undefined || expected !== canonical(args)) {
+		const nativeFiles = this.config.development && this.config.filesMutationsEnabled && !!this.files.fileOperations && !!this.#extendedProposals.get(callId)?.native
+		if ((!experimentalAdaptersAllowed(this.config) && !nativeFiles) || !approved || expected === undefined || expected !== canonical(args)) {
 			this.#writeBlocked = true
 			throw new Error('The arguments changed or no individual approval exists. Review a new proposal.')
 		}
@@ -2309,7 +2383,16 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					contractVersion: `${profile.id}:${profile.version}:${profile.instructionsSha256 ?? ''}`,
 					policyVersion: this.config.scopePolicy.version,
 				}
-				const published = profile.hostToolContract.filter(tool => ['read', 'write', 'destructive'].includes(tool.risk ?? '')).map(tool => ({ name: tool.name, risk: tool.risk as ToolRisk }))
+				let published = profile.hostToolContract.filter(tool => ['read', 'write', 'destructive'].includes(tool.risk ?? '')).map(tool => ({ name: tool.name, risk: tool.risk as ToolRisk }))
+				if (!command && this.files.searchTransport?.capabilities) {
+					const search = await this.files.searchTransport.capabilities(stopped)
+					if (!search.indexed_content_search && !search.bounded_content_search) published = published.filter(tool => tool.name !== 'nc_search_content')
+				}
+				if (this.files.fileOperations && this.config.filesMutationsEnabled) {
+					const capabilities = await this.files.fileOperations.capabilities(stopped)
+					if (!Array.isArray(capabilities.tools) || capabilities.tools.some(name => !['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(name))) throw new Error('Invalid native Files capabilities.')
+					published = published.filter(tool => !['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(tool.name) || capabilities.tools.includes(tool.name))
+				}
 				this.#scope = new TurnScope(identity, this.config.scopePolicy, published,
 					() => ({ ...identity, fadenstackPrincipal: { kind: 'session', id: this.tokens.deviceId ?? '' }, contractVersion: JSON.stringify(this.agent.profile) === frozen ? identity.contractVersion : 'changed' }),
 					(reference, purpose, _scopes, innerSignal) => this.files.scopeResource!(reference, purpose, innerSignal))
@@ -2335,6 +2418,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	/** After the turn: its file context and any proposals it left are gone. */
 	#finish(command = false): void {
+		this.cancelFileOperations()
 		this.history.inspecting = false
 		this.history.verifying = false
 		if (command) { this.history.active = false; this.history.target = '' }
@@ -2361,6 +2445,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	stop(): void {
+		this.cancelFileOperations()
 		for (const proposal of this.#folderCreateProposals.values()) {
 			this.files.cancelFolderCreate?.(proposal.id).catch(() => {})
 		}
@@ -2373,6 +2458,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	async dispose(): Promise<void> {
 		if (this.#closed) return
+		this.cancelFileOperations()
 		this.#closed = true
 		for (const proposal of this.#folderCreateProposals.values()) {
 			this.files.cancelFolderCreate?.(proposal.id).catch(() => {})
@@ -2407,6 +2493,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#proposalParents.clear()
 		await this.tokens.signOut()
 		await this.agent.dispose()
+	}
+
+	private cancelFileOperations(): void {
+		for (const proposal of this.#extendedProposals.values()) if (proposal.native) this.files.fileOperations?.cancel(proposal.native).catch(() => {})
 	}
 
 }

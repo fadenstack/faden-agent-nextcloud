@@ -12,12 +12,14 @@ use OCP\EventDispatcher\IEventListener;
 class SabrePluginListener implements IEventListener {
 	public function __construct(
 		private FolderCreateGuardPlugin $guardPlugin,
+		private FileOperationsGuardPlugin $fileOperations,
 	) {
 	}
 
 	public function handle(Event $event): void {
 		if ($event instanceof SabrePluginAddEvent) {
 			$event->getServer()->addPlugin($this->guardPlugin);
+			$event->getServer()->addPlugin($this->fileOperations);
 		}
 	}
 }

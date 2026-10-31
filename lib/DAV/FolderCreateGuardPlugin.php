@@ -107,6 +107,7 @@ class FolderCreateGuardPlugin extends ServerPlugin {
 			if ($request->getPath() !== $expected || $fresh->nodeExists($ticket['name'])) {
 				throw new Conflict('The request target changed or already exists.');
 			}
+			$this->files->markFolderDispatched($id);
 		} catch (\Throwable $error) {
 			$this->onException($error);
 			if ($error instanceof Problem) {

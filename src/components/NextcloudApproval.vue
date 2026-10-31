@@ -23,6 +23,9 @@ const stateText = computed(() => {
 })
 const action = computed(() => {
 	switch (part.value.toolName) {
+	case 'nc_files_copy': return t('fadenstack_agent', 'Copy file')
+	case 'nc_files_move': return t('fadenstack_agent', 'Move file')
+	case 'nc_files_share_readonly': return t('fadenstack_agent', 'Share file · read only')
 	case 'nc_files_create_folder': return t('fadenstack_agent', 'Create folder')
 	case 'nc_actions_revalidate': return t('fadenstack_agent', 'Verify file revision')
 	case 'nc_actions_reconcile': return t('fadenstack_agent', 'Inspect outcome')
@@ -42,6 +45,7 @@ const action = computed(() => {
 	}
 })
 const approving = ref(false)
+const organization = computed(() => ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(part.value.toolName))
 const problem = ref('')
 async function approve() {
 	approving.value = true
@@ -89,7 +93,7 @@ function deny() {
 			<p>{{ (part.request.arguments.resolution as { outcome?: string } | undefined)?.outcome === 'verified' ? t('fadenstack_agent', 'The file content matches the intended result.') : t('fadenstack_agent', 'The file content matches the state before this attempt.') }}</p>
 			<p>{{ t('fadenstack_agent', 'Record this inspected result without changing the file. Notifications and other effects are not verified.') }}</p>
 		</template>
-		<details v-else-if="part.request.arguments.before !== null && part.request.arguments.before !== undefined">
+		<details v-else-if="!organization && part.request.arguments.before !== null && part.request.arguments.before !== undefined">
 			<summary>{{ t('fadenstack_agent', 'Current content') }}</summary>
 			<pre class="fdn-approval-args" dir="auto">{{ typeof part.request.arguments.before === 'string' ? part.request.arguments.before : JSON.stringify(part.request.arguments.before, null, 2) }}</pre>
 		</details>
@@ -97,6 +101,22 @@ function deny() {
 			<p class="fdn-approval-description">
 				{{ part.request.arguments.executionReady === false ? t('fadenstack_agent', 'Folder creation is unavailable in this version. No folder will be created.') : t('fadenstack_agent', 'An empty folder will be created inside the target directory. Existing items are not overwritten.') }}
 			</p>
+		</template>
+		<template v-else-if="organization">
+			<dl class="fdn-approval-description">
+				<dt>{{ t('fadenstack_agent', 'Source file') }}</dt>
+				<dd>{{ (part.request.arguments.before as { source?: string })?.source }}</dd>
+				<template v-if="part.toolName === 'nc_files_share_readonly'">
+					<dt>{{ t('fadenstack_agent', 'Recipient account') }}</dt>
+					<dd>{{ (part.request.arguments.content as { recipientUserId?: string })?.recipientUserId }}</dd>
+					<dt>{{ t('fadenstack_agent', 'Access') }}</dt><dd>{{ t('fadenstack_agent', 'Read only · no email') }}</dd>
+				</template>
+				<template v-else>
+					<dt>{{ t('fadenstack_agent', 'Existing items') }}</dt><dd>{{ t('fadenstack_agent', 'Never overwritten') }}</dd>
+				</template>
+				<dt>{{ t('fadenstack_agent', 'History') }}</dt><dd>{{ t('fadenstack_agent', 'Audit only · no Undo') }}</dd>
+			</dl>
+			<p>{{ part.request.arguments.limitation }}</p>
 		</template>
 		<template v-else-if="['nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete'].includes(part.toolName)">
 			<p class="fdn-approval-description">

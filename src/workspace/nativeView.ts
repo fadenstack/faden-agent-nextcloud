@@ -39,7 +39,7 @@ export class NativeViewGuard {
 		const clean = !viewer && !dialog && !editor && !nativeEditor && (app === 'files'
 			? !!this.page.querySelector('.files-list, .files-list__row')
 			: ['calendar', 'tasks', 'contacts'].includes(app) && ready)
-		return { app, key, epoch: this.#epoch, editState: this.#dirty ? 'dirty' : clean ? 'clean' : 'unknown', reason: this.#dirty ? 'Finish or cancel your edits before asking the assistant to change this view.' : 'The assistant cannot confirm that this editor has no unsaved changes.' }
+		return { app, key, epoch: this.#epoch, editState: this.#dirty ? 'dirty' : clean ? 'clean' : 'unknown', reason: this.#dirty ? 'Finish or cancel your edits before asking the assistant to change this view.' : app === 'files' && editor ? 'A Files preview or folder-description editor is open. Save or close it, or open a folder without an editor before asking the assistant to make a change.' : 'The assistant cannot confirm that this editor has no unsaved changes.' }
 	}
 
 	/** Explicit acknowledgement is used only by a user-requested refresh/handoff, never by an agent. */
