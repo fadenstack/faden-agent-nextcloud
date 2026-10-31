@@ -37,6 +37,43 @@ final class NativeRequest {
 		return $etag;
 	}
 
+	/** Public native app APIs only. The caller cannot choose a URL, method or header. */
+	public static function structured(string $actor, string $provider, string $operation, int $collection, int $item = 0, int $stack = 0, array $payload = []): self {
+		if ($collection < 1 || $collection > 999999999999999 || $item < 0 || $stack < 0) throw new Problem('Invalid native identifier.', 400);
+		if ($provider === 'tables') {
+			$base = '/apps/tables/api/1';
+			[$method, $path] = match ($operation) {
+				'metadata' => ['GET', "/tables/{$collection}"], 'columns' => ['GET', "/tables/{$collection}/columns"],
+				'rows' => ['GET', "/tables/{$collection}/rows?limit=101&offset=0"],
+				'row' => ['GET', "/rows/{$item}"], 'add_column' => ['POST', "/tables/{$collection}/columns"],
+				'add_row' => ['POST', "/tables/{$collection}/rows"], 'update_row' => ['PUT', "/rows/{$item}"],
+				'delete_row' => ['DELETE', "/rows/{$item}"], default => throw new Problem('Unsupported Tables operation.', 400),
+			};
+			if (in_array($operation, ['row', 'update_row', 'delete_row'], true) && $item < 1) throw new Problem('A native row is required.', 400);
+		} elseif ($provider === 'deck') {
+			$base = '/apps/deck/api/v1.0';
+			$card = "/boards/{$collection}/stacks/{$stack}/cards/{$item}";
+			if ($operation === 'move') {
+				$destination = $payload['stackId'] ?? null;
+				if (!is_int($destination) || $destination < 1 || $destination > 999999999999999) throw new Problem('A native destination stack is required.', 400);
+				// Native route parameters override JSON parameters. The public reorder
+				// route must name the destination, not silently reorder the old stack.
+				$card = "/boards/{$collection}/stacks/{$destination}/cards/{$item}";
+			}
+			[$method, $path] = match ($operation) {
+				'metadata' => ['GET', "/boards/{$collection}"], 'stacks' => ['GET', "/boards/{$collection}/stacks"],
+				'card' => ['GET', $card], 'create' => ['POST', "/boards/{$collection}/stacks/{$stack}/cards"],
+				'patch' => ['PUT', $card], 'move' => ['PUT', $card . '/reorder'],
+				'assign' => ['PUT', $card . '/assignUser'], 'label' => ['PUT', $card . '/assignLabel'],
+				default => throw new Problem('Unsupported Deck operation.', 400),
+			};
+			if (!in_array($operation, ['metadata', 'stacks'], true) && ($stack < 1 || ($operation !== 'create' && $item < 1))) throw new Problem('A native stack and card are required.', 400);
+		} else throw new Problem('Unsupported native provider.', 400);
+		$body = $method === 'GET' || $method === 'DELETE' ? '' : json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+		if (strlen($body) > 65536) throw new Problem('Narrow the native mutation.', 413);
+		return new self($actor, $method, $base . $path, $body, ['Accept' => 'application/json', 'Content-Type' => 'application/json']);
+	}
+
 	/** Fixed same-instance Files operation; only our authenticated guard consumes this ticket. */
 	public static function fileOperation(string $actor, string $operation, string $source, string $base, string $parent, string $name,
 		string $etag, string $ticket, string $binding, #[\SensitiveParameter] string $token): self {

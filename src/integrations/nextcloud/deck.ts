@@ -13,6 +13,7 @@ export const DECK_MUTATIONS = new Set([
 ])
 
 export interface DeckProposal {
+	native?: import('../../providers/client.ts').StructuredProposal
 	name: string
 	args: Record<string, unknown>
 	target: string

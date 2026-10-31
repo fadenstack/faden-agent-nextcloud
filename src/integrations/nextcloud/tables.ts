@@ -12,6 +12,7 @@ export const TABLES_MUTATIONS = new Set([
 ])
 
 export interface TablesProposal {
+	native?: import('../../providers/client.ts').StructuredProposal
 	name: string
 	args: Record<string, unknown>
 	target: string

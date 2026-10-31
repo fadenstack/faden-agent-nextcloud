@@ -76,7 +76,7 @@ export interface Proposal extends WriteArguments {
 	before: string | null
 	contextId: string
 }
-export interface WriteResult { operation: string; file: FileMetadata; actionId?: string; provider?: { app: 'files' | 'calendar' | 'tasks' | 'contacts'; collectionId: string; filename: string; date?: string } }
+export interface WriteResult { operation: string; file: FileMetadata; actionId?: string; provider?: { app: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck'; collectionId: string; filename: string; date?: string } }
 
 export interface FileOperationProposal {
 	id: string; digest: string; operation: 'copy' | 'move' | 'share_readonly'; toolName: string; target: string
@@ -89,7 +89,7 @@ export interface FileOperationOutcome {
 	file?: FileMetadata; parentResourceId?: string; shareId?: number | null; message?: string; disclosure?: 'restricted'
 }
 export type HistoryDirection = 'undo' | 'redo' | 'reconcile' | 'revalidate'
-export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number; auditOnly?: boolean; provider?: 'files' | 'calendar' | 'tasks' | 'contacts'; fileUrl?: string; operation?: string }
+export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number; auditOnly?: boolean; provider?: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck'; fileUrl?: string; operation?: string }
 export interface FileOperationsApi {
 	actions?(signal: AbortSignal): Promise<HistoryItem[]>
 	inspect?(id: string, signal: AbortSignal): Promise<import('../../providers/client.ts').ProviderInspection>
@@ -323,6 +323,7 @@ export interface TableColumn {
 }
 
 export interface TableRow {
+	revision?: string
 	id: number
 	tableId: number
 	data: { columnId: number; value: unknown }[]
@@ -332,6 +333,7 @@ export interface TableRow {
 }
 
 export interface TableSnapshot {
+	nativeResource?: import('../../providers/scope.ts').ProviderResource
 	table: { id: number; title: string }
 	columns: TableColumn[]
 	rows: TableRow[]
@@ -355,6 +357,7 @@ export interface TablesApi {
 }
 
 export interface DeckCard {
+	revision?: string
 	id: number
 	title: string
 	description: string
@@ -389,6 +392,7 @@ export interface DeckBoard {
 }
 
 export interface DeckBoardSnapshot {
+	nativeResource?: import('../../providers/scope.ts').ProviderResource
 	id: number
 	board: DeckBoard
 	stacks: DeckStack[]

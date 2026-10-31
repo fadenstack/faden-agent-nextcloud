@@ -47,11 +47,23 @@ const action = computed(() => {
 	case 'nc_contacts_create': return t('fadenstack_agent', 'Create contact')
 	case 'nc_contacts_patch': return t('fadenstack_agent', 'Update contact')
 	case 'nc_contacts_delete': return t('fadenstack_agent', 'Delete contact')
+	case 'nc_tables_add_column': return t('fadenstack_agent', 'Add table column')
+	case 'nc_tables_add_row': return t('fadenstack_agent', 'Add table row')
+	case 'nc_tables_update_row': return t('fadenstack_agent', 'Update table row')
+	case 'nc_tables_delete_row': return t('fadenstack_agent', 'Delete table row')
+	case 'nc_deck_create': return t('fadenstack_agent', 'Create Deck card')
+	case 'nc_deck_patch': return t('fadenstack_agent', 'Update Deck card')
+	case 'nc_deck_move': return t('fadenstack_agent', 'Move Deck card')
+	case 'nc_deck_assign': return t('fadenstack_agent', 'Assign Deck card')
+	case 'nc_deck_label': return t('fadenstack_agent', 'Label Deck card')
 	default: return t('fadenstack_agent', 'Replace file')
 	}
 })
 const approving = ref(false)
 const organization = computed(() => ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(part.value.toolName))
+const structured = computed(() => /^(nc_tables_|nc_deck_)/.test(part.value.toolName))
+const fields = computed(() => part.value.request.arguments.fields as { label: string; before: unknown; after: unknown }[] | undefined)
+function fieldText(value: unknown): string { return value === null || value === undefined ? '—' : typeof value === 'string' ? value : JSON.stringify(value) }
 const problem = ref('')
 async function approve() {
 	approving.value = true
@@ -107,6 +119,26 @@ function deny() {
 			<p class="fdn-approval-description">
 				{{ part.request.arguments.executionReady === false ? t('fadenstack_agent', 'Folder creation is unavailable in this version. No folder will be created.') : t('fadenstack_agent', 'An empty folder will be created inside the target directory. Existing items are not overwritten.') }}
 			</p>
+		</template>
+		<template v-else-if="structured">
+			<p v-if="part.toolName === 'nc_tables_delete_row'">
+				{{ t('fadenstack_agent', 'This row will be deleted. Its cell values are shown below.') }}
+			</p>
+			<dl v-if="fields?.length" class="fadenstack-file-fields">
+				<div v-for="(field, index) in fields" :key="index" class="fadenstack-field-row">
+					<dt>{{ field.label }}</dt>
+					<dd><span v-if="field.before !== null && field.before !== undefined">{{ fieldText(field.before) }} → </span>{{ fieldText(field.after) }}</dd>
+				</div>
+			</dl>
+			<dl class="fadenstack-file-fields">
+				<dt>{{ t('fadenstack_agent', 'Native access') }}</dt><dd>{{ t('fadenstack_agent', 'Current table or board permissions; audience not fully determined') }}</dd>
+				<dt>{{ t('fadenstack_agent', 'History') }}</dt><dd>{{ t('fadenstack_agent', 'Audit only · no Undo') }}</dd>
+			</dl>
+			<p>{{ part.request.arguments.limitation }}</p>
+			<details>
+				<summary>{{ t('fadenstack_agent', 'Exact request details') }}</summary>
+				<pre class="fdn-approval-args" dir="auto">{{ JSON.stringify(part.request.arguments.content, null, 2) }}</pre>
+			</details>
 		</template>
 		<template v-else-if="organization">
 			<dl class="fadenstack-file-fields">
@@ -194,11 +226,13 @@ function deny() {
 </template>
 
 <style scoped>
-.fadenstack-file-fields { display: grid; grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1.5fr); gap: 8px 12px; margin: 12px 0; line-height: 1.5; }
+.fadenstack-file-fields { display: grid; grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1.5fr); gap: 8px 12px; margin: 12px 0; padding: 0; line-height: 1.5; }
 
-.fadenstack-file-fields > dt, .fadenstack-file-fields > dd { float: none; width: auto; min-width: 0; margin: 0; text-align: start; overflow-wrap: anywhere; }
+.fadenstack-file-fields dt, .fadenstack-file-fields dd { float: none; width: auto; min-width: 0; margin: 0; padding: 0; text-align: start; overflow-wrap: anywhere; }
 
-.fadenstack-file-fields > dt { grid-column: 1; align-self: start; color: var(--color-text-maxcontrast); }
+.fadenstack-file-fields dt { grid-column: 1; align-self: start; color: var(--color-text-maxcontrast); }
 
-.fadenstack-file-fields > dd { grid-column: 2; align-self: start; }
+.fadenstack-file-fields dd { grid-column: 2; align-self: start; }
+
+.fadenstack-field-row { display: contents; }
 </style>

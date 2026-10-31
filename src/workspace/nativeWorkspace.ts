@@ -3,7 +3,7 @@ import { NativeViewGuard, type NativeView } from './nativeView.ts'
 import type { WriteResult } from '../integrations/nextcloud/types.ts'
 import type { ViewOutcome } from './coordinator.ts'
 
-const APPS = ['files', 'calendar', 'tasks', 'contacts'] as const
+const APPS = ['files', 'calendar', 'tasks', 'contacts', 'tables', 'deck'] as const
 type NativeApp = typeof APPS[number]
 
 /** Own only the native child. Original DOM, parent chat and token memory remain mounted. */
@@ -15,7 +15,8 @@ export class NativeWorkspace {
 	#root: HTMLElement | undefined
 	#app: NativeApp | undefined
 	#loads = 0
-	readonly #hidden: { element: HTMLElement; hidden: boolean; inert: boolean }[] = []
+	#refreshes = 0
+	readonly #hidden: { element: HTMLElement; hidden: boolean; inert: boolean; masked: boolean }[] = []
 	constructor(readonly page: Document = document) { this.main = new NativeViewGuard(page) }
 
 	snapshot(): NativeView {
@@ -24,7 +25,7 @@ export class NativeWorkspace {
 			const child = this.#frame.contentDocument
 			if (!child || child.location.origin !== this.page.location.origin || child.readyState !== 'complete' || !this.#child) return this.unknown()
 			const view = this.#child.snapshot()
-			if (view.app !== this.#app || [...this.page.querySelectorAll('[role="dialog"]')].some(node => !node.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity') && !node.querySelector('.fadenstack-assistant-details'))) return this.unknown()
+			if (view.app !== this.#app || [...this.page.querySelectorAll('[role="dialog"]')].some(node => !this.#hidden.some(saved => saved.element.contains(node)) && !node.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity') && !node.querySelector('.fadenstack-assistant-details'))) return this.unknown()
 			return { ...view, key: 'workspace:' + view.key, epoch: this.#loads * 1000000 + view.epoch }
 		} catch { return this.unknown() }
 	}
@@ -81,9 +82,10 @@ export class NativeWorkspace {
 		this.#root = root
 		for (const element of this.page.querySelectorAll<HTMLElement>('#content, #content-vue')) {
 			if (element.querySelector('#fadenstack-agent-drawer')) continue
-			this.#hidden.push({ element, hidden: element.hidden, inert: element.inert })
+			this.#hidden.push({ element, hidden: element.hidden, inert: element.inert, masked: element.classList.contains('fadenstack-native-masked') })
 			element.hidden = true
 			element.inert = true
+			element.classList.add('fadenstack-native-masked')
 		}
 		this.page.body.append(root)
 		try { await this.ready(AbortSignal.timeout(15000)) } finally { root.inert = false }
@@ -110,6 +112,14 @@ export class NativeWorkspace {
 		if (result.provider.app === 'tasks' && result.provider.collectionId) target.href = new URL(generateUrl('/apps/tasks/calendars/' + encodeURIComponent(result.provider.collectionId)), this.page.location.href).href
 		if (result.provider.app === 'files' && /^[1-9][0-9]{0,14}$/.test(result.provider.collectionId)) target.href = new URL(generateUrl('/f/' + result.provider.collectionId), this.page.location.href).href
 		if (result.provider.app === 'calendar' && result.provider.date && /^\d{4}-\d{2}-\d{2}$/.test(result.provider.date)) target.href = new URL(generateUrl('/apps/calendar/dayGridMonth/' + result.provider.date), this.page.location.href).href
+		if (['tables', 'deck'].includes(result.provider.app)) {
+			if (!/^[1-9][0-9]{0,14}$/.test(result.provider.collectionId)) return 'refresh_required'
+			// Keep the current route, sort and filter state; never reload another object
+			// after navigation. The coordinator already checked the approval's route epoch.
+			const route = target.hash + target.pathname
+			const expected = result.provider.app === 'tables' ? /(?:#\/table\/|\/tables\/table\/)([1-9][0-9]*)(?:[/?]|$)/ : /(?:#\/board\/|\/deck\/board\/)([1-9][0-9]*)(?:[/?]|$)/
+			if (expected.exec(route)?.[1] !== result.provider.collectionId) return 'not_visible'
+		}
 		target.searchParams.set('fadenstack-workspace-child', '1')
 		await this.reload(target, signal)
 		return 'refreshed'
@@ -119,6 +129,11 @@ export class NativeWorkspace {
 		const frame = this.#frame
 		if (!frame) throw new Error('The native workspace is unavailable.')
 		const oldDocument = frame.contentDocument
+		// Tables/Deck use hash routes. Assigning the same fragment URL can be a
+		// same-document navigation, leaving stale Vue state and no load event.
+		// A child-only query revision forces a real document reload, retaining
+		// the native path, hash and existing sort/filter query parameters.
+		target.searchParams.set('fadenstack-workspace-refresh', String(++this.#refreshes))
 		frame.src = target.href
 		while (frame.contentDocument === oldDocument) {
 			signal.throwIfAborted()
@@ -138,7 +153,7 @@ export class NativeWorkspace {
 		this.main.dispose()
 		this.#child?.dispose()
 		this.#root?.remove()
-		for (const saved of this.#hidden) { saved.element.hidden = saved.hidden; saved.element.inert = saved.inert }
+		for (const saved of this.#hidden) { saved.element.hidden = saved.hidden; saved.element.inert = saved.inert; saved.element.classList.toggle('fadenstack-native-masked', saved.masked) }
 		this.#hidden.length = 0
 		this.#frame = undefined
 	}

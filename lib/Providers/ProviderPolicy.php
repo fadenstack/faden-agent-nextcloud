@@ -41,7 +41,7 @@ final class ProviderPolicy {
 				throw new \InvalidArgumentException();
 			}
 			$value = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
-			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts'])) {
+			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck'])) {
 				throw new \InvalidArgumentException();
 			}
 			$config = $value[$section] ?? null;
@@ -91,9 +91,18 @@ final class ProviderPolicy {
 		return $this->parsePolicy('contacts');
 	}
 
+	public function structured(string $provider, bool $audit = false): array {
+		if (!in_array($provider, ['tables', 'deck'], true)) throw new Problem('Unsupported structured provider.', 400);
+		$policy = $this->parsePolicy($provider, $audit);
+		foreach ($policy['collections'] as $id) {
+			if (!preg_match('/^[1-9][0-9]{0,14}$/D', $id)) throw new Problem('Use numeric native collection identifiers.', 503);
+		}
+		return $policy;
+	}
+
 	/** Disabling dispatch retains authorized native audit/inspection; revoked scope still denies. */
 	public function audit(string $provider): array {
-		if (!in_array($provider, ['calendar', 'tasks', 'contacts'], true)) {
+		if (!in_array($provider, ['calendar', 'tasks', 'contacts', 'tables', 'deck'], true)) {
 			throw new Problem('Unsupported provider audit.', 400);
 		}
 		return $this->parsePolicy($provider, true);

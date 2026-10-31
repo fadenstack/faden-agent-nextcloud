@@ -16,6 +16,8 @@ import type { NativeProvidersApi } from './client.ts'
 import { strongEtagHeader } from '../integrations/nextcloud/adapterGuards.ts'
 
 const IMPLEMENTATIONS = new ProviderRegistry([
+	{ provider: 'tables', apiVersions: ['tables-2.4-api1'], tools: ['nc_tables_read', 'nc_tables_add_column', 'nc_tables_add_row', 'nc_tables_update_row', 'nc_tables_delete_row'] },
+	{ provider: 'deck', apiVersions: ['deck-1.19-api1'], tools: ['nc_deck_read', 'nc_deck_patch', 'nc_deck_create', 'nc_deck_move', 'nc_deck_assign', 'nc_deck_label'] },
 	{
 		provider: 'calendar',
 		apiVersions: ['caldav-v1'],
@@ -46,6 +48,12 @@ export class ProviderReadRuntime {
 
 	get offeredTools(): readonly string[] { return this.#scope?.tools.map(tool => tool.name) ?? [] }
 	get hasSources(): boolean { return this.#sources.size > 0 }
+
+	assertStructuredWrite(provider: 'tables' | 'deck', collectionId: string): void {
+		if ([...this.#sources.values()].some(source => source.provider !== provider || source.collectionId !== collectionId)) {
+			throw new ScopeViolation('movement_forbidden', 'Cross-collection source movement needs a separately certified audience policy. Start a new conversation for this native collection.')
+		}
+	}
 
 	async prepare(sessionId: string | undefined, published: readonly PublishedTool[], policy: ScopePolicy, budget: TurnBudget,
 		assertIdentity: () => void, signal: AbortSignal): Promise<void> {
@@ -81,6 +89,9 @@ export class ProviderReadRuntime {
 					const current = await this.api.contactsRead?.(resource.collectionId, resource.filename, innerSignal)
 					values = current && 'resourceId' in current ? [current] : []
 				}
+			} else if (resource.provider === 'tables' || resource.provider === 'deck') {
+				const value = await this.api.structuredRead?.(resource.provider, Number(resource.collectionId), innerSignal)
+				values = value ? [value.resource] : []
 			}
 			const current = values.find(value => value.resourceId === resource.resourceId)
 			if (!current) throw new ScopeViolation('source_forbidden', 'The provider source is no longer available.')
@@ -120,7 +131,7 @@ export class ProviderReadRuntime {
 
 	private record(resource: ProviderResource, retain = true): void {
 		if (!this.#scope || !this.#policy) throw new Error('The native provider turn is unavailable.')
-		if (!['calendar', 'tasks', 'contacts'].includes(resource.provider) || resource.sourceClass === 'unknown' || !this.#policy.sourceClasses.includes(resource.sourceClass)
+		if (!['calendar', 'tasks', 'contacts', 'tables', 'deck'].includes(resource.provider) || resource.sourceClass === 'unknown' || !this.#policy.sourceClasses.includes(resource.sourceClass)
 			|| (resource.sourceClass === 'protected' && this.#policy.downstreamPolicy !== 'configured')) throw new ScopeViolation('processing_forbidden', 'This provider source cannot be sent to the configured model.')
 		const previous = this.#sources.get(resource.resourceId)
 		if (previous && previous.sourceClass !== resource.sourceClass) throw new ScopeViolation('processing_forbidden', 'Earlier source classification changed. Start a new conversation.')
@@ -153,6 +164,20 @@ export class ProviderReadRuntime {
 			const current = await this.#scope!.authorize(source.resourceId, source.provider, false, signal)
 			this.record(current)
 		}
+	}
+
+	/** Rebase only a structured collection revision independently verified by our native receipt. */
+	async committedStructured(resource: ProviderResource, signal: AbortSignal): Promise<boolean> {
+		if (!this.#scope || !['tables', 'deck'].includes(resource.provider)) return false
+		const previous = this.#sources.get(resource.resourceId)
+		if (!previous) return true
+		try {
+			const current = await this.#scope.resolve(previous, false, signal)
+			if (current.provider !== previous.provider || current.collectionId !== previous.collectionId || current.resourceId !== previous.resourceId
+				|| current.policyVersion !== previous.policyVersion || current.sourceClass !== previous.sourceClass || current.audience !== previous.audience || current.revision !== resource.revision) return false
+			this.record(current)
+			return true
+		} catch { return false }
 	}
 
 	/** Rebase only our independently verified effect; arbitrary editor changes still fail authorize(). */

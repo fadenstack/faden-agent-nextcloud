@@ -21,6 +21,8 @@ class ScopePolicy {
 	public const HISTORY_TOOLS = ['nc_actions_undo', 'nc_actions_redo', 'nc_actions_reconcile', 'nc_actions_revalidate'];
 	public const EXTENDED_READ_TOOLS = ['nc_files_organize_read', 'nc_files_shares_read'];
 	public const FILE_MUTATION_TOOLS = ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'];
+	public const STRUCTURED_TOOLS = ['nc_tables_read', 'nc_tables_add_column', 'nc_tables_add_row', 'nc_tables_update_row', 'nc_tables_delete_row',
+		'nc_deck_read', 'nc_deck_patch', 'nc_deck_create', 'nc_deck_move', 'nc_deck_assign', 'nc_deck_label'];
 	public const DAV_TOOLS = ['nc_calendar_list', 'nc_calendar_read', 'nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete',
 		'nc_tasks_read', 'nc_tasks_create', 'nc_tasks_patch', 'nc_tasks_delete',
 		'nc_contacts_list', 'nc_contacts_find', 'nc_contacts_read', 'nc_contacts_create', 'nc_contacts_patch', 'nc_contacts_delete'];
@@ -140,7 +142,7 @@ class ScopePolicy {
 			$this->keys($value, ['revision', 'sources', 'destinations', 'tools', 'sourceClasses', 'downstreamPolicy', 'destinationAudiences', 'movements', 'classificationDefault', 'classificationRules', 'limits']);
 			$sources = $this->scopes($value['sources'] ?? []);
 			$destinations = $this->scopes($value['destinations'] ?? []);
-			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS, ...self::FILE_MUTATION_TOOLS, ...self::DAV_TOOLS, 'nc_files_create_folder']);
+			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS, ...self::FILE_MUTATION_TOOLS, ...self::DAV_TOOLS, ...self::STRUCTURED_TOOLS, 'nc_files_create_folder']);
 			if (!$sources || !$tools || !is_string($value['revision'] ?? null) || strlen($value['revision']) < 1 || strlen($value['revision']) > 100) {
 				throw new \InvalidArgumentException();
 			}

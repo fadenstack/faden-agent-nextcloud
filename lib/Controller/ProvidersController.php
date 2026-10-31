@@ -8,12 +8,14 @@ use OCA\FadenstackAgent\Providers\CalendarProvider;
 use OCA\FadenstackAgent\Providers\ContactsProvider;
 use OCA\FadenstackAgent\Providers\TasksProvider;
 use OCA\FadenstackAgent\Providers\ProviderAuditService;
+use OCA\FadenstackAgent\Providers\StructuredProvider;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\IRequest;
+use Psr\Log\LoggerInterface;
 
 /** CSRF and native session are required; never hold UseSession across a sibling request. */
 final class ProvidersController extends Controller {
@@ -25,6 +27,8 @@ final class ProvidersController extends Controller {
 		private TasksProvider $tasks,
 		private ContactsProvider $contacts,
 		private ProviderAuditService $audit,
+		private StructuredProvider $structured,
+		private LoggerInterface $logger,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -35,7 +39,10 @@ final class ProvidersController extends Controller {
 			$response = new DataResponse($operation());
 		} catch (Problem $error) {
 			$response = new DataResponse(['message' => $error->getMessage(), ...$this->attempt()], $error->status);
-		} catch (\Throwable) {
+		} catch (\Throwable $error) {
+			$this->logger->error('Native provider runtime failure ({class} at {file}:{line}).', [
+				'app' => 'fadenstack_agent', 'class' => get_class($error), 'file' => basename($error->getFile()), 'line' => $error->getLine(),
+			]);
 			$response = new DataResponse(['message' => 'The provider result could not be verified.', ...$this->attempt()], 503);
 		}
 		$response->addHeader('Cache-Control', 'no-store');
@@ -43,8 +50,8 @@ final class ProvidersController extends Controller {
 	}
 
 	private function attempt(): array {
-		$id = $this->calendar->attemptId() ?? $this->tasks->attemptId() ?? $this->contacts->attemptId();
-		return $id ? ['actionId' => $id, 'outcome' => 'unknown', 'inspectionAvailable' => true] : [];
+		$id = $this->calendar->attemptId() ?? $this->tasks->attemptId() ?? $this->contacts->attemptId() ?? $this->structured->attemptId();
+		return $id ? ['actionId' => $id, 'outcome' => $id === $this->structured->attemptId() ? $this->structured->attemptOutcome() : 'unknown', 'inspectionAvailable' => true] : [];
 	}
 
 	/** Audit remains available after dispatch is disabled; native session + CSRF still apply. */
@@ -52,7 +59,10 @@ final class ProvidersController extends Controller {
 		try {
 			$this->files->checkSession($this->request->getHeader('X-Fadenstack-Session'));
 			$response = new DataResponse($operation());
-		} catch (\Throwable) {
+		} catch (\Throwable $error) {
+			$this->logger->warning('Native provider inspection failure ({class} at {file}:{line}).', [
+				'app' => 'fadenstack_agent', 'class' => get_class($error), 'file' => basename($error->getFile()), 'line' => $error->getLine(),
+			]);
 			$response = new DataResponse(['message' => 'The native action could not be inspected with current access.'], 403);
 		}
 		$response->addHeader('Cache-Control', 'no-store');
@@ -61,12 +71,14 @@ final class ProvidersController extends Controller {
 
 	#[NoAdminRequired]
 	public function actions(): DataResponse {
-		return $this->auditRun(fn () => $this->audit->listing());
+		return $this->auditRun(fn () => array_merge($this->audit->listing(), $this->structured->actions()));
 	}
 
 	#[NoAdminRequired]
 	public function inspectAction(string $id): DataResponse {
-		return $this->auditRun(fn () => $this->audit->inspect($id));
+		return $this->auditRun(function () use ($id): array {
+			try { return $this->audit->inspect($id); } catch (\Throwable) { return $this->structured->inspect($id); }
+		});
 	}
 
 	#[NoAdminRequired]
@@ -80,8 +92,33 @@ final class ProvidersController extends Controller {
 				$calendar = [[...$tasks[0], 'provider' => 'calendar', 'tools' => ['nc_calendar_list'],
 					'conflict' => 'read-only', 'history' => 'not-applicable', 'canWrite' => false, 'discoveryOnly' => true]];
 			}
-			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities())];
+			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities())];
 		});
+	}
+
+	#[NoAdminRequired]
+	public function structuredRead(string $provider, int $collectionId): DataResponse {
+		return $this->run(fn () => $this->structured->read($provider, $collectionId));
+	}
+
+	#[NoAdminRequired]
+	public function structuredPropose(string $toolName, array $args, string $requestId): DataResponse {
+		return $this->run(fn () => $this->structured->propose($toolName, $args, $requestId));
+	}
+
+	#[NoAdminRequired]
+	public function structuredApprove(string $id, string $digest): DataResponse {
+		return $this->run(fn () => $this->structured->approve($id, $digest));
+	}
+
+	#[NoAdminRequired]
+	public function structuredCommit(string $id, string $digest): DataResponse {
+		return $this->run(fn () => $this->structured->commit($id, $digest));
+	}
+
+	#[NoAdminRequired]
+	public function structuredCancel(string $id, string $digest = ''): DataResponse {
+		return $this->auditRun(fn () => $this->structured->cancel($id, $digest));
 	}
 
 	// --- Calendar ---

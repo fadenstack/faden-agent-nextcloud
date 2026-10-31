@@ -92,7 +92,7 @@ import { commandChat } from './commands.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
-import type { CalendarCommitOutcome, ProviderInspection } from '../providers/client.ts'
+import type { CalendarCommitOutcome, ProviderInspection, StructuredProposal } from '../providers/client.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
@@ -177,8 +177,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			|| (experimental && config.extendedFilesEnabled === true && !files.proposeFolderCreate && !!files.createFolder)
 		const extendedFilesMutations = (config.development === true && config.filesMutationsEnabled === true && !!config.scopePolicy && !!files.fileOperations)
 			|| (experimental && config.extendedFilesEnabled === true && (!!files.createFolder || (!!files.copyFile && !!files.moveFile)))
-		const tablesEnabled = experimental && config.tablesEnabled === true && !!files.tables
-		const deckEnabled = experimental && config.deckEnabled === true && !!files.deck
+		const tablesEnabled = !!files.tables && ((!!this.#providerReads && !!files.nativeProviders?.structuredPropose) || (experimental && config.tablesEnabled === true))
+		const deckEnabled = !!files.deck && ((!!this.#providerReads && !!files.nativeProviders?.structuredPropose) || (experimental && config.deckEnabled === true))
 		const calendarEnabled = !this.#providerReads && experimental && config.calendarEnabled === true && !!files.calendar
 		const tasksEnabled = !this.#providerReads && experimental && config.tasksEnabled === true && !!files.tasks
 		const contactsEnabled = !this.#providerReads && experimental && config.contactsEnabled === true && !!files.contacts
@@ -230,7 +230,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
-					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
+					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts', 'tables', 'deck'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
 					return inner.stream(messages, available
 						? {
 							...options,
@@ -242,7 +242,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addToolStage(StageOrder.custom, {
 				invoke: async (invocation, next) => {
-					if (this.#providerReads && ['calendar', 'tasks', 'contacts'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
+					if (this.#providerReads && ['calendar', 'tasks', 'contacts', 'tables', 'deck'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
 					else this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
 					if (this.#providerReads?.hasSources && fileCapability(invocation.tool.name)?.subsystem === 'files' && fileCapability(invocation.tool.name)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
@@ -279,7 +279,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						|| (EXTENDED_FILES_MUTATIONS.has(request.toolName) && (!files.proposeFolderCreate || request.toolName !== 'nc_files_create_folder')))
 						&& request.source === 'host'
 					if (expanded) {
-						if (!experimentalAdaptersAllowed(this.config) && !(files.fileOperations && this.config.filesMutationsEnabled && EXTENDED_FILES_MUTATIONS.has(request.toolName))) throw new Error('Expanded adapters require isolated development acceptance.')
+						if (!experimentalAdaptersAllowed(this.config) && !(files.nativeProviders?.structuredPropose && this.#providerReads?.offeredTools.includes(request.toolName) && (TABLES_MUTATIONS.has(request.toolName) || DECK_MUTATIONS.has(request.toolName))) && !(files.fileOperations && this.config.filesMutationsEnabled && EXTENDED_FILES_MUTATIONS.has(request.toolName))) throw new Error('Expanded adapters require isolated development acceptance.')
 						this.#expandedInputs.set(request.callId, canonical(request.arguments))
 						request = { ...request, arguments: structuredClone(request.arguments) }
 					}
@@ -329,7 +329,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					}
 					if (TABLES_MUTATIONS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-						const binding = this.workspace?.prepare('tables')
+						const binding = this.files.nativeProviders?.structuredPropose ? await this.workspace?.prepareProvider('tables') : this.workspace?.prepare('tables')
 						const plan = await this.planTablesMutation(request.toolName, request.arguments, signal)
 						this.#tablesProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
@@ -337,12 +337,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							...request,
 							canAllowAlways: false,
 							canAllowForSession: false,
-							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after },
+							arguments: { ...request.arguments, proposalId: plan.native?.id ?? plan.revision, digest: plan.native?.digest, target: plan.target, before: plan.before, content: plan.after, limitation: plan.native?.limitation, nativeAudience: plan.native?.resource.audience, fields: plan.native?.display },
 						}
 					}
 					if (DECK_MUTATIONS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-						const binding = this.workspace?.prepare('deck')
+						const binding = this.files.nativeProviders?.structuredPropose ? await this.workspace?.prepareProvider('deck') : this.workspace?.prepare('deck')
 						const plan = await this.planDeckMutation(request.toolName, request.arguments, signal)
 						this.#deckProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
@@ -350,7 +350,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							...request,
 							canAllowAlways: false,
 							canAllowForSession: false,
-							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after },
+							arguments: { ...request.arguments, proposalId: plan.native?.id ?? plan.revision, digest: plan.native?.digest, target: plan.target, before: plan.before, content: plan.after, limitation: plan.native?.limitation, nativeAudience: plan.native?.resource.audience, fields: plan.native?.display },
 						}
 					}
 					if ((CALENDAR_MUTATIONS.has(request.toolName) || TASKS_MUTATIONS.has(request.toolName) || CONTACTS_MUTATIONS.has(request.toolName)) && request.source === 'host') {
@@ -471,7 +471,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						this.#folderCreateInputs.delete(request.callId)
 						this.#folderCreatePreviews.delete(request.callId)
 						this.#extendedProposals.delete(request.callId)
+						const tablesNative = this.#tablesProposals.get(request.callId)?.native
+						if (tablesNative) this.files.nativeProviders?.structuredCancel?.(tablesNative).catch(() => {})
 						this.#tablesProposals.delete(request.callId)
+						const deckNative = this.#deckProposals.get(request.callId)?.native
+						if (deckNative) this.files.nativeProviders?.structuredCancel?.(deckNative).catch(() => {})
 						this.#deckProposals.delete(request.callId)
 						this.#davProposals.delete(request.callId)
 						this.#mailProposals.delete(request.callId)
@@ -1001,11 +1005,15 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const proposal = this.#tablesProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
+			if (proposal.native) await this.files.nativeProviders!.structuredApprove!(proposal.native, this.#stop.signal)
+			if (!part.isPending || !this.chat.isBusy) throw new Error('This proposal is no longer pending.')
 		}
 		if (DECK_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
 			const proposal = this.#deckProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
+			if (proposal.native) await this.files.nativeProviders!.structuredApprove!(proposal.native, this.#stop.signal)
+			if (!part.isPending || !this.chat.isBusy) throw new Error('This proposal is no longer pending.')
 		}
 		if ((CALENDAR_MUTATIONS.has(part.toolName) || TASKS_MUTATIONS.has(part.toolName) || CONTACTS_MUTATIONS.has(part.toolName)) && part.request.source === 'host') {
 			const davProposal = this.#davProposals.get(part.request.callId)
@@ -1085,20 +1093,60 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#expandedInputs.delete(callId)
 		this.#expandedPreviews.delete(callId)
 		const nativeFiles = this.config.development && this.config.filesMutationsEnabled && !!this.files.fileOperations && !!this.#extendedProposals.get(callId)?.native
-		if ((!experimentalAdaptersAllowed(this.config) && !nativeFiles) || !approved || expected === undefined || expected !== canonical(args)) {
+		const nativeStructured = this.config.development && !!this.#providerReads && !!(this.#tablesProposals.get(callId)?.native ?? this.#deckProposals.get(callId)?.native)
+		if ((!experimentalAdaptersAllowed(this.config) && !nativeFiles && !nativeStructured) || !approved || expected === undefined || expected !== canonical(args)) {
 			this.#writeBlocked = true
 			throw new Error('The arguments changed or no individual approval exists. Review a new proposal.')
 		}
 	}
 
+	private async dispatchStructured(proposal: StructuredProposal, call: ToolCallContext, binding: MutationBinding | undefined): Promise<unknown> {
+		let generation: number | undefined
+		let sent = false
+		try {
+			await this.files.assertIdentity(call.signal)
+			call.signal.throwIfAborted()
+			generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+			sent = true
+			return await this.commitStructured(proposal, call, binding, generation)
+		} catch (error) {
+			this.#writeBlocked = true
+			if (!sent) await this.files.nativeProviders?.structuredCancel?.(proposal).catch(() => {})
+			if (generation !== undefined) {
+				const refusal = (error as { response?: { data?: { outcome?: string; message?: string } } })?.response?.data
+				if (refusal?.outcome === 'not-dispatched') this.workspace!.notDispatched(call.callId, generation, proposal.target, refusal.message ?? 'The native request was refused before dispatch.', proposal.toolName)
+				else this.workspace!.failed(call.callId, generation, proposal.target, error)
+			}
+			throw error
+		}
+	}
+
+	private async commitStructured(proposal: StructuredProposal, call: ToolCallContext, binding: MutationBinding | undefined, generation: number | undefined): Promise<unknown> {
+		const result = await this.files.nativeProviders!.structuredCommit!(proposal, call.signal)
+		if (result.outcome !== 'verified' || result.history !== 'audit-only' || result.provider !== proposal.provider
+			|| result.target !== proposal.target || !/^[a-f0-9]{32}$/.test(result.actionId) || result.resource.resourceId !== proposal.resource.resourceId) throw new Error('Native commitment could not be verified; inspect the action before retrying.')
+		const activity = binding && generation !== undefined
+			? await this.workspace!.committed(call.callId, generation, binding, {
+				operation: proposal.toolName,
+				file: { id: result.result.id, name: result.target, path: '', mime: '', size: 0, etag: result.resource.revision, folder: false, permissions: 0, url: '' },
+				provider: { app: result.provider, collectionId: String(result.collectionId), filename: String(result.result.id) },
+			}, call.signal)
+			: undefined
+		if (!await this.#providerReads!.committedStructured(result.resource, call.signal)) this.#providerCompletion = 'The native change was verified and recorded. Review its result and start a new conversation before using changed source content.'
+		return { ...result, ...(activity ? { view: activity.view } : {}) }
+	}
+
 	async readTable(tableId?: number, signal?: AbortSignal): Promise<TableReadResult> {
 		if (!this.files.tables) throw new Error('Tables app is unavailable.')
 		await this.files.assertIdentity(signal)
+		const guard = this.#providerReads?.readGuard()
 		const s = await this.files.tables.readTable(tableId, signal)
+		guard?.()
+		if (s.nativeResource) this.#providerReads?.recordSource(s.nativeResource)
 		const rows = await Promise.all(
 			s.rows.map(async r => ({
 				id: r.id,
-				revision: await sha256Hex(rowContent(r)),
+				revision: r.revision ?? await sha256Hex(rowContent(r)),
 				cells: Object.fromEntries(r.data.map(d => [String(d.columnId), d.value])),
 			})),
 		)
@@ -1112,6 +1160,17 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	async planTablesMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<TablesProposal> {
+		if (this.files.nativeProviders?.structuredPropose && this.#providerReads) {
+			if (!this.#providerReads.offeredTools.includes(name)) throw new Error('This native operation is not offered under the current contract and permissions.')
+			const snapshot = await this.files.tables!.readTable(optionalPositiveInteger(args.tableId, 'tableId'), signal)
+			if (!snapshot.nativeResource) throw new Error('Native source metadata is required.')
+			this.#providerReads.inspectLocalSource(snapshot.nativeResource)
+			this.#providerReads.assertStructuredWrite('tables', snapshot.nativeResource.collectionId)
+			const native = await this.files.nativeProviders.structuredPropose(name, { ...args, tableId: snapshot.table.id }, signal)
+			if (native.provider !== 'tables' || native.resource.resourceId !== snapshot.nativeResource.resourceId || native.resource.revision !== snapshot.nativeResource.revision) throw new Error('The native proposal changed its source.')
+			return { name, args: { ...args, tableId: snapshot.table.id }, target: native.target, before: native.before, after: native.payload, revision: native.digest, snapshot, native }
+		}
+
 		if (!this.files.tables) throw new Error('Tables app is unavailable.')
 		await this.files.assertIdentity(signal)
 		let s: TableSnapshot
@@ -1195,6 +1254,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#tablesProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
+		if (proposal.native) return this.dispatchStructured(proposal.native, call, binding)
 		if (!this.files.tables) throw new Error('Tables app is unavailable.')
 		await this.files.assertIdentity(call.signal)
 		call.signal.throwIfAborted()
@@ -1250,7 +1310,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	async readDeck(boardId?: number, signal?: AbortSignal): Promise<unknown> {
 		if (!this.files.deck) throw new Error('Deck app is unavailable.')
 		await this.files.assertIdentity(signal)
+		const guard = this.#providerReads?.readGuard()
 		const b = await this.files.deck.readBoard(boardId, signal)
+		guard?.()
+		if (b.nativeResource) this.#providerReads?.recordSource(b.nativeResource)
 		const stacks = await Promise.all(
 			b.stacks.map(async stack => ({
 				id: stack.id,
@@ -1258,7 +1321,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				cards: await Promise.all(
 					(stack.cards ?? []).map(async c => ({
 						...cardContent(c),
-						revision: await sha256Hex(cardContent(c)),
+						revision: c.revision ?? await sha256Hex(cardContent(c)),
 					})),
 				),
 			})),
@@ -1272,6 +1335,17 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	async planDeckMutation(name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<DeckProposal> {
+		if (this.files.nativeProviders?.structuredPropose && this.#providerReads) {
+			if (!this.#providerReads.offeredTools.includes(name)) throw new Error('This native operation is not offered under the current contract and permissions.')
+			const snapshot = await this.files.deck!.readBoard(optionalPositiveInteger(args.boardId, 'boardId'), signal)
+			if (!snapshot.nativeResource) throw new Error('Native source metadata is required.')
+			this.#providerReads.inspectLocalSource(snapshot.nativeResource)
+			this.#providerReads.assertStructuredWrite('deck', snapshot.nativeResource.collectionId)
+			const native = await this.files.nativeProviders.structuredPropose(name, { ...args, boardId: snapshot.board.id }, signal)
+			if (native.provider !== 'deck' || native.resource.resourceId !== snapshot.nativeResource.resourceId || native.resource.revision !== snapshot.nativeResource.revision) throw new Error('The native proposal changed its source.')
+			return { name, args: { ...args, boardId: snapshot.board.id }, target: native.target, before: native.before, after: native.payload, revision: native.digest, board: snapshot, native }
+		}
+
 		if (!this.files.deck) throw new Error('Deck app is unavailable.')
 		await this.files.assertIdentity(signal)
 		const boardId = optionalPositiveInteger(args.boardId, 'boardId')
@@ -1383,6 +1457,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#deckProposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
 		this.#proposalViews.delete(call.callId)
+		if (proposal.native) return this.dispatchStructured(proposal.native, call, binding)
 		if (!this.files.deck) throw new Error('Deck app is unavailable.')
 		await this.files.assertIdentity(call.signal)
 		call.signal.throwIfAborted()
@@ -2433,7 +2508,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#folderCreateInputs.clear()
 		this.#folderCreatePreviews.clear()
 		this.#extendedProposals.clear()
+		for (const proposal of this.#tablesProposals.values()) if (proposal.native) this.files.nativeProviders?.structuredCancel?.(proposal.native).catch(() => {})
 		this.#tablesProposals.clear()
+		for (const proposal of this.#deckProposals.values()) if (proposal.native) this.files.nativeProviders?.structuredCancel?.(proposal.native).catch(() => {})
 		this.#deckProposals.clear()
 		this.#davProposals.clear()
 		this.#expandedInputs.clear()
@@ -2445,6 +2522,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	stop(): void {
+		for (const p of [...this.#tablesProposals.values(), ...this.#deckProposals.values()]) if (p.native) this.files.nativeProviders?.structuredCancel?.(p.native).catch(() => {})
 		this.cancelFileOperations()
 		for (const proposal of this.#folderCreateProposals.values()) {
 			this.files.cancelFolderCreate?.(proposal.id).catch(() => {})
@@ -2482,7 +2560,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#folderCreateInputs.clear()
 		this.#folderCreatePreviews.clear()
 		this.#extendedProposals.clear()
+		for (const proposal of this.#tablesProposals.values()) if (proposal.native) this.files.nativeProviders?.structuredCancel?.(proposal.native).catch(() => {})
 		this.#tablesProposals.clear()
+		for (const proposal of this.#deckProposals.values()) if (proposal.native) this.files.nativeProviders?.structuredCancel?.(proposal.native).catch(() => {})
 		this.#deckProposals.clear()
 		this.#davProposals.clear()
 		this.#expandedInputs.clear()

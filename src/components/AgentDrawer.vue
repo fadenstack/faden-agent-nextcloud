@@ -50,6 +50,9 @@ body.fadenstack-workspace-child { --header-height: 0px; }
 
 #fadenstack-native-frame { flex: 1; width: 100%; min-height: 0; border: 0; }
 
+/* Native apps set display:flex on their root, overriding the UA [hidden] rule. */
+.fadenstack-native-masked { display: none !important; }
+
 .fadenstack-native-workspace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 12px; font: var(--default-font-size, 15px) / 1.5 var(--font-face, system-ui); }
 
 .fadenstack-native-workspace-toolbar button { padding: 4px 8px; border: 1px solid var(--color-border); border-radius: var(--border-radius-element, 8px); background: var(--color-main-background); color: var(--color-main-text); font: inherit; cursor: pointer; }

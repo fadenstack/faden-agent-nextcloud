@@ -11,6 +11,7 @@ use OCA\FadenstackAgent\History\CalendarAccessResolver;
 use OCA\FadenstackAgent\History\ContactsAccessResolver;
 use OCA\FadenstackAgent\History\FilesAccessResolver;
 use OCA\FadenstackAgent\History\TasksAccessResolver;
+use OCA\FadenstackAgent\History\StructuredAccessResolver;
 use OCA\FadenstackAgent\Listener\ShellListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -35,6 +36,8 @@ class Application extends App implements IBootstrap {
 			$registry->register('calendar', $container->get(CalendarAccessResolver::class));
 			$registry->register('tasks', $container->get(TasksAccessResolver::class));
 			$registry->register('contacts', $container->get(ContactsAccessResolver::class));
+			$registry->register('tables', $container->get(StructuredAccessResolver::class));
+			$registry->register('deck', $container->get(StructuredAccessResolver::class));
 			return $registry;
 		});
 	}

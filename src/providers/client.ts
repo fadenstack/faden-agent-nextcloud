@@ -1,5 +1,37 @@
 import type { ProviderCapability } from './registry.ts'
 import type { ProviderResource } from './scope.ts'
+import type { TableSnapshot, DeckBoardSnapshot } from '../integrations/nextcloud/types.ts'
+
+export interface StructuredProposal {
+	readonly id: string
+	readonly digest: string
+	readonly toolName: string
+	readonly provider: 'tables' | 'deck'
+	readonly target: string
+	readonly before: unknown
+	readonly display?: readonly { readonly label: string; readonly before: unknown; readonly after: unknown }[]
+	readonly payload: Readonly<Record<string, unknown>>
+	readonly resource: ProviderResource
+	readonly limitation: string
+	readonly history: 'audit-only'
+	readonly expires: number
+}
+export interface StructuredRead {
+	readonly snapshot: TableSnapshot | DeckBoardSnapshot
+	readonly resource: ProviderResource
+}
+export interface StructuredOutcome {
+	readonly status: 'saved' | 'deleted'
+	readonly outcome: 'verified'
+	readonly actionId: string
+	readonly target: string
+	readonly provider: 'tables' | 'deck'
+	readonly collectionId: number
+	readonly result: { readonly id: number; readonly stackId?: number; readonly deleted?: boolean }
+	readonly resource: ProviderResource
+	readonly history: 'audit-only'
+	readonly limitation: string
+}
 
 export interface CalendarCollection extends ProviderResource {
 	readonly title: string
@@ -48,7 +80,7 @@ export type ContactReadResult = (ContactSummary & { readonly etag: string })
 
 export interface ProviderAuditItem {
 	readonly id: string
-	readonly provider: 'files' | 'calendar' | 'tasks' | 'contacts'
+	readonly provider: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck'
 	readonly name: string
 	readonly target: string
 	readonly state: string
@@ -60,7 +92,7 @@ export interface ProviderAuditItem {
 
 export interface ProviderInspection {
 	readonly action: ProviderAuditItem
-	readonly observed: 'present' | 'absent' | 'matches_saved_content' | 'different_content'
+	readonly observed: 'present' | 'absent' | 'matches_saved_content' | 'different_content' | 'not_in_active_collection'
 	readonly journalState: string
 	readonly outcome: 'verified_committed' | 'unknown'
 	readonly repeatedDispatch: false
@@ -68,6 +100,11 @@ export interface ProviderInspection {
 }
 
 export interface NativeProvidersApi {
+	structuredRead?(provider: 'tables' | 'deck', collectionId: number, signal: AbortSignal): Promise<StructuredRead>
+	structuredPropose?(toolName: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<StructuredProposal>
+	structuredApprove?(proposal: StructuredProposal, signal: AbortSignal): Promise<{ readonly approved: boolean }>
+	structuredCommit?(proposal: StructuredProposal, signal: AbortSignal): Promise<StructuredOutcome>
+	structuredCancel?(proposal: StructuredProposal): Promise<unknown>
 	actions?(signal: AbortSignal): Promise<readonly ProviderAuditItem[]>
 	inspectAction?(id: string, signal: AbortSignal): Promise<ProviderInspection>
 	capabilities(signal: AbortSignal): Promise<readonly ProviderCapability[]>
@@ -96,6 +133,22 @@ export interface NativeProvidersApi {
 /** Only our fixed native endpoints; credentials/URLs never appear in tool arguments. */
 export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>): NativeProvidersApi {
 	return {
+		structuredRead: async (provider, collectionId, signal) => post<StructuredRead>('/providers/structured/read', { provider, collectionId }, signal),
+		structuredPropose: async (toolName, args, signal) => {
+			const requestId = [...crypto.getRandomValues(new Uint8Array(24))].map(value => value.toString(16).padStart(2, '0')).join('')
+			let value: StructuredProposal
+			try { value = await post<StructuredProposal>('/providers/structured/propose', { toolName, args, requestId }, signal) } catch (error) {
+				await post(`/providers/structured/${requestId}/cancel`, {}, new AbortController().signal).catch(() => {}); throw error
+			}
+			if (!/^[a-f0-9]{48}$/.test(value.id) || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName
+				|| value.id !== requestId || !['tables', 'deck'].includes(value.provider) || value.history !== 'audit-only' || typeof value.target !== 'string'
+				|| !value.payload || typeof value.payload !== 'object' || !value.resource || typeof value.limitation !== 'string') throw new Error('Invalid native structured preview.')
+			if (signal.aborted) { await post(`/providers/structured/${value.id}/cancel`, { digest: value.digest }, new AbortController().signal).catch(() => {}); signal.throwIfAborted() }
+			return value
+		},
+		structuredApprove: async (p, signal) => post(`/providers/structured/${p.id}/approve`, { digest: p.digest }, signal),
+		structuredCommit: async (p, signal) => post(`/providers/structured/${p.id}/commit`, { digest: p.digest }, signal),
+		structuredCancel: async p => post(`/providers/structured/${p.id}/cancel`, { digest: p.digest }, new AbortController().signal),
 		actions: async signal => post<ProviderAuditItem[]>('/providers/actions', {}, signal),
 		inspectAction: async (id, signal) => {
 			if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid native action reference.')
