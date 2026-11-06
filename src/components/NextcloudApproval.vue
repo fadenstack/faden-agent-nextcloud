@@ -56,12 +56,15 @@ const action = computed(() => {
 	case 'nc_deck_move': return t('fadenstack_agent', 'Move Deck card')
 	case 'nc_deck_assign': return t('fadenstack_agent', 'Assign Deck card')
 	case 'nc_deck_label': return t('fadenstack_agent', 'Label Deck card')
+	case 'nc_mail_save_draft': return t('fadenstack_agent', 'Save Mail draft')
+	case 'nc_mail_send_draft': return t('fadenstack_agent', 'Send Mail draft')
+	case 'nc_talk_send_message': return t('fadenstack_agent', 'Send Talk message')
 	default: return t('fadenstack_agent', 'Replace file')
 	}
 })
 const approving = ref(false)
 const organization = computed(() => ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(part.value.toolName))
-const structured = computed(() => /^(nc_tables_|nc_deck_)/.test(part.value.toolName))
+const structured = computed(() => /^(nc_tables_|nc_deck_|nc_mail_|nc_talk_)/.test(part.value.toolName))
 const fields = computed(() => part.value.request.arguments.fields as { label: string; before: unknown; after: unknown }[] | undefined)
 function fieldText(value: unknown): string { return value === null || value === undefined ? '—' : typeof value === 'string' ? value : JSON.stringify(value) }
 const problem = ref('')
@@ -131,7 +134,7 @@ function deny() {
 				</div>
 			</dl>
 			<dl class="fadenstack-file-fields">
-				<dt>{{ t('fadenstack_agent', 'Native access') }}</dt><dd>{{ t('fadenstack_agent', 'Current table or board permissions; audience not fully determined') }}</dd>
+				<dt>{{ t('fadenstack_agent', 'Native access') }}</dt><dd>{{ /^(nc_mail_|nc_talk_)/.test(part.toolName) ? audience(part.request.arguments.nativeAudience) : t('fadenstack_agent', 'Current table or board permissions; audience not fully determined') }}</dd>
 				<dt>{{ t('fadenstack_agent', 'History') }}</dt><dd>{{ t('fadenstack_agent', 'Audit only · no Undo') }}</dd>
 			</dl>
 			<p>{{ part.request.arguments.limitation }}</p>
@@ -232,7 +235,7 @@ function deny() {
 
 .fadenstack-file-fields dt { grid-column: 1; align-self: start; color: var(--color-text-maxcontrast); }
 
-.fadenstack-file-fields dd { grid-column: 2; align-self: start; }
+.fadenstack-file-fields dd { grid-column: 2; align-self: start; white-space: pre-wrap; }
 
 .fadenstack-field-row { display: contents; }
 </style>

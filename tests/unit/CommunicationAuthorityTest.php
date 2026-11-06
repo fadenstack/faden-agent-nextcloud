@@ -25,6 +25,12 @@ use PHPUnit\Framework\TestCase;
 
 final class CommunicationAuthorityTest extends TestCase {
 	private function fixture(array $responses, bool $enabled = true, string $version = '5.13.1', string $provider = 'mail', array $override = []): array {
+		if (isset($responses['/apps/mail/api/accounts']) && is_array($responses['/apps/mail/api/accounts'])) {
+			$responses['/apps/mail/api/accounts/1'] = $responses['/apps/mail/api/accounts'][0] ?? ['status' => 'fail', 'data' => []];
+		}
+		if (isset($responses['/apps/mail/api/accounts']) && is_string($responses['/apps/mail/api/accounts'])) {
+			$responses['/apps/mail/api/accounts/1'] = $responses['/apps/mail/api/accounts'];
+		}
 		$section = ['enabled' => true, 'writesEnabled' => true, 'collections' => [$provider === 'mail' ? '1' : 'abcd1234'], 'sourceClass' => 'standard'];
 		$settings = [...['integration_enabled' => '1', 'development' => '1', 'provider_reads_enabled' => '1', 'provider_writes_enabled' => '1', 'server_url' => 'https://cloud.test', 'agent' => 'test',
 			'provider_policy' => json_encode(['version' => 1, $provider => $section])], ...$override];
@@ -46,8 +52,15 @@ final class CommunicationAuthorityTest extends TestCase {
 			$path = substr($url, strlen('https://cloud.test'));
 			self::assertArrayHasKey($path, $responses, 'No unexpected native read or write is permitted.');
 			$response = $this->createMock(IResponse::class);
-			$response->method('getStatusCode')->willReturn(200);
 			$value = $responses[$path];
+			if (is_callable($value)) {
+				$value = $value($method);
+			}
+			$status = is_array($value) && isset($value['_http']) ? $value['_http'] : 200;
+			if (is_array($value)) {
+				unset($value['_http']);
+			}
+			$response->method('getStatusCode')->willReturn($status);
 			$response->method('getBody')->willReturn(is_string($value) ? $value : json_encode($value));
 			$response->method('getHeader')->willReturnCallback(static fn ($name) => $name === 'Content-Type' ? 'application/json' : '');
 			return $response;
@@ -86,6 +99,25 @@ final class CommunicationAuthorityTest extends TestCase {
 	public function testDelegationUsesNativeCurrentUserAccountDiscovery(): void {
 		[$native] = $this->fixture(['/apps/mail/api/accounts' => [[...$this->account(), 'isDelegated' => true]]]);
 		self::assertTrue($native->mailAccount(1)['account']['isDelegated']);
+	}
+	public function testNativeMailboxCacheLockRetriesOnlyTheBoundedMessageRead(): void {
+		$reads = 0;
+		$syncs = 0;
+		[$native] = $this->fixture(['/apps/mail/api/accounts' => [$this->account()],
+			'/apps/mail/api/mailboxes?accountId=1' => ['id' => 1, 'mailboxes' => [['databaseId' => 2, 'accountId' => 1, 'displayName' => 'Drafts', 'mailboxes' => []]]],
+			'/apps/mail/api/mailboxes/2/sync' => static function ($method) use (&$syncs) {
+				self::assertSame('POST', $method);
+				$syncs++;
+				return ['_http' => 409];
+			},
+			'/apps/mail/api/messages?mailboxId=2&limit=20&view=singleton' => static function ($method) use (&$reads) {
+				self::assertSame('GET', $method);
+				return ++$reads === 1 ? ['_http' => 409] : [['databaseId' => 9, 'mailboxId' => 2]];
+			},
+		]);
+		self::assertSame(9, $native->mailMessages($native->mailboxes(1), 2)[0]['databaseId']);
+		self::assertSame(1, $syncs);
+		self::assertSame(2, $reads);
 	}
 	public function testForeignConfiguredScopeStopsBeforeTransport(): void {
 		[$native, $client] = $this->fixture([]);

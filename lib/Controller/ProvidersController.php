@@ -9,6 +9,7 @@ use OCA\FadenstackAgent\Providers\ContactsProvider;
 use OCA\FadenstackAgent\Providers\TasksProvider;
 use OCA\FadenstackAgent\Providers\ProviderAuditService;
 use OCA\FadenstackAgent\Providers\StructuredProvider;
+use OCA\FadenstackAgent\Providers\CommunicationProvider;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
 use OCP\AppFramework\Controller;
@@ -28,6 +29,7 @@ final class ProvidersController extends Controller {
 		private ContactsProvider $contacts,
 		private ProviderAuditService $audit,
 		private StructuredProvider $structured,
+		private CommunicationProvider $communications,
 		private LoggerInterface $logger,
 	) {
 		parent::__construct($appName, $request);
@@ -50,8 +52,8 @@ final class ProvidersController extends Controller {
 	}
 
 	private function attempt(): array {
-		$id = $this->calendar->attemptId() ?? $this->tasks->attemptId() ?? $this->contacts->attemptId() ?? $this->structured->attemptId();
-		return $id ? ['actionId' => $id, 'outcome' => $id === $this->structured->attemptId() ? $this->structured->attemptOutcome() : 'unknown', 'inspectionAvailable' => true] : [];
+		$id = $this->calendar->attemptId() ?? $this->tasks->attemptId() ?? $this->contacts->attemptId() ?? $this->structured->attemptId() ?? $this->communications->attemptId();
+		return $id ? ['actionId' => $id, 'outcome' => $id === $this->structured->attemptId() ? $this->structured->attemptOutcome() : ($id === $this->communications->attemptId() ? $this->communications->attemptOutcome() : 'unknown'), 'inspectionAvailable' => true] : [];
 	}
 
 	/** Audit remains available after dispatch is disabled; native session + CSRF still apply. */
@@ -71,13 +73,13 @@ final class ProvidersController extends Controller {
 
 	#[NoAdminRequired]
 	public function actions(): DataResponse {
-		return $this->auditRun(fn () => array_merge($this->audit->listing(), $this->structured->actions()));
+		return $this->auditRun(fn () => array_merge($this->audit->listing(), $this->structured->actions(), $this->communications->actions()));
 	}
 
 	#[NoAdminRequired]
 	public function inspectAction(string $id): DataResponse {
 		return $this->auditRun(function () use ($id): array {
-			try { return $this->audit->inspect($id); } catch (\Throwable) { return $this->structured->inspect($id); }
+			try { return $this->audit->inspect($id); } catch (\Throwable) { try { return $this->structured->inspect($id); } catch (\Throwable) { return $this->communications->inspect($id); } }
 		});
 	}
 
@@ -92,9 +94,20 @@ final class ProvidersController extends Controller {
 				$calendar = [[...$tasks[0], 'provider' => 'calendar', 'tools' => ['nc_calendar_list'],
 					'conflict' => 'read-only', 'history' => 'not-applicable', 'canWrite' => false, 'discoveryOnly' => true]];
 			}
-			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities())];
+			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities(), $this->communications->capabilities())];
 		});
 	}
+
+	#[NoAdminRequired]
+	public function communicationRead(string $provider, array $args = []): DataResponse { return $this->run(fn () => $this->communications->read($provider, $args)); }
+	#[NoAdminRequired]
+	public function communicationPropose(string $toolName, array $args, string $requestId): DataResponse { return $this->run(fn () => $this->communications->propose($toolName, $args, $requestId)); }
+	#[NoAdminRequired]
+	public function communicationApprove(string $id, string $digest): DataResponse { return $this->run(fn () => $this->communications->approve($id, $digest)); }
+	#[NoAdminRequired]
+	public function communicationCommit(string $id, string $digest, int $step): DataResponse { return $this->run(fn () => $this->communications->commit($id, $digest, $step)); }
+	#[NoAdminRequired]
+	public function communicationCancel(string $id): DataResponse { return $this->auditRun(fn () => $this->communications->cancel($id)); }
 
 	#[NoAdminRequired]
 	public function structuredRead(string $provider, int $collectionId): DataResponse {

@@ -3,7 +3,7 @@ import { NativeViewGuard, type NativeView } from './nativeView.ts'
 import type { WriteResult } from '../integrations/nextcloud/types.ts'
 import type { ViewOutcome } from './coordinator.ts'
 
-const APPS = ['files', 'calendar', 'tasks', 'contacts', 'tables', 'deck'] as const
+const APPS = ['files', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed'] as const
 type NativeApp = typeof APPS[number]
 
 /** Own only the native child. Original DOM, parent chat and token memory remain mounted. */
@@ -45,6 +45,9 @@ export class NativeWorkspace {
 		const current = this.snapshot()
 		if (current.app !== app) return // An off-screen change retains an honest not-visible receipt.
 		if (current.editState !== 'clean') throw new Error(current.reason)
+		// Talk owns a single native conversation session. A hidden parent plus a
+		// child frame would compete for it and trigger its duplicate-session UI.
+		if (app === 'spreed') return
 		if (this.#frame) return
 		this.#app = app as NativeApp
 		const original = new URL(this.page.location.href)
@@ -57,7 +60,7 @@ export class NativeWorkspace {
 		const toolbar = this.page.createElement('div')
 		toolbar.className = 'fadenstack-native-workspace-toolbar'
 		const label = this.page.createElement('span')
-		label.textContent = app[0].toUpperCase() + app.slice(1)
+		label.textContent = app === 'spreed' ? 'Talk' : app[0].toUpperCase() + app.slice(1)
 		toolbar.append(label)
 		const refresh = this.page.createElement('button')
 		refresh.type = 'button'
@@ -105,6 +108,7 @@ export class NativeWorkspace {
 	}
 
 	async refresh(result: WriteResult, signal: AbortSignal): Promise<ViewOutcome> {
+		if (result.provider?.app === 'spreed') return this.observeTalk(result, signal)
 		if (!result.provider || !this.#frame || this.#app !== result.provider.app) return 'refresh_required'
 		if (result.provider.app === 'files' && !/^[1-9][0-9]{0,14}$/.test(result.provider.collectionId)) return 'refresh_required'
 		if (this.snapshot().editState !== 'clean') return 'refresh_required'
@@ -120,9 +124,34 @@ export class NativeWorkspace {
 			const expected = result.provider.app === 'tables' ? /(?:#\/table\/|\/tables\/table\/)([1-9][0-9]*)(?:[/?]|$)/ : /(?:#\/board\/|\/deck\/board\/)([1-9][0-9]*)(?:[/?]|$)/
 			if (expected.exec(route)?.[1] !== result.provider.collectionId) return 'not_visible'
 		}
+		if (result.provider.app === 'mail' && !/^\d+$/.test(result.provider.collectionId)) return 'refresh_required'
+		if (result.provider.app === 'mail') {
+			if (!Number.isSafeInteger(result.provider.mailboxId) || result.provider.mailboxId! < 1) return 'refresh_required'
+			target.href = new URL(generateUrl('/apps/mail/box/' + result.provider.mailboxId), this.page.location.href).href
+		}
 		target.searchParams.set('fadenstack-workspace-child', '1')
 		await this.reload(target, signal)
 		return 'refreshed'
+	}
+
+	/** Observe Talk's existing native history updates without touching its store or editor. */
+	private async observeTalk(result: WriteResult, signal: AbortSignal): Promise<ViewOutcome> {
+		const token = result.provider!.collectionId
+		if (this.#frame || !/^[a-z0-9]{4,30}$/.test(token) || !Number.isSafeInteger(result.file.id) || result.file.id < 1) return 'refresh_required'
+		const view = this.main.snapshot()
+		if (view.app !== 'spreed' || !new URL(this.page.location.href).pathname.endsWith('/call/' + token)) return 'not_visible'
+		if (view.editState !== 'clean') return 'refresh_required'
+		const selector = '#app-content [data-message-id="' + result.file.id + '"], #app-content-vue [data-message-id="' + result.file.id + '"]'
+		const visible = () => [...this.page.querySelectorAll<HTMLElement>(selector)].some(node => node.getClientRects().length > 0)
+		if (visible()) return 'refreshed'
+		return new Promise<ViewOutcome>((resolve, reject) => {
+			const observer = new MutationObserver(() => { if (visible()) { cleanup(); resolve('refreshed') } })
+			const aborted = () => { cleanup(); reject(signal.reason) }
+			const cleanup = () => { observer.disconnect(); signal.removeEventListener('abort', aborted) }
+			observer.observe(this.page.body, { childList: true, subtree: true })
+			signal.addEventListener('abort', aborted, { once: true })
+			if (signal.aborted) aborted()
+		})
 	}
 
 	private async reload(target: URL, signal: AbortSignal): Promise<void> {

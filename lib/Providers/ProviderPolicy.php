@@ -44,12 +44,13 @@ final class ProviderPolicy {
 			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk'])) {
 				throw new \InvalidArgumentException();
 			}
-			$config = $value[$section] ?? null;
+			if (!array_key_exists($section, $value)) throw new \OutOfBoundsException();
+			$config = $value[$section];
 			if (!is_array($config) || !is_bool($config['enabled'] ?? null) || array_diff(array_keys($config), ['enabled', 'collections', 'sourceClass', 'writesEnabled'])) {
 				throw new \InvalidArgumentException();
 			}
 			$collections = $config['collections'] ?? null;
-			if (!is_array($collections) || !array_is_list($collections) || !$collections || count($collections) > 8
+			if (!is_array($collections) || !array_is_list($collections) || (!$collections && $config['enabled']) || count($collections) > 8
 				|| count(array_unique($collections, SORT_REGULAR)) !== count($collections)) {
 				throw new \InvalidArgumentException();
 			}
@@ -67,6 +68,8 @@ final class ProviderPolicy {
 				throw new \InvalidArgumentException();
 			}
 			$writesAllowed = ($config['writesEnabled'] ?? false) && $this->configuration->providerWritesEnabled();
+		} catch (\OutOfBoundsException) {
+			throw new Problem(ucfirst($section) . ' tools have not been configured.', 403);
 		} catch (\Throwable) {
 			throw new Problem('The administrator provider policy is invalid.', 503);
 		}

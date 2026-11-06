@@ -58,7 +58,7 @@ final class StructuredTickets {
 			if ($count >= 128) throw new Problem('Too many recent native requests. Wait for their expiry.', 429);
 			$q = $this->db->getQueryBuilder();
 			$active = (int)$q->select($q->func()->count('*'))->from('fdn_provider_tickets')->where($q->expr()->eq('owner_hash', $q->createNamedParameter($identity->ownerHash)))
-				->andWhere($q->expr()->in('state', $q->createNamedParameter(['preparing', 'prepared', 'approving', 'approved'], IQueryBuilder::PARAM_STR_ARRAY)))->executeQuery()->fetchOne();
+				->andWhere($q->expr()->in('state', $q->createNamedParameter(['preparing', 'prepared', 'approving', 'approved', 'awaiting_step'], IQueryBuilder::PARAM_STR_ARRAY)))->executeQuery()->fetchOne();
 			if ($active >= 20 && $state !== 'cancelled') throw new Problem('Too many pending native approvals.', 429);
 			$q = $this->db->getQueryBuilder();
 			try {
@@ -68,7 +68,7 @@ final class StructuredTickets {
 		} finally { $this->locks->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE); }
 	}
 	public function move(JournalIdentity $identity, string $id, array $from, string $to): bool {
-		if (array_diff($from, ['preparing', 'prepared', 'approving', 'approved', 'dispatching', 'finished', 'cancelled']) || !in_array($to, ['prepared', 'approving', 'approved', 'dispatching', 'finished', 'cancelled'], true)) throw new Problem('Invalid native ticket transition.', 400);
+		if (array_diff($from, ['preparing', 'prepared', 'approving', 'approved', 'dispatching', 'awaiting_step', 'finished', 'cancelled']) || !in_array($to, ['prepared', 'approving', 'approved', 'dispatching', 'awaiting_step', 'finished', 'cancelled'], true)) throw new Problem('Invalid native ticket transition.', 400);
 		$q = $this->query($identity, $id);
 		return $q->update('fdn_provider_tickets')->set('state', $q->createNamedParameter($to))
 			->andWhere($q->expr()->in('state', $q->createNamedParameter($from, IQueryBuilder::PARAM_STR_ARRAY)))->executeStatement() === 1;

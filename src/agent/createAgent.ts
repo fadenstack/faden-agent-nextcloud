@@ -92,7 +92,7 @@ import { commandChat } from './commands.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
-import type { CalendarCommitOutcome, ProviderInspection, StructuredProposal } from '../providers/client.ts'
+import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, ProviderInspection, StructuredProposal } from '../providers/client.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
@@ -112,6 +112,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #tablesProposals = new Map<string, TablesProposal>()
 	readonly #deckProposals = new Map<string, DeckProposal>()
 	readonly #davProposals = new Map<string, DavProposal>()
+	readonly #communicationProposals = new Map<string, CommunicationProposal>()
 	readonly #mailProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
 	readonly #talkProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
 	readonly #collectivesProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
@@ -182,8 +183,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const calendarEnabled = !this.#providerReads && experimental && config.calendarEnabled === true && !!files.calendar
 		const tasksEnabled = !this.#providerReads && experimental && config.tasksEnabled === true && !!files.tasks
 		const contactsEnabled = !this.#providerReads && experimental && config.contactsEnabled === true && !!files.contacts
-		const mailEnabled = experimental && config.mailEnabled === true && !!files.mail
-		const talkEnabled = experimental && config.talkEnabled === true && !!files.talk
+		const mailEnabled = (!!this.#providerReads && !!files.nativeProviders?.communicationPropose) || (experimental && config.mailEnabled === true && !!files.mail)
+		const talkEnabled = (!!this.#providerReads && !!files.nativeProviders?.communicationPropose) || (experimental && config.talkEnabled === true && !!files.talk)
 		const collectivesEnabled = experimental && config.collectivesEnabled === true && !!files.collectives
 		const formsEnabled = experimental && config.formsEnabled === true && !!files.forms
 		const whiteboardEnabled = experimental && config.whiteboardEnabled === true && !!files.whiteboard
@@ -230,7 +231,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
-					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts', 'tables', 'deck'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
+					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
 					return inner.stream(messages, available
 						? {
 							...options,
@@ -242,7 +243,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addToolStage(StageOrder.custom, {
 				invoke: async (invocation, next) => {
-					if (this.#providerReads && ['calendar', 'tasks', 'contacts', 'tables', 'deck'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
+					if (this.#providerReads && ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
 					else this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
 					if (this.#providerReads?.hasSources && fileCapability(invocation.tool.name)?.subsystem === 'files' && fileCapability(invocation.tool.name)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
@@ -279,7 +280,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						|| (EXTENDED_FILES_MUTATIONS.has(request.toolName) && (!files.proposeFolderCreate || request.toolName !== 'nc_files_create_folder')))
 						&& request.source === 'host'
 					if (expanded) {
-						if (!experimentalAdaptersAllowed(this.config) && !(files.nativeProviders?.structuredPropose && this.#providerReads?.offeredTools.includes(request.toolName) && (TABLES_MUTATIONS.has(request.toolName) || DECK_MUTATIONS.has(request.toolName))) && !(files.fileOperations && this.config.filesMutationsEnabled && EXTENDED_FILES_MUTATIONS.has(request.toolName))) throw new Error('Expanded adapters require isolated development acceptance.')
+						if (!experimentalAdaptersAllowed(this.config) && !(files.nativeProviders?.communicationPropose && this.#providerReads?.offeredTools.includes(request.toolName) && (MAIL_MUTATIONS.has(request.toolName) || TALK_MUTATIONS.has(request.toolName))) && !(files.nativeProviders?.structuredPropose && this.#providerReads?.offeredTools.includes(request.toolName) && (TABLES_MUTATIONS.has(request.toolName) || DECK_MUTATIONS.has(request.toolName))) && !(files.fileOperations && this.config.filesMutationsEnabled && EXTENDED_FILES_MUTATIONS.has(request.toolName))) throw new Error('Expanded adapters require isolated development acceptance.')
 						this.#expandedInputs.set(request.callId, canonical(request.arguments))
 						request = { ...request, arguments: structuredClone(request.arguments) }
 					}
@@ -374,7 +375,18 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, before: plan.before, content: plan.after, nativeContent: plan.rawAfter ?? plan.rawBefore },
 						}
 					}
-					if (MAIL_MUTATIONS.has(request.toolName) && request.source === 'host') {
+					if ((MAIL_MUTATIONS.has(request.toolName) || TALK_MUTATIONS.has(request.toolName)) && request.source === 'host' && files.nativeProviders?.communicationPropose && this.#providerReads) {
+						if (this.#writeBlocked || !this.#providerReads.offeredTools.includes(request.toolName)) throw new Error('This native communications operation is unavailable.')
+						const binding = await this.workspace?.prepareProvider(MAIL_MUTATIONS.has(request.toolName) ? 'mail' : 'spreed')
+						await this.#providerReads.assertProcessing(signal)
+						const plan = await files.nativeProviders.communicationPropose(request.toolName, request.arguments, signal)
+						this.#communicationProposals.set(request.callId, plan)
+						this.#providerReads.inspectLocalSource(plan.resource)
+						this.#providerReads.assertStructuredWrite(plan.provider, plan.resource.collectionId)
+						if (binding) this.#proposalViews.set(request.callId, binding)
+						request = { ...request, canAllowAlways: false, canAllowForSession: false, arguments: { ...request.arguments, proposalId: plan.id, digest: plan.digest, target: plan.target, before: plan.before, content: plan.payload, limitation: plan.limitation, nativeAudience: plan.resource.audience, fields: plan.display } }
+					}
+					if (MAIL_MUTATIONS.has(request.toolName) && request.source === 'host' && !files.nativeProviders?.communicationPropose) {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const target = request.toolName === 'nc_mail_send_draft' ? `Send draft #${request.arguments.draftId}` : `Draft: ${request.arguments.subject}`
 						const plan = { name: request.toolName, args: { ...request.arguments }, target, revision: `mail:${request.toolName}:${request.callId}` }
@@ -386,7 +398,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, content: request.arguments },
 						}
 					}
-					if (TALK_MUTATIONS.has(request.toolName) && request.source === 'host') {
+					if (TALK_MUTATIONS.has(request.toolName) && request.source === 'host' && !files.nativeProviders?.communicationPropose) {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const target = `Send message to room ${request.arguments.roomToken}`
 						const plan = { name: request.toolName, args: { ...request.arguments }, target, revision: `talk:${request.toolName}:${request.callId}` }
@@ -478,6 +490,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						if (deckNative) this.files.nativeProviders?.structuredCancel?.(deckNative).catch(() => {})
 						this.#deckProposals.delete(request.callId)
 						this.#davProposals.delete(request.callId)
+						const communications = this.#communicationProposals.get(request.callId)
+						if (communications) this.files.nativeProviders?.communicationCancel?.(communications).catch(() => {})
+						this.#communicationProposals.delete(request.callId)
 						this.#mailProposals.delete(request.callId)
 						this.#talkProposals.delete(request.callId)
 						this.#collectivesProposals.delete(request.callId)
@@ -1030,12 +1045,19 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
 		}
-		if (MAIL_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
+		if ((MAIL_MUTATIONS.has(part.toolName) || TALK_MUTATIONS.has(part.toolName)) && part.request.source === 'host' && this.files.nativeProviders?.communicationApprove) {
+			const proposal = this.#communicationProposals.get(part.request.callId)
+			if (!proposal || !part.isPending) throw new Error('This native proposal is no longer pending.')
+			await this.files.assertIdentity(this.#stop.signal)
+			await this.files.nativeProviders.communicationApprove(proposal, this.#stop.signal)
+			if (!part.isPending || !this.chat.isBusy) { await this.files.nativeProviders.communicationCancel?.(proposal); throw new Error('This approval was stopped.') }
+		}
+		if (MAIL_MUTATIONS.has(part.toolName) && part.request.source === 'host' && !this.files.nativeProviders?.communicationApprove) {
 			const proposal = this.#mailProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
 		}
-		if (TALK_MUTATIONS.has(part.toolName) && part.request.source === 'host') {
+		if (TALK_MUTATIONS.has(part.toolName) && part.request.source === 'host' && !this.files.nativeProviders?.communicationApprove) {
 			const proposal = this.#talkProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
@@ -1067,6 +1089,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	async deny(part: ApprovalPart): Promise<void> {
 		if (!part.isPending) return
+		const communications = this.#communicationProposals.get(part.request.callId)
+		if (communications) { this.#communicationProposals.delete(part.request.callId); await this.files.nativeProviders?.communicationCancel?.(communications) }
 		const native = this.#extendedProposals.get(part.request.callId)?.native
 		if (native) { this.#extendedProposals.delete(part.request.callId); void this.files.fileOperations?.cancel(native).catch(() => {}) }
 		if (part.toolName === 'nc_files_create_folder' && part.request.source === 'host') {
@@ -1094,7 +1118,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#expandedPreviews.delete(callId)
 		const nativeFiles = this.config.development && this.config.filesMutationsEnabled && !!this.files.fileOperations && !!this.#extendedProposals.get(callId)?.native
 		const nativeStructured = this.config.development && !!this.#providerReads && !!(this.#tablesProposals.get(callId)?.native ?? this.#deckProposals.get(callId)?.native)
-		if ((!experimentalAdaptersAllowed(this.config) && !nativeFiles && !nativeStructured) || !approved || expected === undefined || expected !== canonical(args)) {
+		const nativeCommunication = this.config.development && !!this.#providerReads && !!this.#communicationProposals.get(callId)
+		if ((!experimentalAdaptersAllowed(this.config) && !nativeFiles && !nativeStructured && !nativeCommunication) || !approved || expected === undefined || expected !== canonical(args)) {
 			this.#writeBlocked = true
 			throw new Error('The arguments changed or no individual approval exists. Review a new proposal.')
 		}
@@ -2184,7 +2209,70 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		}
 	}
 
+	async readMail(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown> {
+		if (this.files.nativeProviders?.communicationRead && this.#providerReads) return this.readCommunication('mail', args, signal)
+		return this.files.mail!.readMail(args.query as string | undefined, args.accountId as string | undefined, signal)
+	}
+
+	async readTalk(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown> {
+		if (this.files.nativeProviders?.communicationRead && this.#providerReads) return this.readCommunication('talk', args, signal)
+		return this.files.talk!.readContext(args.roomToken as string, signal)
+	}
+
+	private async readCommunication(provider: 'mail' | 'talk', args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationRead> {
+		await this.files.assertIdentity(signal)
+		const guard = this.#providerReads!.readGuard()
+		const result = await this.files.nativeProviders!.communicationRead!(provider, args, signal)
+		guard(); signal.throwIfAborted()
+		if (result.resource.provider !== provider) throw new Error('Invalid native communications source.')
+		this.#providerReads!.recordSource(result.resource)
+		return result
+	}
+
+	private async dispatchCommunication(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.#writeBlocked) throw new Error('Inspect the previous action before making another change.')
+		const proposal = this.#communicationProposals.get(call.callId)
+		if (!proposal || proposal.toolName !== name) throw new Error('No individually approved native proposal exists.')
+		this.consumeExpandedApproval(call.callId, args)
+		const binding = this.#proposalViews.get(call.callId)
+		let generation: number | undefined
+		const cancel = () => { void this.files.nativeProviders!.communicationCancel!(proposal).catch(() => {}) }
+		call.signal.addEventListener('abort', cancel, { once: true })
+		try {
+			await this.files.assertIdentity(call.signal); call.signal.throwIfAborted()
+			generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
+			for (let step = 0; step < 3; step++) {
+				call.signal.throwIfAborted()
+				await this.files.assertIdentity(call.signal)
+				if (binding && generation !== undefined) this.workspace!.assertContinuation(call.callId, generation, binding)
+				const result = await this.files.nativeProviders!.communicationCommit!(proposal, call.signal, step)
+				if (result.provider !== proposal.provider || result.target !== proposal.target || result.history !== 'audit-only' || !/^[a-f0-9]{32}$/.test(result.actionId)) throw new Error('Invalid native communications receipt.')
+				if (result.continue && result.outcome === 'running') continue
+				if (result.outcome !== 'verified' || result.continue) throw new Error('A native step is partial or unknown. Inspect the recorded action before continuing.')
+				this.#communicationProposals.delete(call.callId)
+				const app = proposal.provider === 'mail' ? 'mail' : 'spreed'
+				const id = Number(result.result?.draftId ?? result.result?.messageId ?? 0)
+				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app, collectionId: result.collectionId!, filename: String(id), mailboxId: result.mailboxId } }, call.signal) : undefined
+				// Sending/retiring changes earlier conversation sources. Finish locally;
+				// never replay old content without a fresh native authorization.
+				this.#providerCompletion = proposal.provider === 'mail' ? (name === 'nc_mail_save_draft' ? 'The native draft was verified and saved. No email was sent.' : 'The native Mail send was verified and recorded. SMTP acceptance does not guarantee recipient delivery.') : 'The Talk message was verified in native history and recorded. Notifications may occur. Sending has no Undo.'
+				return { ...result, ...(activity ? { view: activity.view } : {}) }
+			}
+			throw new Error('The native effect exceeded its bounded number of steps.')
+		} catch (error) {
+			this.#writeBlocked = true
+			cancel()
+			const refusal = (error as { response?: { data?: { outcome?: string; message?: string } } })?.response?.data
+			if (generation !== undefined) {
+				if (refusal?.outcome === 'not-dispatched') this.workspace!.notDispatched(call.callId, generation, proposal.target, refusal.message || 'The native provider refused dispatch.', name)
+				else this.workspace!.failed(call.callId, generation, proposal.target, error, name)
+			}
+			throw error
+		} finally { call.signal.removeEventListener('abort', cancel) }
+	}
+
 	async commitMailMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.files.nativeProviders?.communicationCommit) return this.dispatchCommunication(name, args, call)
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#mailProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
@@ -2222,6 +2310,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	async commitTalkMutation(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown> {
+		if (this.files.nativeProviders?.communicationCommit) return this.dispatchCommunication(name, args, call)
 		if (this.#writeBlocked) throw new Error('Start a new request before proposing another change.')
 		const proposal = this.#talkProposals.get(call.callId)
 		if (!proposal || proposal.name !== name) throw new Error('No individually approved proposal exists for this tool call.')
@@ -2513,6 +2602,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		for (const proposal of this.#deckProposals.values()) if (proposal.native) this.files.nativeProviders?.structuredCancel?.(proposal.native).catch(() => {})
 		this.#deckProposals.clear()
 		this.#davProposals.clear()
+		for (const p of this.#communicationProposals.values()) this.files.nativeProviders?.communicationCancel?.(p).catch(() => {})
+		this.#communicationProposals.clear()
 		this.#expandedInputs.clear()
 		this.#expandedPreviews.clear()
 		this.#expandedApproved.clear()
@@ -2522,6 +2613,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	stop(): void {
+		for (const p of this.#communicationProposals.values()) this.files.nativeProviders?.communicationCancel?.(p).catch(() => {})
 		for (const p of [...this.#tablesProposals.values(), ...this.#deckProposals.values()]) if (p.native) this.files.nativeProviders?.structuredCancel?.(p.native).catch(() => {})
 		this.cancelFileOperations()
 		for (const proposal of this.#folderCreateProposals.values()) {
@@ -2565,6 +2657,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		for (const proposal of this.#deckProposals.values()) if (proposal.native) this.files.nativeProviders?.structuredCancel?.(proposal.native).catch(() => {})
 		this.#deckProposals.clear()
 		this.#davProposals.clear()
+		for (const p of this.#communicationProposals.values()) this.files.nativeProviders?.communicationCancel?.(p).catch(() => {})
+		this.#communicationProposals.clear()
 		this.#expandedInputs.clear()
 		this.#expandedPreviews.clear()
 		this.#expandedApproved.clear()

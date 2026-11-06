@@ -7,8 +7,8 @@ namespace OCA\FadenstackAgent\History;
 /** Bounded internal checkpoints; never a recipe executor or permission grant. */
 final class EffectProgress {
 	private const STEPS = [
-		'nc_mail_save_draft' => ['save_local_draft', 'persist_imap'],
-		'nc_mail_send_draft' => ['stage_outbox', 'send_smtp'],
+		'nc_mail_save_draft' => ['save_local_draft', 'persist_imap', 'retire_source'],
+		'nc_mail_send_draft' => ['stage_outbox', 'send_smtp', 'retire_source'],
 	];
 
 	public static function advance(string $operation, array $effects, string $step, string $phase, array $facts = []): array {

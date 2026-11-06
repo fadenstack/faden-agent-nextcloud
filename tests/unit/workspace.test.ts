@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NativeViewGuard, type NativeView } from '../../src/workspace/nativeView.ts'
 import { WorkspaceCoordinator } from '../../src/workspace/coordinator.ts'
+import { NativeWorkspace } from '../../src/workspace/nativeWorkspace.ts'
 
 const file = { id: 12, name: 'summary.md', path: '/Project/summary.md', mime: 'text/markdown', size: 8, etag: 'after', folder: false, permissions: 31, url: '/f/12' }
 const initial: NativeView = { app: 'files', key: '/apps/files/files/1', epoch: 1, editState: 'clean', reason: 'Finish editing first.' }
@@ -16,6 +17,24 @@ function nativeGuard() {
 }
 
 describe('Native editor protection', () => {
+	it('keeps Talk in one native session and observes its actual visible message', async () => {
+		history.replaceState(null, '', '/call/abcd1234')
+		document.body.innerHTML = '<main id="app-content"><div role="textbox" contenteditable="true"></div></main>'
+		const workspace = new NativeWorkspace()
+		try {
+			await workspace.prepare('spreed')
+			expect(document.querySelector('iframe')).toBeNull()
+			const signal = new AbortController()
+			const update = workspace.refresh({ operation: 'nc_talk_send_message', file: { ...file, id: 20 }, provider: { app: 'spreed', collectionId: 'abcd1234', filename: '20' } }, signal.signal)
+			const message = document.createElement('li'); message.dataset.messageId = '20'
+			vi.spyOn(message, 'getClientRects').mockReturnValue([{} as DOMRect] as unknown as DOMRectList)
+			document.querySelector('main')!.append(message)
+			expect(await update).toBe('refreshed')
+			document.querySelector('[role="textbox"]')!.dispatchEvent(new Event('input', { bubbles: true }))
+			await expect(workspace.prepare('spreed')).rejects.toThrow('Finish or cancel')
+			expect(await workspace.refresh({ operation: 'nc_talk_send_message', file, provider: { app: 'spreed', collectionId: 'abcd1234', filename: '12' } }, signal.signal)).toBe('refresh_required')
+		} finally { workspace.dispose() }
+	})
 	it('latches edits from a native child document using that document\'s event realm', () => {
 		const frame = document.createElement('iframe')
 		document.body.append(frame)

@@ -2,6 +2,21 @@ import type { ProviderCapability } from './registry.ts'
 import type { ProviderResource } from './scope.ts'
 import type { TableSnapshot, DeckBoardSnapshot } from '../integrations/nextcloud/types.ts'
 
+export interface CommunicationRead extends Record<string, unknown> { resource: ProviderResource }
+export interface CommunicationOutcome {
+	readonly outcome: 'verified' | 'running' | 'partial'
+	readonly continue: boolean
+	readonly actionId: string
+	readonly provider: 'mail' | 'talk'
+	readonly target: string
+	readonly collectionId?: string
+	readonly mailboxId?: number
+	readonly nativeId?: number
+	readonly step?: string
+	readonly result?: Readonly<Record<string, unknown>>
+	readonly history: 'audit-only'
+}
+
 export interface StructuredProposal {
 	readonly id: string
 	readonly digest: string
@@ -20,6 +35,7 @@ export interface StructuredRead {
 	readonly snapshot: TableSnapshot | DeckBoardSnapshot
 	readonly resource: ProviderResource
 }
+export interface CommunicationProposal extends Omit<StructuredProposal, 'provider'> { provider: 'mail' | 'talk' }
 export interface StructuredOutcome {
 	readonly status: 'saved' | 'deleted'
 	readonly outcome: 'verified'
@@ -80,7 +96,7 @@ export type ContactReadResult = (ContactSummary & { readonly etag: string })
 
 export interface ProviderAuditItem {
 	readonly id: string
-	readonly provider: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck'
+	readonly provider: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'talk'
 	readonly name: string
 	readonly target: string
 	readonly state: string
@@ -92,7 +108,7 @@ export interface ProviderAuditItem {
 
 export interface ProviderInspection {
 	readonly action: ProviderAuditItem
-	readonly observed: 'present' | 'absent' | 'matches_saved_content' | 'different_content' | 'not_in_active_collection'
+	readonly observed: 'present' | 'absent' | 'matches_saved_content' | 'different_content' | 'not_in_active_collection' | 'recorded-attempt'
 	readonly journalState: string
 	readonly outcome: 'verified_committed' | 'unknown'
 	readonly repeatedDispatch: false
@@ -100,6 +116,11 @@ export interface ProviderInspection {
 }
 
 export interface NativeProvidersApi {
+	communicationRead?(provider: 'mail' | 'talk', args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationRead>
+	communicationPropose?(toolName: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationProposal>
+	communicationApprove?(proposal: CommunicationProposal, signal: AbortSignal): Promise<unknown>
+	communicationCommit?(proposal: CommunicationProposal, signal: AbortSignal, step: number): Promise<CommunicationOutcome>
+	communicationCancel?(proposal: CommunicationProposal): Promise<unknown>
 	structuredRead?(provider: 'tables' | 'deck', collectionId: number, signal: AbortSignal): Promise<StructuredRead>
 	structuredPropose?(toolName: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<StructuredProposal>
 	structuredApprove?(proposal: StructuredProposal, signal: AbortSignal): Promise<{ readonly approved: boolean }>
@@ -133,6 +154,20 @@ export interface NativeProvidersApi {
 /** Only our fixed native endpoints; credentials/URLs never appear in tool arguments. */
 export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>): NativeProvidersApi {
 	return {
+		communicationRead: (provider, args, signal) => post('/providers/communications/read', { provider, args }, signal),
+		communicationPropose: async (toolName, args, signal) => {
+			const requestId = [...crypto.getRandomValues(new Uint8Array(24))].map(value => value.toString(16).padStart(2, '0')).join('')
+			try {
+				const value = await post<CommunicationProposal>('/providers/communications/propose', { toolName, args, requestId }, signal)
+				if (value.id !== requestId || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName || !['mail', 'talk'].includes(value.provider)
+					|| value.history !== 'audit-only' || !Array.isArray(value.display) || !value.resource || !value.payload) throw new Error('Invalid native communications preview.')
+				signal.throwIfAborted()
+				return value
+			} catch (error) { await post(`/providers/communications/${requestId}/cancel`, {}, new AbortController().signal).catch(() => {}); throw error }
+		},
+		communicationApprove: (p, signal) => post(`/providers/communications/${p.id}/approve`, { digest: p.digest }, signal),
+		communicationCommit: (p, signal, step) => post(`/providers/communications/${p.id}/commit`, { digest: p.digest, step }, signal),
+		communicationCancel: p => post(`/providers/communications/${p.id}/cancel`, {}, new AbortController().signal),
 		structuredRead: async (provider, collectionId, signal) => post<StructuredRead>('/providers/structured/read', { provider, collectionId }, signal),
 		structuredPropose: async (toolName, args, signal) => {
 			const requestId = [...crypto.getRandomValues(new Uint8Array(24))].map(value => value.toString(16).padStart(2, '0')).join('')

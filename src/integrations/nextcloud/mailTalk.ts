@@ -1,8 +1,8 @@
 /**
  * Nextcloud Mail and Talk (Spreed) adapters and tools (NC11, NC12)
  *
- * Experimental tool definitions. Native transports, MIME/read-state semantics,
- * server-owned previews and native audience enforcement remain unimplemented.
+ * Bounded native transports use server-owned previews and the current user's
+ * native session. Providers remain behind administrator development gates.
  */
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { FileApi, MailDraft } from './types.ts'
@@ -19,17 +19,19 @@ export const TALK_MUTATIONS = new Set([
 
 export interface MailTalkHost {
 	files: FileApi
+	readMail?(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
+	readTalk?(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
 	recordResult(callId: string, value: unknown, context: ToolCallContext): void
 	commitMailMutation?(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown>
 	commitTalkMutation?(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown>
 }
 
-export function validateMailReadArgs(args: Readonly<Record<string, unknown>>): { query?: string; accountId?: string } {
+export function validateMailReadArgs(args: Readonly<Record<string, unknown>>): { query?: string; accountId?: string; mailboxId?: number; messageId?: number } {
 	const query = args.query !== undefined ? stringArgument(args.query, 'query').trim() : undefined
 	const accountId = args.accountId !== undefined ? stringArgument(args.accountId, 'accountId').trim() : undefined
 	if (query !== undefined && query.length > 200) throw new Error('Search query must be at most 200 characters.')
 	if (accountId !== undefined && !/^[0-9a-zA-Z_-]+$/.test(accountId)) throw new Error('Invalid accountId format.')
-	return { query, accountId }
+	return { query, accountId, ...(args.mailboxId !== undefined ? { mailboxId: positiveInteger(args.mailboxId, 'mailboxId') } : {}), ...(args.messageId !== undefined ? { messageId: positiveInteger(args.messageId, 'messageId') } : {}) }
 }
 
 export function validateMailDraftArgs(args: Readonly<Record<string, unknown>>): MailDraft {
@@ -90,18 +92,21 @@ export function mailTools(host: MailTalkHost) {
 		defineTool({
 			name: 'nc_mail_read',
 			toolClass: 'read',
-			description: 'Read authorized Nextcloud Mail accounts, mailboxes, threads and message contents without altering unread or read-flag markers.',
+			description: 'Read scoped Mail accounts, mailboxes and the latest 20 messages in a selected mailbox, or bounded MIME content by messageId. Does not mark messages read. Search filters only this recent window.',
 			parameters: {
 				type: 'object',
 				properties: {
 					query: { type: 'string', maxLength: 200, description: 'Optional search filter.' },
 					accountId: { type: 'string', description: 'Optional specific account ID.' },
+					mailboxId: { type: 'integer', minimum: 1, description: 'Mailbox returned by a scoped native read. Defaults to Inbox.' },
+					messageId: { type: 'integer', minimum: 1, description: 'Read the complete bounded message/draft and its revision/attachment references.' },
 				},
 				additionalProperties: false,
 			},
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const { query, accountId } = validateMailReadArgs(args)
+				if (host.readMail) { const result = await host.readMail(args, c.signal); host.recordResult(c.callId, result, c); return result }
 				if (!host.files.mail) throw new Error('Nextcloud Mail service is unavailable.')
 				const result = await host.files.mail.readMail(query, accountId, c.signal)
 				host.recordResult(c.callId, result, c)
@@ -117,9 +122,12 @@ export function mailTools(host: MailTalkHost) {
 				properties: {
 					accountRef: { type: 'string', description: 'Account ID or reference.' },
 					draftId: { type: 'integer', minimum: 1, description: 'Optional existing draft ID to update.' },
+					expectedRevision: { type: 'string', description: 'Required original MIME revision when updating a persisted draft.' },
 					subject: { type: 'string', minLength: 1, maxLength: 255 },
 					body: { type: 'string', minLength: 1, maxLength: 65536 },
 					recipients: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 50 },
+					cc: { type: 'array', items: { type: 'string' }, maxItems: 50 },
+					bcc: { type: 'array', items: { type: 'string' }, maxItems: 50 },
 					attachments: { type: 'array', items: { type: 'string' } },
 				},
 				required: ['accountRef', 'subject', 'body', 'recipients'],
@@ -136,6 +144,7 @@ export function mailTools(host: MailTalkHost) {
 		}),
 		defineTool({
 			name: 'nc_mail_send_draft',
+			openWorld: true,
 			toolClass: 'destructive',
 			description: 'Dispatch an approved email draft once from the agent after exact native payload preview and revision checks. Report SMTP acceptance separately from recipient delivery. Never retry an uncertain send automatically.',
 			parameters: {
@@ -164,7 +173,7 @@ export function talkTools(host: MailTalkHost) {
 		defineTool({
 			name: 'nc_talk_read',
 			toolClass: 'read',
-			description: 'Inspect Talk room participants, unread counts and recent conversation history context without changing read pointers.',
+			description: 'Read current Talk room members and up to 50 recent messages without changing read pointers, notification markers or presence.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -176,6 +185,7 @@ export function talkTools(host: MailTalkHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const { roomToken } = validateTalkReadArgs(args)
+				if (host.readTalk) { const result = await host.readTalk(args, c.signal); host.recordResult(c.callId, result, c); return result }
 				if (!host.files.talk) throw new Error('Nextcloud Talk service is unavailable.')
 				const result = await host.files.talk.readContext(roomToken, c.signal)
 				host.recordResult(c.callId, result, c)
@@ -184,6 +194,7 @@ export function talkTools(host: MailTalkHost) {
 		}),
 		defineTool({
 			name: 'nc_talk_send_message',
+			openWorld: true,
 			toolClass: 'destructive',
 			description: 'Send a message or reply to an authorized Nextcloud Talk room after individual approval. Verifies audience and role.',
 			parameters: {

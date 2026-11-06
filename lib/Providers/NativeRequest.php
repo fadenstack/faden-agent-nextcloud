@@ -43,6 +43,7 @@ final class NativeRequest {
 		if ($id < 0 || $id > 999999999999999 || (!in_array($operation, ['accounts', 'create_draft', 'stage_outbox'], true) && $id < 1)) throw new Problem('A positive native Mail identifier is required.', 400);
 		[$method, $path] = match ($operation) {
 			'accounts' => ['GET', '/apps/mail/api/accounts'],
+			'account' => ['GET', '/apps/mail/api/accounts/' . $id],
 			'mailboxes' => ['GET', '/apps/mail/api/mailboxes?accountId=' . $id],
 			'sync' => ['POST', '/apps/mail/api/mailboxes/' . $id . '/sync'],
 			'messages' => ['GET', '/apps/mail/api/messages?mailboxId=' . $id . '&limit=20&view=singleton'],
@@ -55,6 +56,7 @@ final class NativeRequest {
 			'stage_outbox' => ['POST', '/apps/mail/api/outbox'],
 			'outbox' => ['GET', '/apps/mail/api/outbox/' . $id],
 			'send_outbox' => ['POST', '/apps/mail/api/outbox/' . $id],
+			'retire_draft' => ['DELETE', '/apps/mail/api/messages/' . $id],
 			default => throw new Problem('Unsupported native Mail operation.', 400),
 		};
 		if (in_array($operation, ['create_draft', 'update_draft', 'stage_outbox'], true)) {
@@ -97,6 +99,11 @@ final class NativeRequest {
 		$body = $method === 'GET' ? '' : json_encode($payload ?: new \stdClass(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 		if (strlen($body) > 131072) throw new Problem('Narrow the native communications payload.', 413);
 		return new self($actor, $method, $path, $body, ['Accept' => 'application/json', 'Content-Type' => 'application/json'], $emptyHistory);
+	}
+
+	public static function mailAttachment(string $actor, int $messageId, string $part): self {
+		if ($messageId < 1 || $messageId > 999999999999999 || !preg_match('/^[0-9]+(?:\.[0-9]+)*$/D', $part) || strlen($part) > 64) throw new Problem('A native MIME part is required.', 400);
+		return new self($actor, 'GET', '/apps/mail/api/messages/' . $messageId . '/attachment/' . $part, '', ['Accept' => 'application/octet-stream']);
 	}
 
 	/** Public native app APIs only. The caller cannot choose a URL, method or header. */

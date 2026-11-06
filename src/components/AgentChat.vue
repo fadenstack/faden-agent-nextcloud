@@ -11,6 +11,7 @@ import { EXTENDED_FILES_MUTATIONS } from '../integrations/nextcloud/filesExtende
 import { CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS } from '../integrations/nextcloud/caldav.ts'
 import { TABLES_MUTATIONS } from '../integrations/nextcloud/tables.ts'
 import { DECK_MUTATIONS } from '../integrations/nextcloud/deck.ts'
+import { MAIL_MUTATIONS, TALK_MUTATIONS } from '../integrations/nextcloud/mailTalk.ts'
 import type { FileContext, SearchViewResults } from '../integrations/nextcloud/types.ts'
 import NextcloudApproval from './NextcloudApproval.vue'
 import SearchResultsCard from './SearchResultsCard.vue'
@@ -40,6 +41,8 @@ const nativeContext = computed(() => {
 	if (app === 'contacts') return t('fadenstack_agent', 'Contacts view · Ask about a contact by name.')
 	if (app === 'tables') return t('fadenstack_agent', 'Tables view · Ask about this table or a row by its content.')
 	if (app === 'deck') return t('fadenstack_agent', 'Deck view · Ask about a card by name.')
+	if (app === 'mail') return t('fadenstack_agent', 'Mail view · Read messages or prepare a draft. Sending needs your approval.')
+	if (app === 'spreed') return t('fadenstack_agent', 'Talk view · Ask about this conversation or prepare a message.')
 	return ''
 })
 const contextLabel = computed(() => {
@@ -71,7 +74,7 @@ const theme = 'nextcloud' as ChatTheme
 // allowed; a search shows its results as cards above the tool line. Everything else is the SDK's own view.
 const renderers: PartRenderer[] = [
 	(part, strings) => {
-		if (part instanceof ApprovalPart && (((WRITE_TOOLS.has(part.toolName) || EXTENDED_FILES_MUTATIONS.has(part.toolName) || CALENDAR_MUTATIONS.has(part.toolName) || TASKS_MUTATIONS.has(part.toolName) || CONTACTS_MUTATIONS.has(part.toolName) || TABLES_MUTATIONS.has(part.toolName) || DECK_MUTATIONS.has(part.toolName)) && part.request.arguments.proposalId) || (HISTORY_TOOLS.has(part.toolName) && part.request.arguments.historyPreviewId))) {
+		if (part instanceof ApprovalPart && (((WRITE_TOOLS.has(part.toolName) || EXTENDED_FILES_MUTATIONS.has(part.toolName) || CALENDAR_MUTATIONS.has(part.toolName) || TASKS_MUTATIONS.has(part.toolName) || CONTACTS_MUTATIONS.has(part.toolName) || TABLES_MUTATIONS.has(part.toolName) || DECK_MUTATIONS.has(part.toolName) || MAIL_MUTATIONS.has(part.toolName) || TALK_MUTATIONS.has(part.toolName)) && part.request.arguments.proposalId) || (HISTORY_TOOLS.has(part.toolName) && part.request.arguments.historyPreviewId))) {
 			return h(NextcloudApproval, { part, strings, host: props.host })
 		}
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {

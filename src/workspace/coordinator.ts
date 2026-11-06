@@ -70,6 +70,13 @@ export class WorkspaceCoordinator {
 		} finally { this.release(id, generation) }
 	}
 
+	/** Each compound effect rechecks the native view before its next dispatch. */
+	assertContinuation(id: string, generation: number, binding: MutationBinding): void {
+		const view = this.dependencies.guard.snapshot()
+		if (this.#owner !== id || generation !== this.#sequence || view.key !== binding.view.key || view.epoch !== binding.view.epoch
+			|| (view.app === binding.app && view.editState !== 'clean')) throw new Error('The native view changed. Further dispatch is stopped; inspect the partial action.')
+	}
+
 	notDispatched(id: string, generation: number, target: string, message: string, operation: string): void {
 		if (this.#owner !== id || generation !== this.#sequence) return
 		this.state.latest = { id, operation, target, outcome: 'not_dispatched', view: 'unchanged', message }
@@ -79,7 +86,9 @@ export class WorkspaceCoordinator {
 	failed(id: string, generation: number, target: string, error: unknown, operation = 'write'): void {
 		if (this.#owner !== id || generation !== this.#sequence) return
 		const status = (error as { response?: { status?: number } })?.response?.status
+		const partial = (error as { response?: { data?: { outcome?: string } } })?.response?.data?.outcome === 'partial'
 		this.state.latest = { id, operation, target, outcome: status === 409 || status === 412 ? 'conflict' : 'unknown_completion', view: 'refresh_required', message: operation === 'revalidate' ? 'File revision verification could not be confirmed. Review the file and action history before retrying.' : status === 409 || status === 412 ? 'The native resource changed. Review a new proposal.' : 'The request may have reached Nextcloud. Inspect the resource before trying again.' }
+		if (partial) this.state.latest = { ...this.state.latest, outcome: 'unknown_completion', message: 'Some native steps completed. A send may already have been accepted. Inspect the recorded action before making another change; nothing will be resent automatically.' }
 		this.release(id, generation)
 	}
 
