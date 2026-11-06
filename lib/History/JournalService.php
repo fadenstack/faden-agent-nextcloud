@@ -160,6 +160,34 @@ final class JournalService {
 		});
 	}
 
+	/**
+	 * Persist each compound Mail effect before dispatch. Observation records only
+	 * typed native metadata, never credentials or another approved payload.
+	 * The released encrypted envelope, retention and quota accounting are reused.
+	 * This internal method does not dispatch, retry or authorize a native request.
+	 */
+	public function checkpointEffect(JournalIdentity $identity, string $id, string $ticket, string $step, string $phase, array $facts = []): array {
+		// Known in-flight observations must survive a native permission loss or
+		// concurrent Stop. Neither can grant another dispatch or clear uncertainty.
+		if ($phase === 'observed') $this->owned($identity, $id);
+		else $this->authorized($identity, $id, 'dispatch');
+		return $this->store->atomic(function () use ($identity, $id, $ticket, $step, $phase, $facts): array {
+			$this->store->lockOwner($identity->ownerHash);
+			$this->assertWritable($identity->ownerHash);
+			$row = $phase === 'observed' ? $this->owned($identity, $id) : $this->authorized($identity, $id, 'dispatch');
+			$this->ticket($identity, $row, $ticket);
+			$this->requireSnapshot($row);
+			if (!in_array($row['state'], $phase === 'observed' ? ['dispatching', 'needs_reconciliation'] : ['dispatching'], true)
+				|| $row['direction'] !== 'apply') throw new JournalException('state_conflict');
+			$payload = $this->cipher->decrypt($row);
+			$payload['forward']['effects'] = EffectProgress::advance($row['operation'], $payload['forward']['effects'] ?? [], $step, $phase, $facts);
+			$updated = $row;
+			$this->setPayload($updated, $payload);
+			$this->store->resizePayload($row, $updated['payload_bytes'], $this->policy);
+			return $this->summary($this->transition($row, $updated, 'effect_' . $phase, $step));
+		});
+	}
+
 	/** Read-only indication; authoritative checks run again under the dispatch mutex. */
 	public function writesPaused(JournalIdentity $identity): bool {
 		try {

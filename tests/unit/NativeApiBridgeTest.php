@@ -92,6 +92,27 @@ final class NativeApiBridgeTest extends TestCase {
 		$bridge->send(NativeRequest::calendarCollections('alice'));
 	}
 
+	public function testOnlyTalkHistoryAcceptsTheNativeEmpty304Response(): void {
+		[$bridge, $client] = $this->fixture();
+		$response = $this->createMock(IResponse::class);
+		$response->method('getStatusCode')->willReturn(304);
+		$response->method('getBody')->willReturn('');
+		$client->method('request')->willReturn($response);
+		self::assertSame(304, $bridge->send(NativeRequest::talk('alice', 'history', 'abcd1234'))['status']);
+		$this->expectException(Problem::class);
+		$bridge->send(NativeRequest::mail('alice', 'message', 1));
+	}
+
+	public function testTalkEmptyResponseCannotHideUnexpectedContent(): void {
+		[$bridge, $client] = $this->fixture();
+		$response = $this->createMock(IResponse::class);
+		$response->method('getStatusCode')->willReturn(304);
+		$response->method('getBody')->willReturn('unverified content');
+		$client->method('request')->willReturn($response);
+		$this->expectException(Problem::class);
+		$bridge->send(NativeRequest::talk('alice', 'history', 'abcd1234'));
+	}
+
 	public function testBoundedStreamIsClosedOnOversizeFailure(): void {
 		[$bridge, $client] = $this->fixture();
 		$body = fopen('php://temp', 'r+');

@@ -2,7 +2,7 @@
  * Nextcloud Mail and Talk (Spreed) adapters and tools (NC11, NC12)
  *
  * Experimental tool definitions. Native transports, MIME/read-state semantics,
- * server-owned previews and one-delivery/audience enforcement remain unimplemented.
+ * server-owned previews and native audience enforcement remain unimplemented.
  */
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { FileApi, MailDraft } from './types.ts'
@@ -137,7 +137,7 @@ export function mailTools(host: MailTalkHost) {
 		defineTool({
 			name: 'nc_mail_send_draft',
 			toolClass: 'destructive',
-			description: 'Dispatch an approved email draft with exact server payload preview, revision matching and one-delivery semantics. Never retried automatically.',
+			description: 'Dispatch an approved email draft once from the agent after exact native payload preview and revision checks. Report SMTP acceptance separately from recipient delivery. Never retry an uncertain send automatically.',
 			parameters: {
 				type: 'object',
 				properties: {

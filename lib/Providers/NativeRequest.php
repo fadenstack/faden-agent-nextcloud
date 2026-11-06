@@ -14,6 +14,7 @@ final class NativeRequest {
 		public readonly string $path,
 		public readonly string $body,
 		public readonly array $headers,
+		public readonly bool $emptyHistory = false,
 	) {
 	}
 
@@ -35,6 +36,67 @@ final class NativeRequest {
 			$etag = '"' . $etag . '"';
 		}
 		return $etag;
+	}
+
+	/** Closed Mail 5.13 routes. IDs are resolved under account scope by the caller. */
+	public static function mail(string $actor, string $operation, int $id = 0, array $payload = []): self {
+		if ($id < 0 || $id > 999999999999999 || (!in_array($operation, ['accounts', 'create_draft', 'stage_outbox'], true) && $id < 1)) throw new Problem('A positive native Mail identifier is required.', 400);
+		[$method, $path] = match ($operation) {
+			'accounts' => ['GET', '/apps/mail/api/accounts'],
+			'mailboxes' => ['GET', '/apps/mail/api/mailboxes?accountId=' . $id],
+			'sync' => ['POST', '/apps/mail/api/mailboxes/' . $id . '/sync'],
+			'messages' => ['GET', '/apps/mail/api/messages?mailboxId=' . $id . '&limit=20&view=singleton'],
+			'message' => ['GET', '/apps/mail/api/messages/' . $id],
+			'body' => ['GET', '/apps/mail/api/messages/' . $id . '/body'],
+			'raw' => ['GET', '/ocs/v2.php/apps/mail/message/' . $id . '/raw?format=json'],
+			'create_draft' => ['POST', '/apps/mail/api/drafts'],
+			'update_draft' => ['PUT', '/apps/mail/api/drafts/' . $id],
+			'persist_draft' => ['POST', '/apps/mail/api/drafts/move/' . $id],
+			'stage_outbox' => ['POST', '/apps/mail/api/outbox'],
+			'outbox' => ['GET', '/apps/mail/api/outbox/' . $id],
+			'send_outbox' => ['POST', '/apps/mail/api/outbox/' . $id],
+			default => throw new Problem('Unsupported native Mail operation.', 400),
+		};
+		if (in_array($operation, ['create_draft', 'update_draft', 'stage_outbox'], true)) {
+			if (array_diff(array_keys($payload), ['accountId', 'subject', 'bodyPlain', 'bodyHtml', 'editorBody', 'isHtml', 'smimeSign', 'smimeEncrypt', 'to', 'cc', 'bcc', 'attachments', 'aliasId', 'inReplyToMessageId', 'draftId', 'smimeCertificateId', 'sendAt', 'requestMdn', 'isPgpMime', 'isAiGenerated'])
+				|| ($payload['sendAt'] ?? null) !== null) throw new Problem('Only an unscheduled native Mail payload is supported.', 400);
+			// Native Files attachment fallbacks would bypass provider source scope.
+			foreach ($payload['attachments'] ?? [] as $attachment) {
+				if (!is_array($attachment) || ($attachment['type'] ?? '') !== 'message-attachment'
+					|| array_diff(array_keys($attachment), ['type', 'mailboxId', 'uid', 'id'])
+					|| !is_int($attachment['mailboxId'] ?? null) || $attachment['mailboxId'] < 1
+					|| !is_int($attachment['uid'] ?? null) || $attachment['uid'] < 1
+					|| !is_string($attachment['id'] ?? null) || !preg_match('/^[0-9]+(?:\.[0-9]+)*$/D', $attachment['id'])) throw new Problem('An authorized native MIME attachment is required.', 400);
+			}
+		} elseif ($payload !== []) throw new Problem('Unexpected native Mail arguments.', 400);
+		if ($operation === 'sync') $payload = ['init' => true];
+		return self::jsonRequest($actor, $method, $path, $payload);
+	}
+
+	/** Talk 25 public APIs. Reads never update markers, presence or notifications. */
+	public static function talk(string $actor, string $operation, string $token, array $payload = []): self {
+		if (!preg_match('/^[a-z0-9]{4,30}$/D', $token)) throw new Problem('A native Talk room token is required.', 400);
+		[$method, $path] = match ($operation) {
+			'room' => ['GET', '/ocs/v2.php/apps/spreed/api/v4/room/' . $token . '?format=json'],
+			'participants' => ['GET', '/ocs/v2.php/apps/spreed/api/v4/room/' . $token . '/participants?format=json&includeStatus=false'],
+			'history' => ['GET', '/ocs/v2.php/apps/spreed/api/v1/chat/' . $token . '?format=json&lookIntoFuture=0&limit=50&setReadMarker=0&noStatusUpdate=1&markNotificationsAsRead=0'],
+			'send' => ['POST', '/ocs/v2.php/apps/spreed/api/v1/chat/' . $token . '?format=json'],
+			default => throw new Problem('Unsupported native Talk operation.', 400),
+		};
+		if ($operation === 'send') {
+			if (array_diff(array_keys($payload), ['message', 'replyTo', 'referenceId', 'silent'])
+				|| !is_string($payload['message'] ?? null) || trim($payload['message']) === '' || mb_strlen($payload['message']) > 4000
+				|| (isset($payload['replyTo']) && (!is_int($payload['replyTo']) || $payload['replyTo'] < 1))
+				|| !is_string($payload['referenceId'] ?? null) || !preg_match('/^faden-[a-f0-9]{48}$/D', $payload['referenceId'])
+				|| (isset($payload['silent']) && !is_bool($payload['silent']))) throw new Problem('Invalid native Talk message.', 400);
+		} elseif ($payload !== []) throw new Problem('Unexpected native Talk read arguments.', 400);
+		return self::jsonRequest($actor, $method, $path, $payload, $operation === 'history');
+	}
+
+	private static function jsonRequest(string $actor, string $method, string $path, array $payload, bool $emptyHistory = false): self {
+		$body = $method === 'GET' ? '' : json_encode($payload ?: new \stdClass(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+		if (strlen($body) > 131072) throw new Problem('Narrow the native communications payload.', 413);
+		return new self($actor, $method, $path, $body, ['Accept' => 'application/json', 'Content-Type' => 'application/json'], $emptyHistory);
 	}
 
 	/** Public native app APIs only. The caller cannot choose a URL, method or header. */

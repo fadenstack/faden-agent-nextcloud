@@ -77,7 +77,7 @@ final class NativeApiBridge {
 			if (in_array($status, [401, 403, 404, 409, 412, 423, 429], true)) {
 				throw new Problem('The native provider refused this request.', $status);
 			}
-			if ($status < 200 || $status >= 300) {
+			if (($status < 200 || $status >= 300) && !($status === 304 && $request->emptyHistory)) {
 				throw new Problem('The native provider returned an unsuccessful response.', 503);
 			}
 			$length = $response->getHeader('Content-Length');
@@ -88,6 +88,7 @@ final class NativeApiBridge {
 			if (!is_string($raw) || strlen($raw) > self::MAX_BYTES) {
 				throw new Problem('Narrow the native provider request.', 413);
 			}
+			if ($status === 304 && $raw !== '') throw new Problem('Malformed empty native Talk history.', 503);
 			if ($this->users->getUser()?->getUID() !== $actor || $this->session->getId() !== $binding || $this->base() !== $base) {
 				throw new Problem('The native account or provider connection changed.', 409);
 			}
