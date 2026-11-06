@@ -41,7 +41,7 @@ final class ProviderPolicy {
 				throw new \InvalidArgumentException();
 			}
 			$value = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
-			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck'])) {
+			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk'])) {
 				throw new \InvalidArgumentException();
 			}
 			$config = $value[$section] ?? null;
@@ -100,9 +100,18 @@ final class ProviderPolicy {
 		return $policy;
 	}
 
+	public function communication(string $provider, bool $audit = false): array {
+		if (!in_array($provider, ['mail', 'talk'], true)) throw new Problem('Unsupported communications provider.', 400);
+		$policy = $this->parsePolicy($provider, $audit);
+		foreach ($policy['collections'] as $id) {
+			if (!preg_match($provider === 'mail' ? '/^[1-9][0-9]{0,14}$/D' : '/^[a-z0-9]{4,30}$/D', $id)) throw new Problem('Use canonical native account or room identifiers.', 503);
+		}
+		return $policy;
+	}
+
 	/** Disabling dispatch retains authorized native audit/inspection; revoked scope still denies. */
 	public function audit(string $provider): array {
-		if (!in_array($provider, ['calendar', 'tasks', 'contacts', 'tables', 'deck'], true)) {
+		if (!in_array($provider, ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk'], true)) {
 			throw new Problem('Unsupported provider audit.', 400);
 		}
 		return $this->parsePolicy($provider, true);
