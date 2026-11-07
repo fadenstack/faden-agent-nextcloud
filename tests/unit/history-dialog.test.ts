@@ -12,6 +12,19 @@ vi.mock('@nextcloud/vue/components/NcButton', () => ({ default: defineComponent(
 }) }))
 
 describe('native action-history dialog handoff', () => {
+	it.each(['recorded-attempt', 'not_in_active_collection'])('does not claim current resource presence for %s', observed => {
+		const host = { history: { items: [], loading: false, error: '', inspection: { action: { id: 'a'.repeat(32) }, observed, outcome: 'unknown', message: 'Audit only.' } },
+			historyCommandsAvailable: false, chat: { isBusy: false, version: 0, subscribe: () => () => {} }, refreshHistory: vi.fn() } as unknown as NextcloudAgent
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(ActionHistory, { host }); app.mount(root)
+		try {
+			const text = root.querySelector('.fadenstack-action-inspection')?.textContent
+			expect(text).toContain(observed === 'recorded-attempt' ? 'Current native state has not been rechecked' : 'could not be verified in the active collection')
+			expect(text).not.toContain('The resource is present.')
+			expect(text).toContain('Completion remains uncertain')
+		} finally { app.unmount(); root.remove() }
+	})
 	it('announces a safety pause, disables restoration and leaves inspection available', () => {
 		const host = { history: { items: [
 			{ id: 'a'.repeat(32), name: 'restore.md', state: 'applied', eligible: 'undo', createdAt: 1 },

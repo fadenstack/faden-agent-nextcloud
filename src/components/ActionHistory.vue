@@ -25,6 +25,17 @@ async function choose(item: HistoryItem) {
 async function inspect(item: HistoryItem) {
 	try { await props.host.inspectProviderAction(item, loading.signal) } catch { /* The host exposes a safe inspection error. */ }
 }
+function observation(value: string): string {
+	switch (value) {
+	case 'matches_saved_content': return t('fadenstack_agent', 'Current content matches the recorded save.')
+	case 'absent': return t('fadenstack_agent', 'The resource is absent and its parent is accessible.')
+	case 'different_content': return t('fadenstack_agent', 'Current content differs from the recorded save.')
+	case 'present': return t('fadenstack_agent', 'The resource is present.')
+	case 'not_in_active_collection': return t('fadenstack_agent', 'The resource could not be verified in the active collection.')
+	case 'recorded-attempt': return t('fadenstack_agent', 'Recorded steps only. Current native state has not been rechecked.')
+	default: return t('fadenstack_agent', 'Current native state has not been verified.')
+	}
+}
 function paused(item: HistoryItem): boolean {
 	return !!props.host.history.availability?.writesPaused && ['undo', 'redo'].includes(item.eligible)
 }
@@ -64,7 +75,7 @@ function operation(item: HistoryItem): string {
 		:name="t('fadenstack_agent', 'Agent actions')"
 		@update:open="!$event && emit('close')">
 		<div class="fadenstack-action-history" :data-version="version">
-			<p>{{ t('fadenstack_agent', 'Review recorded actions and inspect their current native state. Restoration is available only for certified private text-file changes.') }}</p>
+			<p>{{ t('fadenstack_agent', 'Review recorded actions and available native checks. Restoration is available only for certified private text-file changes.') }}</p>
 			<p>{{ t('fadenstack_agent', 'Nextcloud also keeps native file versions and deleted files. Open a file and choose Details → Versions for manual recovery. Native retention applies; versions do not represent every agent action.') }}</p>
 			<p v-if="host.history.availability?.writesPaused" role="alert">
 				{{ t('fadenstack_agent', 'Agent file changes are paused because an earlier action could not be safely checked. Contact your administrator. You can still inspect available outcomes.') }}
@@ -90,7 +101,7 @@ function operation(item: HistoryItem): string {
 			<section v-if="host.history.inspection" role="status" class="fadenstack-action-inspection">
 				<strong>{{ host.history.inspection.outcome === 'verified_committed' ? t('fadenstack_agent', 'Recorded commitment verified') : t('fadenstack_agent', 'Completion remains uncertain') }}</strong>
 				<p>{{ host.history.inspection.message }}</p>
-				<p>{{ host.history.inspection.observed === 'matches_saved_content' ? t('fadenstack_agent', 'Current content matches the recorded save.') : host.history.inspection.observed === 'absent' ? t('fadenstack_agent', 'The resource is absent and its parent is accessible.') : host.history.inspection.observed === 'different_content' ? t('fadenstack_agent', 'Current content differs from the recorded save.') : t('fadenstack_agent', 'The resource is present.') }}</p>
+				<p>{{ observation(host.history.inspection.observed) }}</p>
 				<small>{{ t('fadenstack_agent', 'Action reference') }}: {{ host.history.inspection.action.id }}</small>
 			</section>
 			<ul v-if="!host.history.loading && host.history.items.length">
