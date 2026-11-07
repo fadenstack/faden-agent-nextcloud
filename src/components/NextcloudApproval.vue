@@ -65,6 +65,14 @@ const action = computed(() => {
 const approving = ref(false)
 const organization = computed(() => ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(part.value.toolName))
 const structured = computed(() => /^(nc_tables_|nc_deck_|nc_mail_|nc_talk_)/.test(part.value.toolName))
+const communicationSummary = computed(() => {
+	switch (part.value.toolName) {
+	case 'nc_mail_save_draft': return t('fadenstack_agent', 'Save only; no email is sent. Native last-write-wins: another editor can change this draft. Stop can leave a partial draft. Audit only; no Undo.')
+	case 'nc_mail_send_draft': return t('fadenstack_agent', 'Send the reviewed draft. Native last-write-wins: another editor can change it. SMTP acceptance does not confirm delivery. Stop cannot retract an accepted email. Audit only; no Undo.')
+	case 'nc_talk_send_message': return t('fadenstack_agent', 'Send to this room and its current audience. Native last-write-wins: room access can change. Normal Talk notifications may occur. Stop cannot retract an accepted message. Audit only; no Undo.')
+	default: return ''
+	}
+})
 const fields = computed(() => part.value.request.arguments.fields as { label: string; before: unknown; after: unknown }[] | undefined)
 function fieldText(value: unknown): string { return value === null || value === undefined ? '—' : typeof value === 'string' ? value : JSON.stringify(value) }
 const problem = ref('')
@@ -137,9 +145,12 @@ function deny() {
 				<dt>{{ t('fadenstack_agent', 'Native access') }}</dt><dd>{{ /^(nc_mail_|nc_talk_)/.test(part.toolName) ? audience(part.request.arguments.nativeAudience) : t('fadenstack_agent', 'Current table or board permissions; audience not fully determined') }}</dd>
 				<dt>{{ t('fadenstack_agent', 'History') }}</dt><dd>{{ t('fadenstack_agent', 'Audit only · no Undo') }}</dd>
 			</dl>
-			<p>{{ part.request.arguments.limitation }}</p>
+			<p>{{ communicationSummary || part.request.arguments.limitation }}</p>
 			<details>
 				<summary>{{ t('fadenstack_agent', 'Exact request details') }}</summary>
+				<p v-if="communicationSummary">
+					{{ part.request.arguments.limitation }}
+				</p>
 				<pre class="fdn-approval-args" dir="auto">{{ JSON.stringify(part.request.arguments.content, null, 2) }}</pre>
 			</details>
 		</template>

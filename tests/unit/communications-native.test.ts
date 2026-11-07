@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
+import { ApprovalPart, ToolCallPart, type UiStrings } from '@fadenstack/ui'
+import { createApp } from 'vue'
+import NextcloudApproval from '../../src/components/NextcloudApproval.vue'
 import { FakeGateway } from '@fadenstack/testing'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
 import { WorkspaceCoordinator } from '../../src/workspace/coordinator.ts'
@@ -56,6 +58,24 @@ async function pending(agent: NextcloudAgent): Promise<ApprovalPart> {
 	return part!
 }
 describe('Native Mail/Talk through published SDK governance', () => {
+	it.each(tools.filter(t => !t.endsWith('_read')))('shows decision-specific consequences and retains exact limitations for %s', async name => {
+		const run = await flow(name)
+		const root = document.createElement('div')
+		document.body.append(root)
+		let app: ReturnType<typeof createApp> | undefined
+		try {
+			const part = await pending(run.agent)
+			app = createApp(NextcloudApproval, { host: run.agent, part, strings: { allow: 'Allow', deny: 'Deny' } as UiStrings })
+			app.mount(root)
+			const summary = root.querySelector('dl.fadenstack-file-fields + p')?.textContent ?? ''
+			expect(summary).toContain('Native last-write-wins')
+			expect(summary).toContain('no Undo')
+			expect(summary).toContain(name === 'nc_mail_save_draft' ? 'no email is sent' : name === 'nc_mail_send_draft' ? 'SMTP acceptance does not confirm delivery' : 'Normal Talk notifications')
+			expect(root.querySelector('details p')?.textContent).toBe(part.request.arguments.limitation)
+			if (name === 'nc_talk_send_message') expect(summary).not.toContain('SMTP')
+			expect(run.native.communicationCommit).not.toHaveBeenCalled()
+		} finally { app?.unmount(); root.remove(); run.agent.stop(); await run.send; await run.agent.dispose() }
+	})
 	it.each(tools.filter(t => !t.endsWith('_read')))('commits the bounded native stages for %s with the general experimental gate off', async name => {
 		const run = await flow(name)
 		try {
@@ -83,7 +103,15 @@ describe('Native Mail/Talk through published SDK governance', () => {
 	})
 	it.each([{ unknown: true }, { stopAfterFirst: true }])('never repeats an uncertain or stopped stage: %j', async options => {
 		const run = await flow('nc_mail_send_draft', options)
-		try { await run.agent.approve(await pending(run.agent)); await run.send.catch(() => {}); expect(run.native.communicationCommit).toHaveBeenCalledTimes(1); expect(run.native.communicationCancel).toHaveBeenCalled() }
+		try {
+			await run.agent.approve(await pending(run.agent)); await run.send.catch(() => {})
+			expect(run.native.communicationCommit).toHaveBeenCalledTimes(1)
+			expect(run.native.communicationCancel).toHaveBeenCalled()
+			if (options.unknown) {
+				expect(run.reasoning).toHaveLength(2)
+				expect(run.agent.chat.turns.flatMap(t => [...t.parts]).map(p => (p as unknown as { text?: string }).text ?? '').join(' ')).toContain('partial or unknown')
+			}
+		}
 		finally { run.agent.stop(); await run.agent.dispose() }
 	})
 	it('does not offer an unavailable native provider', async () => {

@@ -2239,6 +2239,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.consumeExpandedApproval(call.callId, args)
 		const binding = this.#proposalViews.get(call.callId)
 		let generation: number | undefined
+		let dispatched = false
 		const cancel = () => { void this.files.nativeProviders!.communicationCancel!(proposal).catch(() => {}) }
 		call.signal.addEventListener('abort', cancel, { once: true })
 		try {
@@ -2248,6 +2249,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				call.signal.throwIfAborted()
 				await this.files.assertIdentity(call.signal)
 				if (binding && generation !== undefined) this.workspace!.assertContinuation(call.callId, generation, binding)
+				dispatched = true
 				const result = await this.files.nativeProviders!.communicationCommit!(proposal, call.signal, step)
 				if (result.provider !== proposal.provider || result.target !== proposal.target || result.history !== 'audit-only' || !/^[a-f0-9]{32}$/.test(result.actionId)) throw new Error('Invalid native communications receipt.')
 				if (result.continue && result.outcome === 'running') continue
@@ -2266,6 +2268,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			this.#writeBlocked = true
 			cancel()
 			const refusal = (error as { response?: { data?: { outcome?: string; message?: string } } })?.response?.data
+			// Do not let a model reinterpret missing acknowledgements as no effect,
+			// or suggest resending an operation whose native outcome is uncertain.
+			this.#providerCompletion = !dispatched || refusal?.outcome === 'not-dispatched'
+				? 'Nextcloud refused this action before dispatch. No native effect was attempted.'
+				: 'The native outcome is partial or unknown. An effect may already have completed. Inspect Agent actions and the native app before taking further action. Nothing will be retried or resent automatically.'
 			if (generation !== undefined) {
 				if (refusal?.outcome === 'not-dispatched') this.workspace!.notDispatched(call.callId, generation, proposal.target, refusal.message || 'The native provider refused dispatch.', name)
 				else this.workspace!.failed(call.callId, generation, proposal.target, error, name)
