@@ -80,4 +80,17 @@ final class WorkflowPlanTest extends TestCase {
 			}
 		}
 	}
+	public function testMalformedNativeIdentitiesAreNeverCoercedIntoARealRule(): void {
+		foreach ([true, 1.0, [], null, '01', '1e0'] as $id) {
+			$rule = [...$this->draft(), 'id' => $id, 'scope_type' => 1, 'scope_actor_id' => 'alice'];
+			try {
+				WorkflowAuthority::nativeRules([WorkflowPlan::ACTION => [$rule]], 'alice');
+				self::fail('Accepted a malformed native identity.');
+			} catch (Problem $error) {
+				self::assertSame(503, $error->status);
+			}
+		}
+		$this->expectException(Problem::class);
+		WorkflowAuthority::nativeRules(null, 'alice');
+	}
 }

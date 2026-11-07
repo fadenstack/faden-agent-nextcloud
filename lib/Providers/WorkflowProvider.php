@@ -57,17 +57,18 @@ final class WorkflowProvider {
 				}
 				$tools = $policy['writesEnabled'] && $this->configuration->folderDispatchSupported() ? $names : [$names[0]];
 				if ($provider === 'whiteboard') {
-					if (!$policy['processing']['sources']) {
+					$flags = $this->native->boardScopeFlags($policy);
+					if (!$flags['read']) {
 						$tools = array_values(array_diff($tools, [$names[0]]));
 					}
-					if (!$policy['processing']['destinations']) {
+					if (!$flags['create']) {
 						$tools = array_values(array_diff($tools, [$names[1]]));
 					}
 				}
 				$tools = array_values(array_intersect($tools, $policy['processing']['tools']));
 				if ($tools) {
 					$result[] = ['provider' => $provider, 'apiVersion' => $provider . '-' . WorkflowAuthority::VERSIONS[$provider] . '-session', 'policyVersion' => $policy['policyVersion'], 'enabled' => true, 'tools' => $tools,
-						'conflict' => count(array_diff($tools, [$names[0]])) ? ($provider === 'whiteboard' ? 'conditional' : 'native') : 'read-only', 'history' => 'audit-only', 'refresh' => $provider === 'whiteboard' ? 'manual' : 'child-reload', 'canRead' => true, 'canWrite' => count(array_diff($tools, [$names[0]])) > 0];
+						'conflict' => count(array_diff($tools, [$names[0]])) ? ($provider === 'whiteboard' ? 'conditional' : 'native') : 'read-only', 'history' => 'audit-only', 'refresh' => $provider === 'whiteboard' ? 'manual' : 'child-reload', 'canRead' => in_array($names[0], $tools, true), 'canWrite' => count(array_diff($tools, [$names[0]])) > 0];
 				}
 			} catch (Problem $error) {
 				if (!in_array($error->status, [403, 404, 413, 429, 503], true)) {

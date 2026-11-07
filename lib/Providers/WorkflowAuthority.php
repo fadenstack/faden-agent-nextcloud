@@ -52,7 +52,10 @@ final class WorkflowAuthority {
 	}
 	/** Native GET adds scope metadata absent from POST. Verify before projecting. */
 	public static function nativeRules(mixed $data, string $actor): array {
-		if (!is_array($data) || count($data) > 50) {
+		if (!is_array($data)) {
+			throw new Problem('Malformed native personal Flow collection.', 503);
+		}
+		if (count($data) > 50) {
 			throw new Problem('Narrow the personal Flow collection.', 413);
 		}
 		$rules = [];
@@ -61,7 +64,8 @@ final class WorkflowAuthority {
 				throw new Problem('Unverified native Flow grouping.', 503);
 			}
 			foreach ($group as $rule) {
-				if (!is_array($rule) || ($rule['class'] ?? null) !== $class || !preg_match('/^[1-9][0-9]{0,14}$/D', (string)($rule['id'] ?? '')) || isset($rules[(int)$rule['id']])) {
+				$id = is_array($rule) ? ($rule['id'] ?? null) : null;
+				if ((!is_int($id) && !is_string($id)) || ($rule['class'] ?? null) !== $class || !preg_match('/^[1-9][0-9]{0,14}$/D', (string)$id) || isset($rules[(int)$id])) {
 					throw new Problem('Unverified native personal rule membership.', 503);
 				}
 				if (!in_array($rule['scope_type'] ?? null, [1, '1'], true) || ($rule['scope_actor_id'] ?? null) !== $actor) {
@@ -194,5 +198,45 @@ final class WorkflowAuthority {
 	}
 	public function createBoard(array $policy, string $folderPath, string $name): array {
 		return $this->bridge->send(NativeRequest::createWhiteboard($policy['actor'], $folderPath, $name));
+	}
+	/** Discovery checks native ACLs without reading scenes or granting a target. */
+	public function boardScopeFlags(array $policy): array {
+		$home = $this->root->getUserFolder($policy['actor']);
+		$result = ['read' => false, 'create' => false];
+		foreach (['read' => 'sources', 'create' => 'destinations'] as $operation => $key) {
+			foreach ($policy['processing'][$key] as $scope) {
+				if ($scope['kind'] === 'user-files') {
+					$nodes = [$home];
+				} elseif (preg_match('/^nextcloud:files:([1-9][0-9]{0,14})$/D', $scope['resourceId'] ?? '', $m)) {
+					$nodes = $home->getById((int)$m[1]);
+				} else {
+					continue;
+				}
+				foreach ($nodes as $node) {
+					if (!$node->isReadable()) {
+						continue;
+					}
+					try {
+						// A readable collection can contain differently classified
+						// children. Actual scene/target disclosure is checked per call.
+						$grant = $this->files->describeNode($node, $operation === 'create' ? 'write' : 'metadata');
+						if ($operation === 'read' && ($node instanceof Folder || ($node instanceof File && str_ends_with($node->getName(), '.whiteboard')))) {
+							if ($node instanceof File) {
+								$this->policies->assertDisclosure($policy, $grant['sourceClass']);
+							}
+							$result['read'] = true;
+						} elseif ($operation === 'create' && $node instanceof Folder && $node->isCreatable() && $node->getStorage()->isLocal()
+							&& $grant['audience'] !== 'unknown' && in_array($grant['audience'], $policy['processing']['destinationAudiences'], true)) {
+							$result['create'] = true;
+						}
+					} catch (Problem $error) {
+						if (!in_array($error->status, [403, 404], true)) {
+							throw $error;
+						}
+					}
+				}
+			}
+		}
+		return $result;
 	}
 }
