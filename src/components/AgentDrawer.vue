@@ -68,6 +68,7 @@ body.fadenstack-workspace-child { --header-height: 0px; }
 	body.fadenstack-agent-open #fadenstack-native-workspace { inset-inline-end: 428px; }
 	body.fadenstack-agent-open #app-content-vue,
 	body.fadenstack-agent-open #app-content { margin-inline-end: 428px !important; }
+	body.fadenstack-agent-open .app-mail > .floating-composer { margin-inline-end: 428px !important; max-width: calc(100vw - 452px); }
 	body.fadenstack-agent-open.fadenstack-agent-in-viewer #viewer .modal-wrapper { max-width: calc(100% - 428px); margin-inline-end: 428px; }
 }
 </style>

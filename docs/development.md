@@ -25,6 +25,9 @@ Nextcloud itself uses the supported PHP version in its official image.
    available for inspection. The test refuses remote hosts.
 6. Use `npm run watch`, then reload Files after changes.
 7. Run `composer install`, `composer test:unit`, `composer cs:check` for PHP checks.
+8. Before packaging, run `node scripts/prepare-php.mjs`. It installs the exact
+   production PHP dependencies into `build/php-runtime`; the package refuses a
+   missing/stale lock or a development vendor tree.
 
 For 31, use service `nextcloud` and port 8088. Do not attach a 35 image to a 31
 volume. Avoid `docker compose down -v` unless intentionally discarding dev data.

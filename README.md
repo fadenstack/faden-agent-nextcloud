@@ -47,7 +47,8 @@ including a user-tested real-server conversation from the full-screen Text edito
   Files tools. Encrypted write-ahead receipts record existing creates/updates.
   Optional **Agent actions** provides governed Undo/Redo for eligible private text
   updates. It requires the companion command SDK and gateway contract; see
-  [administrator setup](docs/admin-guide.md). Additional app tools remain planned.
+  [administrator setup](docs/admin-guide.md). Scoped native providers are opt-in;
+  [Mail and Talk](docs/mail-talk.md) require individual approval for every write.
 - **Inspect outcome** verifies an interrupted private text update and records its
   content state after approval. It never repeats the write; inconclusive bytes
   remain unresolved.
@@ -58,7 +59,7 @@ including a user-tested real-server conversation from the full-screen Text edito
 
 ## Build and install
 
-Use Node 24 and npm 11. Published SDK 0.2.0-rc.2 dependencies are pinned in the
+Use Node 24, npm 11 and Composer 2. Published SDK 0.3.0-rc.2 dependencies are pinned in the
 lockfile; sibling repositories are not needed to build.
 
 ```sh
@@ -68,17 +69,18 @@ npm test
 npm run lint
 npm run stylelint
 npm run build
+node scripts/prepare-php.mjs
 npm run package
 ```
 
-Extract `build/fadenstack_agent-0.1.5.tar.gz` into Nextcloud's `custom_apps` directory.
+Extract `build/fadenstack_agent-0.1.13.tar.gz` into Nextcloud's `custom_apps` directory.
 Keep the resulting folder name `fadenstack_agent`, then run
 `php occ app:enable fadenstack_agent` as the Nextcloud web user. For upgrades, use
 Nextcloud's normal `occ upgrade` lifecycle. Version 0.1.2 creates four app-owned
 journal tables and registers an hourly retention job. Version 0.1.3 adds an
 owner-wide history generation counter without rewriting encrypted entries.
-Normal Nextcloud background jobs must run. No runtime PHP package dependencies
-are required.
+Normal Nextcloud background jobs must run. The archive includes locked production
+PHP dependencies for the inert MIME reader; the installed server does not need Composer.
 
 In **Administration settings → Additional settings → Fadenstack Agent**, configure
 the HTTPS server origin, published agent identifier and integration toggle. Reload

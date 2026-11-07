@@ -22,6 +22,7 @@ export class NativeWorkspace {
 	snapshot(): NativeView {
 		if (!this.#frame) return this.main.snapshot()
 		try {
+			if (this.#app === 'mail' && this.main.snapshot().editState !== 'clean') return this.unknown()
 			const child = this.#frame.contentDocument
 			if (!child || child.location.origin !== this.page.location.origin || child.readyState !== 'complete' || !this.#child) return this.unknown()
 			const view = this.#child.snapshot()

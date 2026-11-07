@@ -11,9 +11,9 @@ export class NativeViewGuard {
 		const ElementType = this.page.defaultView?.Element
 		const element = ElementType && event.target instanceof ElementType ? event.target as Element : undefined
 		if (!element || element.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity, #fadenstack-agent-header')) return
-		if (element.matches('input[type="search"]') || element.closest('[role="search"]')) return
+		if (!element.closest('.message-composer') && (element.matches('input[type="search"]') || element.closest('[role="search"]'))) return
 		if (element.matches('input[type="checkbox"]') && element.closest('.files-list__row, .files-list__thead')) return
-		if (element.closest('#app-content, #app-content-vue, #viewer')) this.#dirty = true
+		if (element.closest('#app-content, #app-content-vue, #viewer, .message-composer')) this.#dirty = true
 	}
 
 	constructor(readonly page: Document = document) {
@@ -29,6 +29,9 @@ export class NativeViewGuard {
 		const dialog = [...this.page.querySelectorAll('[role="dialog"]')].some(element => !element.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity') && !element.querySelector('.fadenstack-assistant-details'))
 		const editor = [...this.page.querySelectorAll('#app-content [contenteditable]:not([contenteditable="false"]), #app-content-vue [contenteditable]:not([contenteditable="false"]), #app-content textarea, #app-content-vue textarea')]
 			.some(element => !element.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity') && !(app === 'spreed' && (element.getAttribute('role') === 'textbox' || element.closest('.chat-input, .message-input')) && !element.textContent?.trim()))
+		// Mail teleports its floating composer outside #app-content and gives it
+		// no dialog role. Its presence is an editor handoff, even before typing.
+		const mailEditor = app === 'mail' && !!this.page.querySelector('.message-composer')
 		const nativeEditor = ['calendar', 'tasks', 'contacts'].includes(app) && (
 			/\/(?:edit|new|import)(?:\/|$)/.test(url.pathname)
 			|| (app === 'tasks' && /\/tasks\/[^/]+/.test(url.pathname.split('/apps/tasks')[1] ?? ''))
@@ -37,7 +40,7 @@ export class NativeViewGuard {
 			|| [...this.page.querySelectorAll<HTMLInputElement>('#app-content input, #app-content-vue input')].some(input =>
 				!input.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity') && !['checkbox', 'radio', 'hidden', 'button', 'submit', 'search'].includes(input.type) && input.value.trim() !== ''))
 		const ready = !!this.page.querySelector('#app-content, #app-content-vue') && !this.page.querySelector('#app-content [aria-busy="true"], #app-content-vue [aria-busy="true"]')
-		const clean = !viewer && !dialog && !editor && !nativeEditor && (app === 'files'
+		const clean = !viewer && !dialog && !editor && !nativeEditor && !mailEditor && (app === 'files'
 			? !!this.page.querySelector('.files-list, .files-list__row')
 			: ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed'].includes(app) && ready)
 		return { app, key, epoch: this.#epoch, editState: this.#dirty ? 'dirty' : clean ? 'clean' : 'unknown', reason: this.#dirty ? 'Finish or cancel your edits before asking the assistant to change this view.' : app === 'files' && editor ? 'A Files preview or folder-description editor is open. Save or close it, or open a folder without an editor before asking the assistant to make a change.' : 'The assistant cannot confirm that this editor has no unsaved changes.' }

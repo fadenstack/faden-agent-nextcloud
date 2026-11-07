@@ -17,6 +17,20 @@ function nativeGuard() {
 }
 
 describe('Native editor protection', () => {
+	it.each(['subject', 'recipient', 'body'])('protects Mail portal %s edits outside app content, even after its removal', async field => {
+		history.replaceState(null, '', '/apps/mail/box/1')
+		document.body.innerHTML = '<main id="app-content"></main><section class="floating-composer"><div class="message-composer"><input class="subject"><input type="search" class="recipient"><div class="body" contenteditable="true"></div></div></section>'
+		const workspace = new NativeWorkspace()
+		try {
+			expect(workspace.snapshot().editState).toBe('unknown')
+			await expect(workspace.prepare('mail')).rejects.toThrow('cannot confirm')
+			expect(document.querySelector('iframe')).toBeNull()
+			document.querySelector('.' + field)!.dispatchEvent(new Event('input', { bubbles: true }))
+			expect(workspace.snapshot().editState).toBe('dirty')
+			document.querySelector('.floating-composer')!.remove()
+			expect(workspace.snapshot().editState).toBe('dirty')
+		} finally { workspace.dispose() }
+	})
 	it('keeps Talk in one native session and observes its actual visible message', async () => {
 		history.replaceState(null, '', '/call/abcd1234')
 		document.body.innerHTML = '<main id="app-content"><div role="textbox" contenteditable="true"></div></main>'
