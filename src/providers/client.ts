@@ -3,7 +3,7 @@ import type { ProviderResource } from './scope.ts'
 import type { TableSnapshot, DeckBoardSnapshot } from '../integrations/nextcloud/types.ts'
 
 export interface CommunicationRead extends Record<string, unknown> { resource: ProviderResource }
-export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks'
+export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow'
 export interface CommunicationOutcome {
 	readonly outcome: 'verified' | 'running' | 'partial'
 	readonly continue: boolean
@@ -161,21 +161,23 @@ export interface NativeProvidersApi {
 
 /** Only our fixed native endpoints; credentials/URLs never appear in tool arguments. */
 export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>): NativeProvidersApi {
+	const family = (provider: string) => ['whiteboard', 'flow'].includes(provider) ? 'workflow' : 'content'
 	return {
-		contentRead: (provider, args, signal) => post('/providers/content/read', { provider, args }, signal),
+		contentRead: (provider, args, signal) => post(`/providers/${family(provider)}/read`, { provider, args }, signal),
 		contentPropose: async (toolName, args, signal) => {
+			const route = family(toolName.split('_')[1]!)
 			const requestId = [...crypto.getRandomValues(new Uint8Array(24))].map(value => value.toString(16).padStart(2, '0')).join('')
 			try {
-				const value = await post<ContentProposal>('/providers/content/propose', { toolName, args, requestId }, signal)
-				if (value.id !== requestId || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName || !['collectives', 'forms', 'notes', 'bookmarks'].includes(value.provider)
+				const value = await post<ContentProposal>(`/providers/${route}/propose`, { toolName, args, requestId }, signal)
+				if (value.id !== requestId || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName || !['collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'].includes(value.provider) || value.provider !== toolName.split('_')[1]
 					|| value.history !== 'audit-only' || !Array.isArray(value.display) || !value.resource || !value.payload || typeof value.target !== 'string' || typeof value.limitation !== 'string') throw new Error('Invalid native content preview.')
 				signal.throwIfAborted()
 				return value
-			} catch (error) { await post(`/providers/content/${requestId}/cancel`, {}, new AbortController().signal).catch(() => {}); throw error }
+			} catch (error) { await post(`/providers/${route}/${requestId}/cancel`, {}, new AbortController().signal).catch(() => {}); throw error }
 		},
-		contentApprove: (p, signal) => post(`/providers/content/${p.id}/approve`, { digest: p.digest }, signal),
-		contentCommit: (p, signal, step) => post(`/providers/content/${p.id}/commit`, { digest: p.digest, step }, signal),
-		contentCancel: p => post(`/providers/content/${p.id}/cancel`, {}, new AbortController().signal),
+		contentApprove: (p, signal) => post(`/providers/${family(p.provider)}/${p.id}/approve`, { digest: p.digest }, signal),
+		contentCommit: (p, signal, step) => post(`/providers/${family(p.provider)}/${p.id}/commit`, { digest: p.digest, ...(family(p.provider) === 'content' ? { step } : {}) }, signal),
+		contentCancel: p => post(`/providers/${family(p.provider)}/${p.id}/cancel`, {}, new AbortController().signal),
 		communicationRead: (provider, args, signal) => post('/providers/communications/read', { provider, args }, signal),
 		communicationPropose: async (toolName, args, signal) => {
 			const requestId = [...crypto.getRandomValues(new Uint8Array(24))].map(value => value.toString(16).padStart(2, '0')).join('')

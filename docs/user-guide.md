@@ -25,7 +25,8 @@ response; closing the drawer also stops it. Chat history contains conversations,
 not an undo journal. **Agent actions** separately shows governed native attempts.
 Undo/Redo appears only for independently certified private-text operations;
 other native actions have an audit trail. See [Mail and Talk](mail-talk.md) and
-[Collectives, Forms, Notes and Bookmarks](content-tools.md) for their exact bounds.
+[Collectives, Forms, Notes and Bookmarks](content-tools.md), and
+[saved Whiteboard and personal Flow](whiteboard-flow.md) for their exact bounds.
 
 Ask naturally: “Find the latest supplier contract”, “Find all PDFs inside
 Engineering”, or “Show my ten most recently modified documents”. Discovery

@@ -65,13 +65,16 @@ const action = computed(() => {
 	case 'nc_forms_submit_response': return t('fadenstack_agent', 'Submit form response')
 	case 'nc_notes_create': return t('fadenstack_agent', 'Create note')
 	case 'nc_bookmarks_create': return t('fadenstack_agent', 'Create bookmark')
+	case 'nc_whiteboard_create': return t('fadenstack_agent', 'Create whiteboard')
+	case 'nc_flow_create_draft': return t('fadenstack_agent', 'Create blocked Flow draft')
+	case 'nc_flow_update_rule': return t('fadenstack_agent', 'Change personal Flow rule')
 	default: return t('fadenstack_agent', 'Replace file')
 	}
 })
 const approving = ref(false)
 const organization = computed(() => ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(part.value.toolName))
-const structured = computed(() => /^(nc_tables_|nc_deck_|nc_mail_|nc_talk_|nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_)/.test(part.value.toolName))
-const contentAction = computed(() => /^(nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_)/.test(part.value.toolName))
+const structured = computed(() => /^(nc_tables_|nc_deck_|nc_mail_|nc_talk_|nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_|nc_whiteboard_|nc_flow_)/.test(part.value.toolName))
+const contentAction = computed(() => /^(nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_|nc_whiteboard_|nc_flow_)/.test(part.value.toolName))
 const communicationSummary = computed(() => {
 	switch (part.value.toolName) {
 	case 'nc_mail_save_draft': return t('fadenstack_agent', 'Save only; no email is sent. Native last-write-wins: another editor can change this draft. Stop can leave a partial draft. Audit only; no Undo.')
@@ -83,6 +86,9 @@ const communicationSummary = computed(() => {
 	case 'nc_forms_submit_response': return t('fadenstack_agent', 'Submit these answers as your native user. The form owner and authorized readers can see them. Notifications may occur. Submission has no Undo and is never retried automatically.')
 	case 'nc_notes_create': return t('fadenstack_agent', 'Create a new note without replacing an existing body. The Notes folder may be shared. Native last-write-wins; audit only; no Undo.')
 	case 'nc_bookmarks_create': return t('fadenstack_agent', 'Create this bookmark. Native crawling, previews and archiving may fetch its URL or contact configured services. Audit only; no Undo.')
+	case 'nc_whiteboard_create': return t('fadenstack_agent', 'Create an empty saved board. Native conditional creation refuses an existing file. Live canvases are never replaced. Audit only; no Undo.')
+	case 'nc_flow_create_draft': return t('fadenstack_agent', 'Create a blocked draft using contradictory native filename conditions. Nextcloud labels saved rules Active, but the conditions prevent execution. Activation requires a separate approval. Audit only; no Undo.')
+	case 'nc_flow_update_rule': return t('fadenstack_agent', 'Approve this exact state change or deletion. Active tagging rules can affect matching files throughout your native account and trigger other tag-based automation. Native last-write-wins. Existing effects are not undone.')
 	default: return ''
 	}
 })

@@ -3,7 +3,7 @@ import { NativeViewGuard, type NativeView } from './nativeView.ts'
 import type { WriteResult } from '../integrations/nextcloud/types.ts'
 import type { ViewOutcome } from './coordinator.ts'
 
-const APPS = ['files', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed', 'collectives', 'forms', 'notes', 'bookmarks'] as const
+const APPS = ['files', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed', 'collectives', 'forms', 'notes', 'bookmarks', 'flow'] as const
 type NativeApp = typeof APPS[number]
 
 /** Own only the native child. Original DOM, parent chat and token memory remain mounted. */

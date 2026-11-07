@@ -41,10 +41,12 @@ final class ProviderPolicy {
 				throw new \InvalidArgumentException();
 			}
 			$value = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
-			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks'])) {
+			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'])) {
 				throw new \InvalidArgumentException();
 			}
-			if (!array_key_exists($section, $value)) throw new \OutOfBoundsException();
+			if (!array_key_exists($section, $value)) {
+				throw new \OutOfBoundsException();
+			}
 			$config = $value[$section];
 			if (!is_array($config) || !is_bool($config['enabled'] ?? null) || array_diff(array_keys($config), ['enabled', 'collections', 'sourceClass', 'writesEnabled'])) {
 				throw new \InvalidArgumentException();
@@ -95,39 +97,62 @@ final class ProviderPolicy {
 	}
 
 	public function structured(string $provider, bool $audit = false): array {
-		if (!in_array($provider, ['tables', 'deck'], true)) throw new Problem('Unsupported structured provider.', 400);
+		if (!in_array($provider, ['tables', 'deck'], true)) {
+			throw new Problem('Unsupported structured provider.', 400);
+		}
 		$policy = $this->parsePolicy($provider, $audit);
 		foreach ($policy['collections'] as $id) {
-			if (!preg_match('/^[1-9][0-9]{0,14}$/D', $id)) throw new Problem('Use numeric native collection identifiers.', 503);
+			if (!preg_match('/^[1-9][0-9]{0,14}$/D', $id)) {
+				throw new Problem('Use numeric native collection identifiers.', 503);
+			}
 		}
 		return $policy;
 	}
 
 	public function communication(string $provider, bool $audit = false): array {
-		if (!in_array($provider, ['mail', 'talk'], true)) throw new Problem('Unsupported communications provider.', 400);
+		if (!in_array($provider, ['mail', 'talk'], true)) {
+			throw new Problem('Unsupported communications provider.', 400);
+		}
 		$policy = $this->parsePolicy($provider, $audit);
 		foreach ($policy['collections'] as $id) {
-			if (!preg_match($provider === 'mail' ? '/^[1-9][0-9]{0,14}$/D' : '/^[a-z0-9]{4,30}$/D', $id)) throw new Problem('Use canonical native account or room identifiers.', 503);
+			if (!preg_match($provider === 'mail' ? '/^[1-9][0-9]{0,14}$/D' : '/^[a-z0-9]{4,30}$/D', $id)) {
+				throw new Problem('Use canonical native account or room identifiers.', 503);
+			}
 		}
 		return $policy;
 	}
 
 	public function content(string $provider, bool $audit = false): array {
-		if (!in_array($provider, ['collectives', 'forms', 'notes', 'bookmarks'], true)) throw new Problem('Unsupported content provider.', 400);
+		if (!in_array($provider, ['collectives', 'forms', 'notes', 'bookmarks'], true)) {
+			throw new Problem('Unsupported content provider.', 400);
+		}
 		$policy = $this->parsePolicy($provider, $audit);
 		foreach ($policy['collections'] as $id) {
 			// Personal denotes only the signed-in user's native collection. It is
 			// never a principal supplied by an agent file or tool argument.
 			$personal = $id === 'personal' && in_array($provider, ['forms', 'notes', 'bookmarks'], true);
 			$numeric = in_array($provider, ['collectives', 'forms'], true) && preg_match('/^[1-9][0-9]{0,14}$/D', $id);
-			if (!$personal && !$numeric) throw new Problem('Use a supported native content collection.', 503);
+			if (!$personal && !$numeric) {
+				throw new Problem('Use a supported native content collection.', 503);
+			}
+		}
+		return $policy;
+	}
+
+	public function workflow(string $provider, bool $audit = false): array {
+		if (!in_array($provider, ['whiteboard', 'flow'], true)) {
+			throw new Problem('Unsupported native workflow provider.', 400);
+		}
+		$policy = $this->parsePolicy($provider, $audit);
+		if ($policy['collections'] !== ['personal']) {
+			throw new Problem('Only the current native personal workflow collection is supported.', 503);
 		}
 		return $policy;
 	}
 
 	/** Disabling dispatch retains authorized native audit/inspection; revoked scope still denies. */
 	public function audit(string $provider): array {
-		if (!in_array($provider, ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks'], true)) {
+		if (!in_array($provider, ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'], true)) {
 			throw new Problem('Unsupported provider audit.', 400);
 		}
 		return $this->parsePolicy($provider, true);

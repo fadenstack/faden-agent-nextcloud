@@ -93,7 +93,7 @@ import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
 import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, ContentProposal, ContentProviderId, ProviderInspection, StructuredProposal } from '../providers/client.ts'
-import { CONTENT_MUTATIONS, nativeContentTools } from '../providers/contentTools.ts'
+import { CONTENT_MUTATIONS, nativeContentTools, nativeWorkflowTools } from '../providers/contentTools.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
@@ -190,8 +190,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const nativeContent = !!this.#providerReads && !!files.nativeProviders?.contentPropose
 		const collectivesEnabled = !nativeContent && experimental && config.collectivesEnabled === true && !!files.collectives
 		const formsEnabled = !nativeContent && experimental && config.formsEnabled === true && !!files.forms
-		const whiteboardEnabled = experimental && config.whiteboardEnabled === true && !!files.whiteboard
-		const flowEnabled = experimental && config.flowEnabled === true && !!files.flow
+		const whiteboardEnabled = !nativeContent && experimental && config.whiteboardEnabled === true && !!files.whiteboard
+		const flowEnabled = !nativeContent && experimental && config.flowEnabled === true && !!files.flow
 		const windmillEnabled = experimental && config.windmillEnabled === true && !!files.windmill
 		const n8nEnabled = experimental && config.n8nEnabled === true && !!files.n8n
 		const agentfileEnabled = experimental && config.agentfileEnabled === true && !!files.agentfile
@@ -223,6 +223,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(notesEnabled ? notesTools(this) : []))
 			.addTools(...(bookmarksEnabled ? bookmarksTools(this) : []))
 			.addTools(...(nativeContent ? nativeContentTools(this) : []))
+			.addTools(...(nativeContent ? nativeWorkflowTools(this) : []))
 			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeTasksTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeContactsTools(this.#providerReads, this) : []))
@@ -238,7 +239,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
-					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
+					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
 					return inner.stream(messages, available
 						? {
 							...options,
@@ -250,7 +251,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addToolStage(StageOrder.custom, {
 				invoke: async (invocation, next) => {
-					if (this.#providerReads && ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
+					if (this.#providerReads && ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
 					else this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
 					if (this.#providerReads?.hasSources && fileCapability(invocation.tool.name)?.subsystem === 'files' && fileCapability(invocation.tool.name)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
@@ -420,7 +421,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if (CONTENT_MUTATIONS.has(request.toolName) && request.source === 'host' && nativeContent) {
 						if (this.#writeBlocked || !this.#providerReads!.offeredTools.includes(request.toolName)) throw new Error('This native content operation is unavailable.')
 						const provider = fileCapability(request.toolName)!.subsystem as ContentProviderId
-						const binding = await this.workspace?.prepareProvider(provider)
+						const binding = await this.workspace?.prepareProvider(provider === 'whiteboard' ? 'files' : provider)
 						await this.#providerReads!.assertProcessing(signal)
 						const plan = await files.nativeProviders!.contentPropose!(request.toolName, request.arguments, signal)
 						this.#contentProposals.set(request.callId, plan)
@@ -454,7 +455,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, content: request.arguments },
 						}
 					}
-					if ((WHITEBOARD_MUTATIONS.has(request.toolName) || FLOW_MUTATIONS.has(request.toolName) || WINDMILL_MUTATIONS.has(request.toolName) || N8N_MUTATIONS.has(request.toolName) || (!nativeContent && (NOTES_MUTATIONS.has(request.toolName) || BOOKMARKS_MUTATIONS.has(request.toolName)))) && request.source === 'host') {
+					if ((WINDMILL_MUTATIONS.has(request.toolName) || N8N_MUTATIONS.has(request.toolName) || (!nativeContent && (WHITEBOARD_MUTATIONS.has(request.toolName) || FLOW_MUTATIONS.has(request.toolName) || NOTES_MUTATIONS.has(request.toolName) || BOOKMARKS_MUTATIONS.has(request.toolName)))) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const target = `${request.toolName}`
 						const plan = { name: request.toolName, args: { ...request.arguments }, target, revision: `workflow:${request.toolName}:${request.callId}` }
@@ -1103,7 +1104,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
 		}
-		if ((WHITEBOARD_MUTATIONS.has(part.toolName) || FLOW_MUTATIONS.has(part.toolName) || WINDMILL_MUTATIONS.has(part.toolName) || N8N_MUTATIONS.has(part.toolName) || (!this.files.nativeProviders?.contentApprove && (NOTES_MUTATIONS.has(part.toolName) || BOOKMARKS_MUTATIONS.has(part.toolName)))) && part.request.source === 'host') {
+		if ((WINDMILL_MUTATIONS.has(part.toolName) || N8N_MUTATIONS.has(part.toolName) || (!this.files.nativeProviders?.contentApprove && (WHITEBOARD_MUTATIONS.has(part.toolName) || FLOW_MUTATIONS.has(part.toolName) || NOTES_MUTATIONS.has(part.toolName) || BOOKMARKS_MUTATIONS.has(part.toolName)))) && part.request.source === 'host') {
 			const proposal = this.#workflowProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
@@ -2301,7 +2302,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					return result
 				}
 				const id = Number(result.result?.id ?? 0)
-				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app: proposal.provider, collectionId: result.collectionId!, filename: String(id) } }, call.signal) : undefined
+				const app = proposal.provider === 'whiteboard' ? 'files' : proposal.provider
+				const collectionId = proposal.provider === 'whiteboard' ? String(result.result?.folderId ?? '') : result.collectionId!
+				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app, collectionId, filename: String(id) } }, call.signal) : undefined
 				this.#providerCompletion = `Nextcloud verified and recorded this action: ${proposal.target}. Audit only; no Undo. Start a new conversation to use fresh native context.`
 				return { ...result, ...(activity ? { view: activity.view } : {}) }
 			}

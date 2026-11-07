@@ -16,14 +16,17 @@ const specs = [
 	['nc_forms_submit_response', { formId: 1, answers: { '1': ['2'] } }],
 	['nc_notes_create', { title: 'New note', content: 'Exact content' }],
 	['nc_bookmarks_create', { url: 'https://example.invalid/a', title: 'New bookmark', tags: ['synthetic'] }],
+	['nc_whiteboard_create', { path: '/', name: 'New.whiteboard' }],
+	['nc_flow_create_draft', { description: 'Tag synthetic files', operation: 'tag_file', config: { filename: 'synthetic.txt', tagId: 1 } }],
+	['nc_flow_update_rule', { ruleId: 2, active: true }],
 ] as const
-const tools = ['nc_collectives_read', 'nc_forms_read', 'nc_notes_read', 'nc_bookmarks_read', ...specs.map(s => s[0])]
+const tools = ['nc_collectives_read', 'nc_forms_read', 'nc_notes_read', 'nc_bookmarks_read', 'nc_whiteboard_read', 'nc_flow_read', ...specs.map(s => s[0])]
 const identity: Identity = { userId: 'alice', binding: 'native-session', enabled: true, agent: 'content', serverUrl: 'https://faden.test', development: true, providerReadsEnabled: true,
 	scopePolicy: { version: 'test', gatewayOrigin: 'https://faden.test', sources: [{ kind: 'user-files' }], destinations: [], tools, sourceClasses: ['standard'], downstreamPolicy: 'unverified', destinationAudiences: ['private', 'unknown', 'shared'], movements: ['private', 'unknown', 'shared'].map(destination => ({ source: 'standard' as const, destination: destination as 'private' | 'unknown' | 'shared' })), developmentLoopback: true } }
 async function flow(name: string, args: Readonly<Record<string, unknown>>, option = '') {
 	const config: Identity = option === 'protected-source' ? { ...identity, scopePolicy: { ...identity.scopePolicy!, sourceClasses: ['standard', 'protected'], downstreamPolicy: 'configured' } } : identity
 	const provider = name.split('_')[1] as ContentProviderId
-	const version = { collectives: '4.7.1', forms: '5.4.1', notes: '6.1.0', bookmarks: '17.0.0' }[provider]
+	const version = { collectives: '4.7.1', forms: '5.4.1', notes: '6.1.0', bookmarks: '17.0.0', whiteboard: '2.1.2', flow: '3.0.0' }[provider]
 	const resource: ProviderResource = { provider, resourceId: `nextcloud:${provider}:MQ`, collectionId: provider === 'collectives' ? '1' : 'personal', revision: 'a'.repeat(64), policyVersion: 'native-policy', sourceClass: 'standard', audience: 'unknown', filename: '{}' }
 	let agent: NextcloudAgent, step = 0
 	const native: NativeProvidersApi = {
@@ -43,7 +46,7 @@ async function flow(name: string, args: Readonly<Record<string, unknown>>, optio
 	const files: FileApi = { identity: async () => config, assertIdentity: async () => {}, select: vi.fn(), read: vi.fn(), list: vi.fn(), pdf: vi.fn(), propose: vi.fn(), approve: vi.fn(), commit: vi.fn(), nativeProviders: native, scopeResource: vi.fn(async () => ({ resourceId: 'nextcloud:files:1', revision: 'source-revision', sourceClass: 'protected' as const, audience: 'private' as const, scope: { kind: 'user-files' as const } })) }
 	let round = 0
 	const gateway = new FakeGateway({ serverUrl: identity.serverUrl, agents: [{ slug: identity.agent, version: 1, contract: tools.map(name => ({ name, risk: name.endsWith('_read') ? 'read' : 'destructive' })) }], users: [{ email: 'alice', password: 'test', agents: [identity.agent] }], model: () => ++round === 1 ? { toolCalls: [{ id: 'read', name: `nc_${provider}_read`, arguments: {} }] } : round === 2 ? { toolCalls: [{ id: 'write', name, arguments: args }] } : { text: 'Finished.' } })
-	const workspace = new WorkspaceCoordinator({ guard: { snapshot: () => ({ app: provider, key: 'native/1', epoch: 1, editState: 'clean', reason: '' }), dispose: () => {} }, refresh: vi.fn(async () => 'refreshed') })
+	const workspace = new WorkspaceCoordinator({ guard: { snapshot: () => ({ app: provider === 'whiteboard' ? 'files' : provider, key: 'native/1', epoch: 1, editState: 'clean', reason: '' }), dispose: () => {} }, refresh: vi.fn(async () => 'refreshed') })
 	agent = new NextcloudAgent(config, files, gateway.fetch, workspace)
 	await agent.signIn('alice', 'test')
 	return { agent, native, files, workspace, send: agent.send('Perform this synthetic native content operation', false) }

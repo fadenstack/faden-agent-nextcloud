@@ -22,7 +22,7 @@ export class NativeViewGuard {
 
 	snapshot(): NativeView {
 		const url = new URL(this.page.location.href)
-		const app = url.pathname.match(/\/apps\/([a-z0-9_]+)(?:\/|$)/)?.[1] ?? (/\/call\/[a-z0-9]{4,30}$/.test(url.pathname) ? 'spreed' : 'unknown')
+		const app = url.pathname.match(/\/apps\/([a-z0-9_]+)(?:\/|$)/)?.[1] ?? (/\/settings\/user\/workflow\/?$/.test(url.pathname) ? 'flow' : /\/call\/[a-z0-9]{4,30}$/.test(url.pathname) ? 'spreed' : 'unknown')
 		const key = `${url.pathname}${url.search}${url.hash}`
 		if (key !== this.#key) { this.#key = key; this.#epoch++ }
 		const viewer = this.page.querySelector('#viewer.modal-mask.viewer[role="dialog"]')
@@ -54,7 +54,7 @@ export class NativeViewGuard {
 		const ready = !!this.page.querySelector('#app-content, #app-content-vue') && !this.page.querySelector('#app-content [aria-busy="true"], #app-content-vue [aria-busy="true"]')
 		const clean = !viewer && !dialog && !editor && !nativeEditor && !mailEditor && !contentEditor && (app === 'files'
 			? !!this.page.querySelector('.files-list, .files-list__row')
-			: ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed', 'collectives', 'forms', 'notes', 'bookmarks'].includes(app) && ready)
+			: ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed', 'collectives', 'forms', 'notes', 'bookmarks', 'flow'].includes(app) && ready)
 		return { app, key, epoch: this.#epoch, editState: this.#dirty ? 'dirty' : clean ? 'clean' : 'unknown', reason: this.#dirty ? 'Finish or cancel your edits before asking the assistant to change this view.' : app === 'files' && editor ? 'A Files preview or folder-description editor is open. Save or close it, or open a folder without an editor before asking the assistant to make a change.' : 'The assistant cannot confirm that this editor has no unsaved changes.' }
 	}
 
