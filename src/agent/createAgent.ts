@@ -195,6 +195,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const notesEnabled = experimental && config.notesEnabled === true && !!files.notes
 		const bookmarksEnabled = experimental && config.bookmarksEnabled === true && !!files.bookmarks
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
+			// Routine native tool work needs prompt responses. The published SDK
+			// treats this as a model preference; native approval/access checks remain mandatory.
+			.useReasoning('none')
 			.addTools(...nextcloudTools(this))
 			.addTools(...(filesReadsActive ? filesReadTools(this) : []))
 			.addTools(...(folderCreateActive ? filesFolderCreateTool(this) : []))

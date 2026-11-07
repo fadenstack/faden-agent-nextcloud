@@ -39,9 +39,13 @@ async function flow(name: string, options: { unavailable?: boolean; unknown?: bo
 		model: () => ++round === 1 ? { toolCalls: [{ id: 'read', name: `nc_${provider}_read`, arguments: provider === 'mail' ? { accountId: '1' } : { roomToken: 'abcd1234' } }] }
 			: round === 2 ? { toolCalls: [{ id: 'write', name, arguments: args }] } : { text: 'Finished.' } })
 	const workspace = new WorkspaceCoordinator({ guard: { snapshot: () => ({ app: provider === 'mail' ? 'mail' : 'spreed', key: 'native/1', epoch: 1, editState: 'clean', reason: '' }), dispose: () => {} }, refresh: vi.fn(async () => 'refreshed') })
-	agent = new NextcloudAgent(identity, files, gateway.fetch, workspace)
+	const reasoning: unknown[] = []
+	agent = new NextcloudAgent(identity, files, async (input, init) => {
+		if (String(input).endsWith('/chat/completions')) reasoning.push(JSON.parse(String(init?.body)).reasoning_effort)
+		return gateway.fetch(input, init)
+	}, workspace)
 	await agent.signIn('alice', 'test')
-	return { agent, native, workspace, send: agent.send('Perform this synthetic native operation', false) }
+	return { agent, native, workspace, reasoning, send: agent.send('Perform this synthetic native operation', false) }
 }
 async function pending(agent: NextcloudAgent): Promise<ApprovalPart> {
 	let part: ApprovalPart | undefined
@@ -59,6 +63,8 @@ describe('Native Mail/Talk through published SDK governance', () => {
 			expect(run.native.communicationCommit).not.toHaveBeenCalled()
 			expect(part.request).toMatchObject({ canAllowAlways: false, canAllowForSession: false })
 			await run.agent.approve(part); await run.send
+			expect(run.reasoning.length).toBeGreaterThan(0)
+			expect(run.reasoning.every(value => value === 'none')).toBe(true)
 			expect(run.native.communicationApprove).toHaveBeenCalledTimes(1)
 			expect(run.native.communicationCommit).toHaveBeenCalledTimes(name === 'nc_mail_save_draft' ? 2 : name === 'nc_mail_send_draft' ? 3 : 1)
 			expect(vi.mocked(run.native.communicationCommit!).mock.calls.map(call => call[2])).toEqual(name === 'nc_mail_save_draft' ? [0, 1] : name === 'nc_mail_send_draft' ? [0, 1, 2] : [0])
