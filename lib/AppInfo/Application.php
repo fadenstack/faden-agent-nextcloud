@@ -13,6 +13,7 @@ use OCA\FadenstackAgent\History\FilesAccessResolver;
 use OCA\FadenstackAgent\History\TasksAccessResolver;
 use OCA\FadenstackAgent\History\StructuredAccessResolver;
 use OCA\FadenstackAgent\History\CommunicationAccessResolver;
+use OCA\FadenstackAgent\History\ContentAccessResolver;
 use OCA\FadenstackAgent\Listener\ShellListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -41,6 +42,7 @@ class Application extends App implements IBootstrap {
 			$registry->register('deck', $container->get(StructuredAccessResolver::class));
 			$registry->register('mail', $container->get(CommunicationAccessResolver::class));
 			$registry->register('talk', $container->get(CommunicationAccessResolver::class));
+			foreach (['collectives', 'forms', 'notes', 'bookmarks'] as $provider) $registry->register($provider, $container->get(ContentAccessResolver::class));
 			return $registry;
 		});
 	}

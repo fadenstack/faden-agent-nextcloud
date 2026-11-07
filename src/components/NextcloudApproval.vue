@@ -59,17 +59,30 @@ const action = computed(() => {
 	case 'nc_mail_save_draft': return t('fadenstack_agent', 'Save Mail draft')
 	case 'nc_mail_send_draft': return t('fadenstack_agent', 'Send Mail draft')
 	case 'nc_talk_send_message': return t('fadenstack_agent', 'Send Talk message')
+	case 'nc_collectives_create_page': return t('fadenstack_agent', 'Create collective page')
+	case 'nc_collectives_delete_page': return t('fadenstack_agent', 'Move collective page to trash')
+	case 'nc_forms_create_form': return t('fadenstack_agent', 'Create private form')
+	case 'nc_forms_submit_response': return t('fadenstack_agent', 'Submit form response')
+	case 'nc_notes_create': return t('fadenstack_agent', 'Create note')
+	case 'nc_bookmarks_create': return t('fadenstack_agent', 'Create bookmark')
 	default: return t('fadenstack_agent', 'Replace file')
 	}
 })
 const approving = ref(false)
 const organization = computed(() => ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(part.value.toolName))
-const structured = computed(() => /^(nc_tables_|nc_deck_|nc_mail_|nc_talk_)/.test(part.value.toolName))
+const structured = computed(() => /^(nc_tables_|nc_deck_|nc_mail_|nc_talk_|nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_)/.test(part.value.toolName))
+const contentAction = computed(() => /^(nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_)/.test(part.value.toolName))
 const communicationSummary = computed(() => {
 	switch (part.value.toolName) {
 	case 'nc_mail_save_draft': return t('fadenstack_agent', 'Save only; no email is sent. Native last-write-wins: another editor can change this draft. Stop can leave a partial draft. Audit only; no Undo.')
 	case 'nc_mail_send_draft': return t('fadenstack_agent', 'Send the reviewed draft. Native last-write-wins: another editor can change it. SMTP acceptance does not confirm delivery. Stop cannot retract an accepted email. Audit only; no Undo.')
 	case 'nc_talk_send_message': return t('fadenstack_agent', 'Send to this room and its current audience. Native last-write-wins: room access can change. Normal Talk notifications may occur. Stop cannot retract an accepted message. Audit only; no Undo.')
+	case 'nc_collectives_create_page': return t('fadenstack_agent', 'Create an empty page in this collective. Native last-write-wins; native editors remain active. Audit only; no Undo.')
+	case 'nc_collectives_delete_page': return t('fadenstack_agent', 'Move this leaf page to native trash. Other native editors are not locked. Audit only; no Undo.')
+	case 'nc_forms_create_form': return t('fadenstack_agent', 'Create a private form in recorded steps. Stop can leave a partial form. Native last-write-wins; audit only; no Undo.')
+	case 'nc_forms_submit_response': return t('fadenstack_agent', 'Submit these answers as your native user. The form owner and authorized readers can see them. Notifications may occur. Submission has no Undo and is never retried automatically.')
+	case 'nc_notes_create': return t('fadenstack_agent', 'Create a new note without replacing an existing body. The Notes folder may be shared. Native last-write-wins; audit only; no Undo.')
+	case 'nc_bookmarks_create': return t('fadenstack_agent', 'Create this bookmark. Native crawling, previews and archiving may fetch its URL or contact configured services. Audit only; no Undo.')
 	default: return ''
 	}
 })
@@ -135,14 +148,14 @@ function deny() {
 			<p v-if="part.toolName === 'nc_tables_delete_row'">
 				{{ t('fadenstack_agent', 'This row will be deleted. Its cell values are shown below.') }}
 			</p>
-			<dl v-if="fields?.length" class="fadenstack-file-fields">
+			<dl v-if="fields?.length" class="fadenstack-file-fields" :class="{ 'fadenstack-content-fields': contentAction }">
 				<div v-for="(field, index) in fields" :key="index" class="fadenstack-field-row">
 					<dt>{{ field.label }}</dt>
 					<dd><span v-if="field.before !== null && field.before !== undefined">{{ fieldText(field.before) }} → </span>{{ fieldText(field.after) }}</dd>
 				</div>
 			</dl>
 			<dl class="fadenstack-file-fields">
-				<dt>{{ t('fadenstack_agent', 'Native access') }}</dt><dd>{{ /^(nc_mail_|nc_talk_)/.test(part.toolName) ? audience(part.request.arguments.nativeAudience) : t('fadenstack_agent', 'Current table or board permissions; audience not fully determined') }}</dd>
+				<dt>{{ t('fadenstack_agent', 'Native access') }}</dt><dd>{{ /^(nc_tables_|nc_deck_)/.test(part.toolName) ? t('fadenstack_agent', 'Current table or board permissions; audience not fully determined') : audience(part.request.arguments.nativeAudience) }}</dd>
 				<dt>{{ t('fadenstack_agent', 'History') }}</dt><dd>{{ t('fadenstack_agent', 'Audit only · no Undo') }}</dd>
 			</dl>
 			<p>{{ communicationSummary || part.request.arguments.limitation }}</p>
@@ -244,9 +257,17 @@ function deny() {
 
 .fadenstack-file-fields dt, .fadenstack-file-fields dd { float: none; width: auto; min-width: 0; margin: 0; padding: 0; text-align: start; overflow-wrap: anywhere; }
 
-.fadenstack-file-fields dt { grid-column: 1; align-self: start; color: var(--color-text-maxcontrast); }
+.fadenstack-file-fields dt { grid-column: 1; align-self: start; color: var(--color-text-maxcontrast); white-space: normal; }
 
 .fadenstack-file-fields dd { grid-column: 2; align-self: start; white-space: pre-wrap; }
 
 .fadenstack-field-row { display: contents; }
+
+.fadenstack-content-fields { display: block; }
+
+.fadenstack-content-fields .fadenstack-field-row { display: block; margin-block-end: 12px; }
+
+.fadenstack-content-fields dt, .fadenstack-content-fields dd { display: block; }
+
+.fadenstack-content-fields dt { margin-block-end: 4px; }
 </style>

@@ -3,6 +3,7 @@ import type { ProviderResource } from './scope.ts'
 import type { TableSnapshot, DeckBoardSnapshot } from '../integrations/nextcloud/types.ts'
 
 export interface CommunicationRead extends Record<string, unknown> { resource: ProviderResource }
+export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks'
 export interface CommunicationOutcome {
 	readonly outcome: 'verified' | 'running' | 'partial'
 	readonly continue: boolean
@@ -36,6 +37,8 @@ export interface StructuredRead {
 	readonly resource: ProviderResource
 }
 export interface CommunicationProposal extends Omit<StructuredProposal, 'provider'> { provider: 'mail' | 'talk' }
+export interface ContentProposal extends Omit<StructuredProposal, 'provider'> { provider: ContentProviderId }
+export interface ContentOutcome extends Omit<CommunicationOutcome, 'provider' | 'outcome'> { provider: ContentProviderId; outcome: 'verified' | 'running' | 'partial' | 'unknown' }
 export interface StructuredOutcome {
 	readonly status: 'saved' | 'deleted'
 	readonly outcome: 'verified'
@@ -96,7 +99,7 @@ export type ContactReadResult = (ContactSummary & { readonly etag: string })
 
 export interface ProviderAuditItem {
 	readonly id: string
-	readonly provider: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'talk'
+	readonly provider: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'talk' | ContentProviderId
 	readonly name: string
 	readonly target: string
 	readonly state: string
@@ -116,6 +119,11 @@ export interface ProviderInspection {
 }
 
 export interface NativeProvidersApi {
+	contentRead?(provider: ContentProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationRead>
+	contentPropose?(toolName: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<ContentProposal>
+	contentApprove?(proposal: ContentProposal, signal: AbortSignal): Promise<unknown>
+	contentCommit?(proposal: ContentProposal, signal: AbortSignal, step: number): Promise<ContentOutcome>
+	contentCancel?(proposal: ContentProposal): Promise<unknown>
 	communicationRead?(provider: 'mail' | 'talk', args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationRead>
 	communicationPropose?(toolName: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationProposal>
 	communicationApprove?(proposal: CommunicationProposal, signal: AbortSignal): Promise<unknown>
@@ -154,6 +162,20 @@ export interface NativeProvidersApi {
 /** Only our fixed native endpoints; credentials/URLs never appear in tool arguments. */
 export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>): NativeProvidersApi {
 	return {
+		contentRead: (provider, args, signal) => post('/providers/content/read', { provider, args }, signal),
+		contentPropose: async (toolName, args, signal) => {
+			const requestId = [...crypto.getRandomValues(new Uint8Array(24))].map(value => value.toString(16).padStart(2, '0')).join('')
+			try {
+				const value = await post<ContentProposal>('/providers/content/propose', { toolName, args, requestId }, signal)
+				if (value.id !== requestId || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName || !['collectives', 'forms', 'notes', 'bookmarks'].includes(value.provider)
+					|| value.history !== 'audit-only' || !Array.isArray(value.display) || !value.resource || !value.payload || typeof value.target !== 'string' || typeof value.limitation !== 'string') throw new Error('Invalid native content preview.')
+				signal.throwIfAborted()
+				return value
+			} catch (error) { await post(`/providers/content/${requestId}/cancel`, {}, new AbortController().signal).catch(() => {}); throw error }
+		},
+		contentApprove: (p, signal) => post(`/providers/content/${p.id}/approve`, { digest: p.digest }, signal),
+		contentCommit: (p, signal, step) => post(`/providers/content/${p.id}/commit`, { digest: p.digest, step }, signal),
+		contentCancel: p => post(`/providers/content/${p.id}/cancel`, {}, new AbortController().signal),
 		communicationRead: (provider, args, signal) => post('/providers/communications/read', { provider, args }, signal),
 		communicationPropose: async (toolName, args, signal) => {
 			const requestId = [...crypto.getRandomValues(new Uint8Array(24))].map(value => value.toString(16).padStart(2, '0')).join('')

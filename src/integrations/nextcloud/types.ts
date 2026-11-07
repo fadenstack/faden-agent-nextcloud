@@ -76,7 +76,7 @@ export interface Proposal extends WriteArguments {
 	before: string | null
 	contextId: string
 }
-export interface WriteResult { operation: string; file: FileMetadata; actionId?: string; provider?: { app: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'spreed'; collectionId: string; filename: string; date?: string; mailboxId?: number } }
+export interface WriteResult { operation: string; file: FileMetadata; actionId?: string; provider?: { app: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'spreed' | 'collectives' | 'forms' | 'notes' | 'bookmarks'; collectionId: string; filename: string; date?: string; mailboxId?: number } }
 
 export interface FileOperationProposal {
 	id: string; digest: string; operation: 'copy' | 'move' | 'share_readonly'; toolName: string; target: string
@@ -89,7 +89,7 @@ export interface FileOperationOutcome {
 	file?: FileMetadata; parentResourceId?: string; shareId?: number | null; message?: string; disclosure?: 'restricted'
 }
 export type HistoryDirection = 'undo' | 'redo' | 'reconcile' | 'revalidate'
-export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number; auditOnly?: boolean; provider?: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'talk'; fileUrl?: string; operation?: string }
+export interface HistoryItem { id: string; name: string; target?: string; state: string; eligible: HistoryDirection | 'none'; version: number; createdAt: number; auditOnly?: boolean; provider?: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'talk' | 'collectives' | 'forms' | 'notes' | 'bookmarks'; fileUrl?: string; operation?: string }
 export interface FileOperationsApi {
 	actions?(signal: AbortSignal): Promise<HistoryItem[]>
 	inspect?(id: string, signal: AbortSignal): Promise<import('../../providers/client.ts').ProviderInspection>

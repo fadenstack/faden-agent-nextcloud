@@ -10,6 +10,7 @@ use OCA\FadenstackAgent\Providers\TasksProvider;
 use OCA\FadenstackAgent\Providers\ProviderAuditService;
 use OCA\FadenstackAgent\Providers\StructuredProvider;
 use OCA\FadenstackAgent\Providers\CommunicationProvider;
+use OCA\FadenstackAgent\Providers\ContentProvider;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
 use OCP\AppFramework\Controller;
@@ -30,6 +31,7 @@ final class ProvidersController extends Controller {
 		private ProviderAuditService $audit,
 		private StructuredProvider $structured,
 		private CommunicationProvider $communications,
+		private ContentProvider $content,
 		private LoggerInterface $logger,
 	) {
 		parent::__construct($appName, $request);
@@ -52,8 +54,8 @@ final class ProvidersController extends Controller {
 	}
 
 	private function attempt(): array {
-		$id = $this->calendar->attemptId() ?? $this->tasks->attemptId() ?? $this->contacts->attemptId() ?? $this->structured->attemptId() ?? $this->communications->attemptId();
-		return $id ? ['actionId' => $id, 'outcome' => $id === $this->structured->attemptId() ? $this->structured->attemptOutcome() : ($id === $this->communications->attemptId() ? $this->communications->attemptOutcome() : 'unknown'), 'inspectionAvailable' => true] : [];
+		$id = $this->calendar->attemptId() ?? $this->tasks->attemptId() ?? $this->contacts->attemptId() ?? $this->structured->attemptId() ?? $this->communications->attemptId() ?? $this->content->attemptId();
+		return $id ? ['actionId' => $id, 'outcome' => $id === $this->structured->attemptId() ? $this->structured->attemptOutcome() : ($id === $this->communications->attemptId() ? $this->communications->attemptOutcome() : ($id === $this->content->attemptId() ? $this->content->attemptOutcome() : 'unknown')), 'inspectionAvailable' => true] : [];
 	}
 
 	/** Audit remains available after dispatch is disabled; native session + CSRF still apply. */
@@ -73,13 +75,13 @@ final class ProvidersController extends Controller {
 
 	#[NoAdminRequired]
 	public function actions(): DataResponse {
-		return $this->auditRun(fn () => array_merge($this->audit->listing(), $this->structured->actions(), $this->communications->actions()));
+		return $this->auditRun(fn () => array_merge($this->audit->listing(), $this->structured->actions(), $this->communications->actions(), $this->content->actions()));
 	}
 
 	#[NoAdminRequired]
 	public function inspectAction(string $id): DataResponse {
 		return $this->auditRun(function () use ($id): array {
-			try { return $this->audit->inspect($id); } catch (\Throwable) { try { return $this->structured->inspect($id); } catch (\Throwable) { return $this->communications->inspect($id); } }
+			try { return $this->audit->inspect($id); } catch (\Throwable) { try { return $this->structured->inspect($id); } catch (\Throwable) { try { return $this->communications->inspect($id); } catch (\Throwable) { return $this->content->inspect($id); } } }
 		});
 	}
 
@@ -94,10 +96,20 @@ final class ProvidersController extends Controller {
 				$calendar = [[...$tasks[0], 'provider' => 'calendar', 'tools' => ['nc_calendar_list'],
 					'conflict' => 'read-only', 'history' => 'not-applicable', 'canWrite' => false, 'discoveryOnly' => true]];
 			}
-			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities(), $this->communications->capabilities())];
+			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities(), $this->communications->capabilities(), $this->content->capabilities())];
 		});
 	}
 
+	#[NoAdminRequired]
+	public function contentRead(string $provider, array $args = []): DataResponse { return $this->run(fn () => $this->content->read($provider, $args)); }
+	#[NoAdminRequired]
+	public function contentPropose(string $toolName, array $args, string $requestId): DataResponse { return $this->run(fn () => $this->content->propose($toolName, $args, $requestId)); }
+	#[NoAdminRequired]
+	public function contentApprove(string $id, string $digest): DataResponse { return $this->run(fn () => $this->content->approve($id, $digest)); }
+	#[NoAdminRequired]
+	public function contentCommit(string $id, string $digest, int $step): DataResponse { return $this->run(fn () => $this->content->commit($id, $digest, $step)); }
+	#[NoAdminRequired]
+	public function contentCancel(string $id): DataResponse { return $this->auditRun(fn () => $this->content->cancel($id)); }
 	#[NoAdminRequired]
 	public function communicationRead(string $provider, array $args = []): DataResponse { return $this->run(fn () => $this->communications->read($provider, $args)); }
 	#[NoAdminRequired]

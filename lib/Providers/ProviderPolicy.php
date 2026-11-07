@@ -41,7 +41,7 @@ final class ProviderPolicy {
 				throw new \InvalidArgumentException();
 			}
 			$value = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
-			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk'])) {
+			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks'])) {
 				throw new \InvalidArgumentException();
 			}
 			if (!array_key_exists($section, $value)) throw new \OutOfBoundsException();
@@ -112,9 +112,22 @@ final class ProviderPolicy {
 		return $policy;
 	}
 
+	public function content(string $provider, bool $audit = false): array {
+		if (!in_array($provider, ['collectives', 'forms', 'notes', 'bookmarks'], true)) throw new Problem('Unsupported content provider.', 400);
+		$policy = $this->parsePolicy($provider, $audit);
+		foreach ($policy['collections'] as $id) {
+			// Personal denotes only the signed-in user's native collection. It is
+			// never a principal supplied by an agent file or tool argument.
+			$personal = $id === 'personal' && in_array($provider, ['forms', 'notes', 'bookmarks'], true);
+			$numeric = in_array($provider, ['collectives', 'forms'], true) && preg_match('/^[1-9][0-9]{0,14}$/D', $id);
+			if (!$personal && !$numeric) throw new Problem('Use a supported native content collection.', 503);
+		}
+		return $policy;
+	}
+
 	/** Disabling dispatch retains authorized native audit/inspection; revoked scope still denies. */
 	public function audit(string $provider): array {
-		if (!in_array($provider, ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk'], true)) {
+		if (!in_array($provider, ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks'], true)) {
 			throw new Problem('Unsupported provider audit.', 400);
 		}
 		return $this->parsePolicy($provider, true);

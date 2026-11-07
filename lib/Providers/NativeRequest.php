@@ -101,6 +101,57 @@ final class NativeRequest {
 		return new self($actor, $method, $path, $body, ['Accept' => 'application/json', 'Content-Type' => 'application/json'], $emptyHistory);
 	}
 
+	/** Closed content APIs. Membership and native permissions are resolved separately. */
+	public static function content(string $actor, string $provider, string $operation, int $collection = 0, int $item = 0, array $payload = []): self {
+		foreach ([$collection, $item] as $id) if ($id < 0 || $id > 999999999999999) throw new Problem('Invalid native content identifier.', 400);
+		$read = ['list', 'metadata', 'pages', 'page', 'trash', 'questions', 'submissions', 'settings', 'note', 'root', 'bookmark'];
+		if (in_array($operation, $read, true) && $payload) throw new Problem('Unexpected native content read payload.', 400);
+		if ($provider === 'collectives') {
+			$base = '/ocs/v2.php/apps/collectives/api/v1.0/collectives';
+			[$method, $path, $keys] = match ($operation) {
+				'list' => ['GET', '', []], 'pages' => ['GET', "/{$collection}/pages", []],
+				'page' => ['GET', "/{$collection}/pages/{$item}", []], 'trash' => ['GET', "/{$collection}/pages/trash", []],
+				'create_page' => ['POST', "/{$collection}/pages/{$item}", ['title']],
+				'delete_page' => ['DELETE', "/{$collection}/pages/{$item}", []],
+				default => throw new Problem('Unsupported native Collectives operation.', 400),
+			};
+			if ($operation !== 'list' && ($collection < 1 || (in_array($operation, ['page', 'create_page', 'delete_page'], true) && $item < 1))) throw new Problem('A collective and page are required.', 400);
+		} elseif ($provider === 'forms') {
+			$base = '/ocs/v2.php/apps/forms/api/v3/forms';
+			[$method, $path, $keys] = match ($operation) {
+				'list' => ['GET', '?type=owned', []], 'metadata' => ['GET', "/{$collection}", []],
+				'questions' => ['GET', "/{$collection}/questions", []], 'submissions' => ['GET', "/{$collection}/submissions", []],
+				'create_form' => ['POST', '', []], 'configure_form' => ['PATCH', "/{$collection}", ['keyValuePairs']],
+				'create_question' => ['POST', "/{$collection}/questions", ['type', 'text']],
+				'configure_question' => ['PATCH', "/{$collection}/questions/{$item}", ['keyValuePairs']],
+				'create_options' => ['POST', "/{$collection}/questions/{$item}/options", ['optionTexts']],
+				'submit_response' => ['POST', "/{$collection}/submissions", ['answers']],
+				default => throw new Problem('Unsupported native Forms operation.', 400),
+			};
+			if (!in_array($operation, ['list', 'create_form'], true) && ($collection < 1 || (in_array($operation, ['configure_question', 'create_options'], true) && $item < 1))) throw new Problem('A form and question are required.', 400);
+		} elseif ($provider === 'notes') {
+			$base = '/apps/notes/api/v1';
+			[$method, $path, $keys] = match ($operation) {
+				'list' => ['GET', '/notes', []], 'settings' => ['GET', '/settings', []],
+				'note' => ['GET', "/notes/{$item}", []], 'create' => ['POST', '/notes', ['title', 'content', 'category']],
+				default => throw new Problem('Unsupported native Notes operation.', 400),
+			};
+			if ($operation === 'note' && $item < 1) throw new Problem('A native note is required.', 400);
+		} elseif ($provider === 'bookmarks') {
+			// The public REST controller deliberately refuses cookie sessions.
+			// Use the same closed CSRF-protected HTTP routes as the native UI.
+			$base = '/apps/bookmarks';
+			[$method, $path, $keys] = match ($operation) {
+				'list' => ['GET', '/bookmark?limit=51&page=0', []], 'root' => ['GET', '/folder?root=-1&layers=0', []],
+				'bookmark' => ['GET', "/bookmark/{$item}", []], 'create' => ['POST', '/bookmark', ['url', 'title', 'description', 'tags']],
+				default => throw new Problem('Unsupported native Bookmarks operation.', 400),
+			};
+			if ($operation === 'bookmark' && $item < 1) throw new Problem('A native bookmark is required.', 400);
+		} else throw new Problem('Unsupported native content provider.', 400);
+		if (array_diff(array_keys($payload), $keys)) throw new Problem('Unexpected native content fields.', 400);
+		return self::jsonRequest($actor, $method, $base . $path, $payload);
+	}
+
 	public static function mailAttachment(string $actor, int $messageId, string $part): self {
 		if ($messageId < 1 || $messageId > 999999999999999 || !preg_match('/^[0-9]+(?:\.[0-9]+)*$/D', $part) || strlen($part) > 64) throw new Problem('A native MIME part is required.', 400);
 		return new self($actor, 'GET', '/apps/mail/api/messages/' . $messageId . '/attachment/' . $part, '', ['Accept' => 'application/octet-stream']);

@@ -12,7 +12,10 @@ final class EffectProgress {
 	];
 
 	public static function advance(string $operation, array $effects, string $step, string $phase, array $facts = []): array {
-		$steps = self::STEPS[$operation] ?? throw new JournalException('invalid_effect', 400);
+		// Fixed bounded Forms construction only. Endpoint/payload recipes remain
+		// server-owned and bound in the approved encrypted forward snapshot.
+		$steps = $operation === 'nc_forms_create_form' ? array_map(static fn ($i) => sprintf('form_%03d', $i), range(0, 151))
+			: (self::STEPS[$operation] ?? throw new JournalException('invalid_effect', 400));
 		$index = array_search($step, $steps, true);
 		if ($index === false || !in_array($phase, ['dispatched', 'observed'], true)) {
 			throw new JournalException('invalid_effect', 400);

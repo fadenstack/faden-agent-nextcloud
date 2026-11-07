@@ -9,6 +9,20 @@ use OCA\FadenstackAgent\History\JournalException;
 use PHPUnit\Framework\TestCase;
 
 final class EffectProgressTest extends TestCase {
+	public function testFormsRetainsOrderedNativeIdsAndRefusesRepeatedSteps(): void {
+		$state = EffectProgress::advance('nc_forms_create_form', [], 'form_000', 'dispatched');
+		$state = EffectProgress::advance('nc_forms_create_form', $state, 'form_000', 'observed', ['nativeId' => 17]);
+		$state = EffectProgress::advance('nc_forms_create_form', $state, 'form_001', 'dispatched');
+		self::assertSame(17, $state[0]['facts']['nativeId']);
+		$this->expectException(JournalException::class);
+		EffectProgress::advance('nc_forms_create_form', $state, 'form_001', 'dispatched');
+	}
+	public function testFormsCannotSkipAnUncertainStepOrExceedItsBound(): void {
+		foreach (['form_001', 'form_152', 'form_0', 'create_share'] as $step) {
+			try { EffectProgress::advance('nc_forms_create_form', [], $step, 'dispatched'); self::fail('Accepted an unplanned Forms step.'); }
+			catch (JournalException) { self::assertTrue(true); }
+		}
+	}
 	public function testCompoundSavePreservesNativeIdentifiersAndDispatchOrder(): void {
 		$state = EffectProgress::advance('nc_mail_save_draft', [], 'save_local_draft', 'dispatched');
 		$state = EffectProgress::advance('nc_mail_save_draft', $state, 'save_local_draft', 'observed', ['nativeId' => 42]);

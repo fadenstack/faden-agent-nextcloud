@@ -3,7 +3,7 @@ import { NativeViewGuard, type NativeView } from './nativeView.ts'
 import type { WriteResult } from '../integrations/nextcloud/types.ts'
 import type { ViewOutcome } from './coordinator.ts'
 
-const APPS = ['files', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed'] as const
+const APPS = ['files', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed', 'collectives', 'forms', 'notes', 'bookmarks'] as const
 type NativeApp = typeof APPS[number]
 
 /** Own only the native child. Original DOM, parent chat and token memory remain mounted. */
@@ -129,6 +129,14 @@ export class NativeWorkspace {
 		if (result.provider.app === 'mail') {
 			if (!Number.isSafeInteger(result.provider.mailboxId) || result.provider.mailboxId! < 1) return 'refresh_required'
 			target.href = new URL(generateUrl('/apps/mail/box/' + result.provider.mailboxId), this.page.location.href).href
+		}
+		if (result.provider.app === 'notes') {
+			if (!Number.isSafeInteger(result.file.id) || result.file.id < 1) return 'refresh_required'
+			target.href = new URL(generateUrl('/apps/notes/note/' + result.file.id), this.page.location.href).href
+		}
+		if (result.provider.app === 'collectives') {
+			const collection = target.pathname.split('/apps/collectives/')[1]?.split('/')[0]
+			if (!collection?.endsWith('-' + result.provider.collectionId)) return 'not_visible'
 		}
 		target.searchParams.set('fadenstack-workspace-child', '1')
 		await this.reload(target, signal)

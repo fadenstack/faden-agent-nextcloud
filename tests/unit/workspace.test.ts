@@ -17,6 +17,40 @@ function nativeGuard() {
 }
 
 describe('Native editor protection', () => {
+	it('recognizes only Collectives’ actual read-only renderer and disabled page title', () => {
+		history.replaceState(null, '', '/apps/collectives/Synthetic-1')
+		document.body.innerHTML = '<main id="app-content-vue"><div class="page-title"><input class="title" disabled></div><div class="ProseMirror" contenteditable="false">Saved page</div></main>'
+		const guard = new NativeViewGuard(); guards.push(guard)
+		expect(guard.snapshot().editState).toBe('clean')
+		// Collectives mounts an inactive Text editor alongside its readonly renderer.
+		document.querySelector('main')!.insertAdjacentHTML('beforeend', '<div class="inactive-editor" contenteditable="true" style="display:none">Native buffer</div><input type="file" data-text-el="attachment-file-input" style="display:none">')
+		expect(guard.snapshot().editState).toBe('clean')
+		document.querySelector('.inactive-editor')!.dispatchEvent(new Event('beforeinput', { bubbles: true }))
+		expect(guard.snapshot().editState).toBe('dirty')
+		guard.acknowledgeNavigation()
+		document.querySelector('input')!.disabled = false
+		expect(guard.snapshot().editState).toBe('unknown')
+		document.querySelector('.ProseMirror')!.setAttribute('contenteditable', 'true')
+		expect(guard.snapshot().editState).toBe('unknown')
+	})
+	it.each(['forms', 'notes', 'bookmarks'])('keeps %s inputs and editors protected while allowing a plain browse view', app => {
+		history.replaceState(null, '', '/apps/' + app + '/')
+		document.body.innerHTML = '<main id="app-content-vue"></main>'
+		const guard = new NativeViewGuard(); guards.push(guard)
+		expect(guard.snapshot().editState).toBe('clean')
+		document.querySelector('main')!.insertAdjacentHTML('beforeend', '<input value="Saved or pending native control">')
+		expect(guard.snapshot().editState).toBe('unknown')
+		document.querySelector('input')!.dispatchEvent(new Event('input', { bubbles: true }))
+		document.querySelector('input')!.remove()
+		expect(guard.snapshot().editState).toBe('dirty')
+	})
+	it.each([['bookmarks', 'inline-search'], ['notes', 'content-list__search']])('does not treat the tested native %s search field as an editor', (app, selector) => {
+		history.replaceState(null, '', '/apps/' + app + '/')
+		document.body.innerHTML = `<div class="app-${app}"><main id="app-content-vue"><section class="${selector}"><input></section></main></div>`
+		const guard = new NativeViewGuard(); guards.push(guard)
+		document.querySelector('input')!.dispatchEvent(new Event('input', { bubbles: true }))
+		expect(guard.snapshot().editState).toBe('clean')
+	})
 	it.each(['subject', 'recipient', 'body'])('protects Mail portal %s edits outside app content, even after its removal', async field => {
 		history.replaceState(null, '', '/apps/mail/box/1')
 		document.body.innerHTML = '<main id="app-content"></main><section class="floating-composer"><div class="message-composer"><input class="subject"><input type="search" class="recipient"><div class="body" contenteditable="true"></div></div></section>'
