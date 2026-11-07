@@ -116,7 +116,7 @@ export function mailTools(host: MailTalkHost) {
 		defineTool({
 			name: 'nc_mail_save_draft',
 			toolClass: 'destructive',
-			description: 'Create or update an unposted Nextcloud Mail draft with recipients, subject, body and optional attachments after approval.',
+			description: 'Request native review to create or update an unsent Mail draft with recipients, subject, body and optional attachments. Invoke this tool to open the trusted Allow/Deny preview; no write occurs before Allow. Do not ask for typed chat approval or imitate the card. Saving never sends email.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -146,7 +146,7 @@ export function mailTools(host: MailTalkHost) {
 			name: 'nc_mail_send_draft',
 			openWorld: true,
 			toolClass: 'destructive',
-			description: 'Dispatch an approved email draft once from the agent after exact native payload preview and revision checks. Report SMTP acceptance separately from recipient delivery. Never retry an uncertain send automatically.',
+			description: 'Request native review to send a persisted email draft once, with exact payload preview and revision checks. Invoke this tool to open the trusted Allow/Deny preview; no send occurs before Allow. Do not ask for typed chat approval or imitate the card. Report SMTP acceptance separately from delivery. Never retry an uncertain send.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -196,7 +196,7 @@ export function talkTools(host: MailTalkHost) {
 			name: 'nc_talk_send_message',
 			openWorld: true,
 			toolClass: 'destructive',
-			description: 'Send a message or reply to an authorized Nextcloud Talk room after individual approval. Verifies audience and role.',
+			description: 'Request native review to send a message or reply to an authorized Talk room, checking audience and role. Invoke this tool to open the trusted Allow/Deny preview; no send occurs before Allow. Do not ask for typed chat approval or imitate the card. Never retry an uncertain send.',
 			parameters: {
 				type: 'object',
 				properties: {
