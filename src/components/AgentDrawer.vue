@@ -66,8 +66,10 @@ body.fadenstack-workspace-child { --header-height: 0px; }
 /* Keep the Files toolbar and rows accessible alongside a desktop assistant. */
 @media (width >= 1024px) {
 	body.fadenstack-agent-open #fadenstack-native-workspace { inset-inline-end: 428px; }
-	body.fadenstack-agent-open #app-content-vue,
-	body.fadenstack-agent-open #app-content { margin-inline-end: 428px !important; }
+	/* Notes nests app-content containers: reserve drawer space once, leaving
+	 * native split panes/editors to use their original layout inside it. */
+	body.fadenstack-agent-open #app-content-vue:not(#app-content-vue *, #app-content *),
+	body.fadenstack-agent-open #app-content:not(#app-content-vue *, #app-content *) { margin-inline-end: 428px !important; }
 	body.fadenstack-agent-open .app-mail > .floating-composer { margin-inline-end: 428px !important; max-width: calc(100vw - 452px); }
 	body.fadenstack-agent-open.fadenstack-agent-in-viewer #viewer .modal-wrapper { max-width: calc(100% - 428px); margin-inline-end: 428px; }
 }

@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native content previews, protected editor handoff, child-only refresh and
   the shared working overlay and Stop control.
 
+### Fixed
+
+- Reserve chat space once around nested native Notes panels, preserving a
+  usable rich editor beside the drawer.
+- Require actual native CSRF validation on typed provider routes and refuse
+  OCS exemption headers on those extension endpoints.
+
 ## [0.1.1] - 2026-10-26
 
 ### Changed

@@ -39,6 +39,7 @@ final class ProvidersController extends Controller {
 
 	private function run(callable $operation): DataResponse {
 		try {
+			$this->assertCsrf();
 			$this->files->check($this->request->getHeader('X-Fadenstack-Session'));
 			$response = new DataResponse($operation());
 		} catch (Problem $error) {
@@ -53,6 +54,16 @@ final class ProvidersController extends Controller {
 		return $response;
 	}
 
+	/** Native OCS headers also exempt IRequest::passesCSRFCheck itself.
+	 * These typed cookie-session routes are not OCS endpoints: refuse that mode
+	 * so the public native check always verifies the actual token.
+	 */
+	private function assertCsrf(): void {
+		if ($this->request->getHeader('OCS-APIRequest') !== '' || !$this->request->passesCSRFCheck()) {
+			throw new Problem('A valid Nextcloud request token is required.', 403);
+		}
+	}
+
 	private function attempt(): array {
 		$id = $this->calendar->attemptId() ?? $this->tasks->attemptId() ?? $this->contacts->attemptId() ?? $this->structured->attemptId() ?? $this->communications->attemptId() ?? $this->content->attemptId();
 		return $id ? ['actionId' => $id, 'outcome' => $id === $this->structured->attemptId() ? $this->structured->attemptOutcome() : ($id === $this->communications->attemptId() ? $this->communications->attemptOutcome() : ($id === $this->content->attemptId() ? $this->content->attemptOutcome() : 'unknown')), 'inspectionAvailable' => true] : [];
@@ -61,6 +72,7 @@ final class ProvidersController extends Controller {
 	/** Audit remains available after dispatch is disabled; native session + CSRF still apply. */
 	private function auditRun(callable $operation): DataResponse {
 		try {
+			$this->assertCsrf();
 			$this->files->checkSession($this->request->getHeader('X-Fadenstack-Session'));
 			$response = new DataResponse($operation());
 		} catch (\Throwable $error) {
