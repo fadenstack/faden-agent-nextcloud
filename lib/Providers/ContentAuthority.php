@@ -147,6 +147,7 @@ final class ContentAuthority {
 			$audience = 'unknown'; // Page shares can expose content outside the team; do not invent a complete audience inventory.
 			$authority = array_intersect_key($data, array_flip(['id', 'name', 'circleId', 'level', 'editPermissionLevel', 'sharePermissionLevel', 'canEdit', 'canShare', 'shareToken']));
 		} elseif ($provider === 'forms' && $id !== 'personal') {
+			$this->assertListedForm($policy, (int)$id);
 			$data = $this->request($policy, $provider, 'metadata', (int)$id);
 			if (!is_array($data) || ($data['id'] ?? null) !== (int)$id || !is_string($data['ownerId'] ?? null) || !is_array($data['permissions'] ?? null) || !in_array('submit', $data['permissions'], true)) {
 				throw new Problem('Current native form permission is required.', 403);
@@ -188,6 +189,20 @@ final class ContentAuthority {
 		}
 		return ['policy' => $policy, 'data' => $data, 'canWrite' => $canWrite, 'audience' => $audience,
 			'authorityRevision' => StructuredProvider::digest([$provider, $id, $authority, $policy['policyVersion']])];
+	}
+	/** Do not probe configured IDs that the native user cannot discover. Repeated
+	 * forbidden metadata requests can engage Forms' instance-IP brute-force gate.
+	 * A listed ID is only a prefilter; full metadata still rechecks current rights.
+	 */
+	public function assertListedForm(array $policy, int $id): void {
+		foreach (['list', 'list_shared'] as $operation) {
+			foreach (self::boundedList($this->request($policy, 'forms', $operation)) as $form) {
+				if ($form['id'] === $id) {
+					return;
+				}
+			}
+		}
+		throw new Problem('The form is not in your native owned or shared Forms list.', 403);
 	}
 	public function privateForm(array $form, string $actor): bool {
 		return ($form['ownerId'] ?? null) === $actor && ($form['access']['permitAllUsers'] ?? null) === false && ($form['access']['showToAllUsers'] ?? null) === false && ($form['shares'] ?? null) === [] && ($form['fileId'] ?? null) === null && ($form['confirmationEmailEnabled'] ?? false) === false;

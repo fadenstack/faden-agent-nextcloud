@@ -104,7 +104,7 @@ final class NativeRequest {
 	/** Closed content APIs. Membership and native permissions are resolved separately. */
 	public static function content(string $actor, string $provider, string $operation, int $collection = 0, int $item = 0, array $payload = []): self {
 		foreach ([$collection, $item] as $id) if ($id < 0 || $id > 999999999999999) throw new Problem('Invalid native content identifier.', 400);
-		$read = ['list', 'metadata', 'pages', 'page', 'trash', 'questions', 'submissions', 'settings', 'note', 'root', 'bookmark'];
+		$read = ['list', 'list_shared', 'metadata', 'pages', 'page', 'trash', 'questions', 'submissions', 'settings', 'note', 'root', 'bookmark'];
 		if (in_array($operation, $read, true) && $payload) throw new Problem('Unexpected native content read payload.', 400);
 		if ($provider === 'collectives') {
 			$base = '/ocs/v2.php/apps/collectives/api/v1.0/collectives';
@@ -119,7 +119,7 @@ final class NativeRequest {
 		} elseif ($provider === 'forms') {
 			$base = '/ocs/v2.php/apps/forms/api/v3/forms';
 			[$method, $path, $keys] = match ($operation) {
-				'list' => ['GET', '?type=owned', []], 'metadata' => ['GET', "/{$collection}", []],
+				'list' => ['GET', '?type=owned', []], 'list_shared' => ['GET', '?type=shared', []], 'metadata' => ['GET', "/{$collection}", []],
 				'questions' => ['GET', "/{$collection}/questions", []], 'submissions' => ['GET', "/{$collection}/submissions", []],
 				'create_form' => ['POST', '', []], 'configure_form' => ['PATCH', "/{$collection}", ['keyValuePairs']],
 				'create_question' => ['POST', "/{$collection}/questions", ['type', 'text']],
@@ -128,7 +128,7 @@ final class NativeRequest {
 				'submit_response' => ['POST', "/{$collection}/submissions", ['answers']],
 				default => throw new Problem('Unsupported native Forms operation.', 400),
 			};
-			if (!in_array($operation, ['list', 'create_form'], true) && ($collection < 1 || (in_array($operation, ['configure_question', 'create_options'], true) && $item < 1))) throw new Problem('A form and question are required.', 400);
+			if (!in_array($operation, ['list', 'list_shared', 'create_form'], true) && ($collection < 1 || (in_array($operation, ['configure_question', 'create_options'], true) && $item < 1))) throw new Problem('A form and question are required.', 400);
 		} elseif ($provider === 'notes') {
 			$base = '/apps/notes/api/v1';
 			[$method, $path, $keys] = match ($operation) {

@@ -17,6 +17,21 @@ function nativeGuard() {
 }
 
 describe('Native editor protection', () => {
+	it('allows the unused native Bookmarks empty-view import launcher while protecting selected files and changes', () => {
+		history.replaceState(null, '', '/apps/bookmarks/')
+		document.body.innerHTML = '<div class="app-bookmarks"><main id="app-content-vue"><div class="empty-content"><input class="import" type="file"></div></main></div>'
+		const guard = new NativeViewGuard(); guards.push(guard)
+		const input = document.querySelector('input')!
+		expect(guard.snapshot().editState).toBe('clean')
+		Object.defineProperty(input, 'files', { configurable: true, value: [new File(['native'], 'bookmarks.html')] })
+		expect(guard.snapshot().editState).toBe('unknown')
+		input.dispatchEvent(new Event('change', { bubbles: true }))
+		input.remove()
+		expect(guard.snapshot().editState).toBe('dirty')
+		guard.acknowledgeNavigation()
+		document.querySelector('main')!.insertAdjacentHTML('beforeend', '<input type="file" class="another-native-upload">')
+		expect(guard.snapshot().editState).toBe('unknown')
+	})
 	it('recognizes only Collectives’ actual read-only renderer and disabled page title', () => {
 		history.replaceState(null, '', '/apps/collectives/Synthetic-1')
 		document.body.innerHTML = '<main id="app-content-vue"><div class="page-title"><input class="title" disabled></div><div class="ProseMirror" contenteditable="false">Saved page</div></main>'

@@ -22,8 +22,10 @@ working, or **Not included** if the attachment is excluded. Changing selection
 during a response prepares the next message; the current response keeps its
 original source. The row sits above the composer. **Stop** cancels the current
 response; closing the drawer also stops it. Chat history contains conversations,
-not an undo journal. Agent-wide undo/redo and additional app tools are planned
-separately; this version has no new action-history controls.
+not an undo journal. **Agent actions** separately shows governed native attempts.
+Undo/Redo appears only for independently certified private-text operations;
+other native actions have an audit trail. See [Mail and Talk](mail-talk.md) and
+[Collectives, Forms, Notes and Bookmarks](content-tools.md) for their exact bounds.
 
 Ask naturally: “Find the latest supplier contract”, “Find all PDFs inside
 Engineering”, or “Show my ten most recently modified documents”. Discovery

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-11-07
+
+### Added
+
+- Experimental, default-off native Collectives, Forms, Notes and Bookmarks
+  adapters using the current Nextcloud session and configured collection scope.
+- Exact individual approvals, durable per-step Forms construction, retained
+  partial drafts and truthful uncertain-submission receipts. These actions
+  have an audit trail without certified Undo.
+- Native content previews, protected editor handoff, child-only refresh and
+  the shared working overlay and Stop control.
+
 ## [0.1.1] - 2026-10-26
 
 ### Changed

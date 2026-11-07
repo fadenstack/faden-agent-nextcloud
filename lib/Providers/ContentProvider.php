@@ -13,6 +13,7 @@ use OCA\FadenstackAgent\Service\Problem;
 use OCP\ISession;
 use OCP\IUserSession;
 use OCP\Lock\ILockingProvider;
+use OCP\Lock\LockedException;
 
 /** One-use native content proposals; Forms has independently checkpointed effects. */
 final class ContentProvider {
@@ -92,7 +93,13 @@ final class ContentProvider {
 						'enabled' => true, 'tools' => $tools, 'conflict' => count($tools) > 1 ? 'native' : 'read-only', 'history' => 'audit-only', 'refresh' => 'child-reload', 'canRead' => true, 'canWrite' => count($tools) > 1];
 				}
 			} catch (Problem $e) {
-				if (!in_array($e->status, [403, 404], true)) {
+				if (in_array($e->status, [413, 429, 503], true)) {
+					// Discovery never grants authority. Withhold this provider when
+					// its native API is limited/unverifiable; keep unrelated apps usable.
+					$result[] = ['provider' => $provider, 'apiVersion' => $provider . '-' . ContentAuthority::VERSIONS[$provider] . '-session',
+						'policyVersion' => 'unavailable', 'enabled' => false, 'tools' => [], 'conflict' => 'read-only', 'history' => 'audit-only',
+						'refresh' => 'manual', 'canRead' => false, 'canWrite' => false, 'nativeStatus' => $e->status];
+				} elseif (!in_array($e->status, [403, 404], true)) {
 					throw $e;
 				}
 			}
@@ -196,7 +203,16 @@ final class ContentProvider {
 		$replay = false;
 		$lockCollection = $p['collectionId'] === 'personal' ? $identity->ownerHash . ':personal' : $p['collectionId'];
 		$lock = hash('sha256', 'fadenstack:content:' . $p['provider'] . ':' . $lockCollection);
-		$this->locks->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
+		try {
+			$this->locks->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
+		} catch (LockedException) {
+			// Another request can already be dispatching this same action. A
+			// rejected duplicate must not describe the whole action as no-effect.
+			$state = $this->tickets->state($identity, $id);
+			$this->partial = $expectedStep > 0 || $state === 'awaiting_step';
+			$this->dispatched = !in_array($state, ['prepared', 'approved', 'cancelled'], true);
+			throw new Problem('Another native content attempt is in progress. Inspect the recorded action without repeating this request.', 409);
+		}
 		try {
 			$first = $this->tickets->state($identity, $id) === 'approved';
 			$this->partial = !$first;

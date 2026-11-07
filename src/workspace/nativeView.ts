@@ -41,6 +41,7 @@ export class NativeViewGuard {
 			|| !!this.page.querySelector('#app-content iframe, #app-content-vue iframe')
 			|| [...this.page.querySelectorAll<HTMLInputElement>('#app-content input, #app-content-vue input')].some(input =>
 				!input.disabled && !input.readOnly && !input.matches('.app-bookmarks .inline-search input, .app-notes .content-list__search input')
+				&& !(app === 'bookmarks' && input.matches('.app-bookmarks .empty-content input.import[type="file"]') && input.files?.length === 0)
 				&& !(collectiveReadView && input.matches('input[type="file"][data-text-el="attachment-file-input"]') && input.getClientRects().length === 0)
 				&& !input.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity') && !['checkbox', 'radio', 'hidden', 'button', 'submit', 'search'].includes(input.type)))
 		const nativeEditor = ['calendar', 'tasks', 'contacts'].includes(app) && (
