@@ -48,6 +48,7 @@ const nativeContext = computed(() => {
 	if (app === 'forms') return t('fadenstack_agent', 'Forms view · Prepare a private form or review a response before submitting it.')
 	if (app === 'notes') return t('fadenstack_agent', 'Notes view · Read notes or create a new one. Switch native editors to Preview before an automatic refresh.')
 	if (app === 'bookmarks') return t('fadenstack_agent', 'Bookmarks view · Read saved links or prepare a bookmark. Native URL fetching needs your approval.')
+	if (app === 'flow') return t('fadenstack_agent', 'Personal Flow · Review blocked drafts or approve a rule change.')
 	return ''
 })
 const contextLabel = computed(() => {
@@ -194,7 +195,7 @@ function signOut() {
 					<span v-else class="fdn-muted">{{ chat.isBusy ? t('fadenstack_agent', 'No file included in this response.') : t('fadenstack_agent', 'Search files or choose a file in Files.') }}</span>
 				</div>
 				<div v-if="documentContext && displayContext" class="fdn-context-bar fdn-muted fadenstack-context-note">
-					{{ t('fadenstack_agent', 'Saved document context. Save edits before sending.') }}
+					{{ displayContext.file.name.toLowerCase().endsWith('.whiteboard') ? t('fadenstack_agent', 'Saved Whiteboard scene. Unsaved canvas edits are excluded.') : t('fadenstack_agent', 'Saved document context. Save edits before sending.') }}
 				</div>
 			</template>
 			<template #composer-accessory>

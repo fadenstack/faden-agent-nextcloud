@@ -13,6 +13,11 @@ cookie are never sent to Fadenstack.
 
 ![Review a new saved board](screenshots/whiteboard-create-review.png)
 
+![Read a saved scene beside the native Whiteboard canvas](screenshots/whiteboard-native-canvas.png)
+
+Selecting a Whiteboard includes its saved scene through the dedicated provider.
+The context note explicitly excludes unsaved canvas edits.
+
 Every mutation has an **Allow / Deny** preview showing the native account,
 destination, payload, audience and limitations. Check these before allowing it.
 **Stop** prevents further agent dispatch; an in-flight request or an already

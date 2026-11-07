@@ -2604,7 +2604,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	async resolveAttachment(signal: AbortSignal): Promise<MessageAttachment> {
 		const selected = this.context()
 		try {
-			const result = selected.file.folder ? await this.list(signal) : await this.read(signal)
+			let result: unknown
+			if (!selected.file.folder && selected.file.name.toLowerCase().endsWith('.whiteboard')) {
+				if (!this.#providerReads?.offeredTools.includes('nc_whiteboard_read')) throw new Error('Saved Whiteboard reads are not enabled for this agent. Open the board in the native app or ask your administrator to enable the provider.')
+				this.#providerReads.begin('nc_whiteboard_read')
+				result = await this.readContent('whiteboard', { path: `nextcloud:files:${selected.file.id}` }, signal)
+			} else result = selected.file.folder ? await this.list(signal) : await this.read(signal)
 			this.#scope?.budget.consumeResult(result, resultRecords(result))
 			signal.throwIfAborted()
 			return {

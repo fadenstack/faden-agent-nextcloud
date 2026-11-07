@@ -53,6 +53,29 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('SDK integration and file boundary', () => {
+	it.each([true, false])('routes an included Whiteboard through its governed native capability (available=%s)', async available => {
+		const policy: ScopePolicy = { version: 'native-board-context', gatewayOrigin: identity.serverUrl, sources: [{ kind: 'user-files' }], destinations: [], tools: ['nc_whiteboard_read'], sourceClasses: ['standard'], downstreamPolicy: 'unverified', destinationAudiences: [], movements: [], developmentLoopback: true }
+		const file = { ...selected.file, name: 'Canvas.whiteboard', path: '/Canvas.whiteboard', mime: 'application/x-whiteboard' }
+		const resource = { provider: 'whiteboard' as const, collectionId: 'personal', resourceId: 'nextcloud:whiteboard:MQ', revision: 'scene-v1', policyVersion: 'board-policy', sourceClass: 'standard' as const, audience: 'private' as const, filename: '{"path":"nextcloud:files:2"}' }
+		const contentRead = vi.fn(async () => ({ scene: { elements: [] }, storedOnly: true, resource }))
+		const { host, files, gateway } = fixture({ agents: [{ slug: 'nc', version: 1, contract: [{ name: 'nc_whiteboard_read', risk: 'read' }] }], model: () => ({ text: 'Saved scene only.' }) },
+			{ ...identity, development: true, providerReadsEnabled: true, scopePolicy: policy }, {
+				select: vi.fn(async () => ({ ...selected, file })),
+				scopeResource: vi.fn(async reference => ({ resourceId: reference, revision: file.etag, sourceClass: 'standard', audience: 'private', scope: policy.sources[0] })),
+				nativeProviders: { capabilities: async () => available ? [{ provider: 'whiteboard', apiVersion: 'whiteboard-2.1.2-session', policyVersion: 'board-policy', enabled: true, tools: ['nc_whiteboard_read'], conflict: 'read-only', history: 'audit-only', refresh: 'manual', canRead: true, canWrite: false }] : [], contentRead,
+					calendarCollections: vi.fn(), calendarEvents: vi.fn(), calendarEvent: vi.fn(), calendarPropose: vi.fn(), calendarApprove: vi.fn(), calendarCommit: vi.fn() },
+			})
+		try {
+			await host.signIn('alice', 'test')
+			host.offerSelection(await host.selection.select(2))
+			await host.send('Summarize the saved board')
+			expect(files.read).not.toHaveBeenCalled()
+			if (available) {
+				expect(contentRead).toHaveBeenCalledWith('whiteboard', { path: 'nextcloud:files:2' }, expect.any(AbortSignal))
+				expect(JSON.stringify(gateway.modelCalls.at(-1)?.messages)).toContain('storedOnly')
+			} else expect(contentRead).not.toHaveBeenCalled()
+		} finally { host.stop(); await host.dispose() }
+	})
 	it('refuses a pending text commit if its earlier share source loses inspection permission', async () => {
 		const policy: ScopePolicy = { version: 'native-shares-write', sources: [{ kind: 'file', resourceId: 'nextcloud:files:2' }], destinations: [{ kind: 'user-files' }],
 			tools: ['nc_files_shares_read', 'nc_create_text_file'], sourceClasses: ['standard'], gatewayOrigin: identity.serverUrl, downstreamPolicy: 'unverified',
