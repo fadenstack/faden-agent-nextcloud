@@ -28,6 +28,9 @@ async function inspect(item: HistoryItem) {
 function observation(value: string): string {
 	switch (value) {
 	case 'matches_saved_content': return t('fadenstack_agent', 'Current content matches the recorded save.')
+	case 'matches_saved_draft': return t('fadenstack_agent', 'The native draft matches the approved graph and origin record.')
+	case 'different_or_ambiguous': return t('fadenstack_agent', 'The saved workflow changed or the draft name is ambiguous.')
+	case 'draft_absent': return t('fadenstack_agent', 'The draft was not found through the current engine connection.')
 	case 'absent': return t('fadenstack_agent', 'The resource is absent and its parent is accessible.')
 	case 'different_content': return t('fadenstack_agent', 'Current content differs from the recorded save.')
 	case 'present': return t('fadenstack_agent', 'The resource is present.')
@@ -99,7 +102,7 @@ function operation(item: HistoryItem): string {
 				{{ t('fadenstack_agent', 'No recorded actions are available with current native access.') }}
 			</p>
 			<section v-if="host.history.inspection" role="status" class="fadenstack-action-inspection">
-				<strong>{{ host.history.inspection.outcome === 'verified_committed' ? t('fadenstack_agent', 'Recorded commitment verified') : t('fadenstack_agent', 'Completion remains uncertain') }}</strong>
+				<strong>{{ host.history.inspection.outcome === 'verified_committed' ? t('fadenstack_agent', 'Recorded commitment verified') : host.history.inspection.outcome === 'not_dispatched' ? t('fadenstack_agent', 'No engine action was dispatched') : t('fadenstack_agent', 'Completion remains uncertain') }}</strong>
 				<p>{{ host.history.inspection.message }}</p>
 				<p>{{ observation(host.history.inspection.observed) }}</p>
 				<small>{{ t('fadenstack_agent', 'Action reference') }}: {{ host.history.inspection.action.id }}</small>

@@ -93,7 +93,7 @@ import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
 import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, ContentProposal, ContentProviderId, ProviderInspection, ReadProviderId, StructuredProposal } from '../providers/client.ts'
-import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeWorkflowTools } from '../providers/contentTools.ts'
+import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEngineDraftTools, nativeWorkflowTools } from '../providers/contentTools.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
@@ -226,6 +226,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(nativeContent ? nativeContentTools(this) : []))
 			.addTools(...(nativeContent ? nativeWorkflowTools(this) : []))
 			.addTools(...(nativeEngines ? nativeEngineReadTools(this) : []))
+			.addTools(...(nativeContent ? nativeEngineDraftTools(this) : []))
 			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeTasksTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeContactsTools(this.#providerReads, this) : []))
@@ -431,7 +432,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						this.#providerReads!.assertStructuredWrite(plan.provider, plan.resource.collectionId)
 						await this.assertContentSources(plan, signal)
 						if (binding) this.#proposalViews.set(request.callId, binding)
-						request = { ...request, canAllowAlways: false, canAllowForSession: false, arguments: { ...request.arguments, proposalId: plan.id, digest: plan.digest, target: plan.target, before: plan.before, content: plan.payload, limitation: plan.limitation, nativeAudience: plan.resource.audience, fields: plan.display } }
+						request = { ...request, canAllowAlways: false, canAllowForSession: false, arguments: { ...request.arguments, proposalId: plan.id, digest: plan.digest, target: plan.target, before: plan.before, content: plan.payload, limitation: plan.limitation, nativeAudience: plan.destinationAudience ?? plan.resource.audience, fields: plan.display } }
 					}
 					if (COLLECTIVES_MUTATIONS.has(request.toolName) && request.source === 'host' && !nativeContent) {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
@@ -457,7 +458,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							arguments: { ...request.arguments, proposalId: plan.revision, target: plan.target, content: request.arguments },
 						}
 					}
-					if ((WINDMILL_MUTATIONS.has(request.toolName) || N8N_MUTATIONS.has(request.toolName) || (!nativeContent && (WHITEBOARD_MUTATIONS.has(request.toolName) || FLOW_MUTATIONS.has(request.toolName) || NOTES_MUTATIONS.has(request.toolName) || BOOKMARKS_MUTATIONS.has(request.toolName)))) && request.source === 'host') {
+					if (!nativeContent && (WINDMILL_MUTATIONS.has(request.toolName) || N8N_MUTATIONS.has(request.toolName) || WHITEBOARD_MUTATIONS.has(request.toolName) || FLOW_MUTATIONS.has(request.toolName) || NOTES_MUTATIONS.has(request.toolName) || BOOKMARKS_MUTATIONS.has(request.toolName)) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const target = `${request.toolName}`
 						const plan = { name: request.toolName, args: { ...request.arguments }, target, revision: `workflow:${request.toolName}:${request.callId}` }
@@ -568,7 +569,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.history.availability = undefined
 		const login = await loginWithPassword({ apiUrl: this.config.serverUrl, email, password, fetch: this.#fetch, signal: this.#stop.signal, allowInsecureHttp: this.#developmentHttp })
 		await this.tokens.signIn(login, 'Nextcloud Files', this.#stop.signal)
-		if (this.config.historyEnabled) this.files.setCloudIdentity?.(signal => this.tokens.getAccessToken(signal))
+		if (this.config.historyEnabled || this.config.providerReadsEnabled) this.files.setCloudIdentity?.(signal => this.tokens.getAccessToken(signal))
 		await this.chat.initialize()
 		if (!this.chat.isReady) throw new Error(this.chat.error || 'The agent could not be initialized.')
 		if (this.agent.profile.draft || this.agent.profile.version === null) throw new Error('Use a published agent version for the Nextcloud integration.')
@@ -1106,7 +1107,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
 		}
-		if ((WINDMILL_MUTATIONS.has(part.toolName) || N8N_MUTATIONS.has(part.toolName) || (!this.files.nativeProviders?.contentApprove && (WHITEBOARD_MUTATIONS.has(part.toolName) || FLOW_MUTATIONS.has(part.toolName) || NOTES_MUTATIONS.has(part.toolName) || BOOKMARKS_MUTATIONS.has(part.toolName)))) && part.request.source === 'host') {
+		if (!this.files.nativeProviders?.contentApprove && (WINDMILL_MUTATIONS.has(part.toolName) || N8N_MUTATIONS.has(part.toolName) || WHITEBOARD_MUTATIONS.has(part.toolName) || FLOW_MUTATIONS.has(part.toolName) || NOTES_MUTATIONS.has(part.toolName) || BOOKMARKS_MUTATIONS.has(part.toolName)) && part.request.source === 'host') {
 			const proposal = this.#workflowProposals.get(part.request.callId)
 			if (!proposal || !part.isPending) throw new Error('This proposal is no longer pending.')
 			await this.files.assertIdentity(this.#stop.signal)
@@ -2265,7 +2266,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (!this.#scope) throw new Error('The native content turn is unavailable.')
 		for (const reference of this.#sources.references) await this.authorizeSource(reference, signal, this.#sources.purpose(reference))
 		this.#sources.assertProcessing(this.#scope.policy)
-		this.#sources.assertMovement(this.#scope.policy, proposal.resource.audience)
+		this.#sources.assertMovement(this.#scope.policy, proposal.destinationAudience ?? proposal.resource.audience)
 		// Compound Forms steps consume one immutable approved payload without
 		// another model turn. Our own first step changes discovery revisions;
 		// native authority/private-form preconditions are rechecked by PHP per step.

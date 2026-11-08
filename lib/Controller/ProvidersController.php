@@ -8,6 +8,7 @@ use OCA\FadenstackAgent\Providers\CalendarProvider;
 use OCA\FadenstackAgent\Providers\CommunicationProvider;
 use OCA\FadenstackAgent\Providers\ContactsProvider;
 use OCA\FadenstackAgent\Providers\ContentProvider;
+use OCA\FadenstackAgent\Providers\EngineProvider;
 use OCA\FadenstackAgent\Providers\EngineReads;
 use OCA\FadenstackAgent\Providers\ProviderAuditService;
 use OCA\FadenstackAgent\Providers\StructuredProvider;
@@ -36,6 +37,7 @@ final class ProvidersController extends Controller {
 		private ContentProvider $content,
 		private WorkflowProvider $workflows,
 		private EngineReads $engines,
+		private EngineProvider $engineActions,
 		private LoggerInterface $logger,
 	) {
 		parent::__construct($appName, $request);
@@ -69,6 +71,9 @@ final class ProvidersController extends Controller {
 	}
 
 	private function attempt(): array {
+		if ($this->engineActions->attemptId()) {
+			return ['actionId' => $this->engineActions->attemptId(), 'outcome' => $this->engineActions->attemptOutcome(), 'inspectionAvailable' => true];
+		}
 		$id = $this->calendar->attemptId() ?? $this->tasks->attemptId() ?? $this->contacts->attemptId() ?? $this->structured->attemptId() ?? $this->communications->attemptId() ?? $this->content->attemptId() ?? $this->workflows->attemptId();
 		return $id ? ['actionId' => $id, 'outcome' => $id === $this->structured->attemptId() ? $this->structured->attemptOutcome() : ($id === $this->communications->attemptId() ? $this->communications->attemptOutcome() : ($id === $this->content->attemptId() ? $this->content->attemptOutcome() : ($id === $this->workflows->attemptId() ? $this->workflows->attemptOutcome() : 'unknown'))), 'inspectionAvailable' => true] : [];
 	}
@@ -91,7 +96,7 @@ final class ProvidersController extends Controller {
 
 	#[NoAdminRequired]
 	public function actions(): DataResponse {
-		return $this->auditRun(fn () => array_merge($this->audit->listing(), $this->structured->actions(), $this->communications->actions(), $this->content->actions(), $this->workflows->actions()));
+		return $this->auditRun(fn () => array_merge($this->audit->listing(), $this->structured->actions(), $this->communications->actions(), $this->content->actions(), $this->workflows->actions(), $this->engineActions->actions()));
 	}
 
 	#[NoAdminRequired]
@@ -109,7 +114,11 @@ final class ProvidersController extends Controller {
 						try {
 							return $this->content->inspect($id);
 						} catch (\Throwable) {
-							return $this->workflows->inspect($id);
+							try {
+								return $this->workflows->inspect($id);
+							} catch (\Throwable) {
+								return $this->engineActions->inspect($id);
+							}
 						}
 					}
 				}
@@ -128,13 +137,29 @@ final class ProvidersController extends Controller {
 				$calendar = [[...$tasks[0], 'provider' => 'calendar', 'tools' => ['nc_calendar_list'],
 					'conflict' => 'read-only', 'history' => 'not-applicable', 'canWrite' => false, 'discoveryOnly' => true]];
 			}
-			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities(), $this->communications->capabilities(), $this->content->capabilities(), $this->workflows->capabilities(), $this->engines->capabilities())];
+			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities(), $this->communications->capabilities(), $this->content->capabilities(), $this->workflows->capabilities(), $this->engineActions->capabilities())];
 		});
 	}
 
 	#[NoAdminRequired]
 	public function engineRead(string $provider, array $args = []): DataResponse {
 		return $this->run(fn () => $this->engines->read($provider, $args));
+	}
+	#[NoAdminRequired]
+	public function enginePropose(string $toolName, array $args, string $requestId): DataResponse {
+		return $this->run(fn () => $this->engineActions->propose($toolName, $args, $requestId, $this->request->getHeader('X-Fadenstack-Agent-Token')));
+	}
+	#[NoAdminRequired]
+	public function engineApprove(string $id, string $digest): DataResponse {
+		return $this->run(fn () => $this->engineActions->approve($id, $digest));
+	}
+	#[NoAdminRequired]
+	public function engineCommit(string $id, string $digest): DataResponse {
+		return $this->run(fn () => $this->engineActions->commit($id, $digest));
+	}
+	#[NoAdminRequired]
+	public function engineCancel(string $id): DataResponse {
+		return $this->auditRun(fn () => $this->engineActions->cancel($id));
 	}
 	#[NoAdminRequired]
 	public function workflowRead(string $provider, array $args = []): DataResponse {

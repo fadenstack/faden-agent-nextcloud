@@ -68,13 +68,16 @@ const action = computed(() => {
 	case 'nc_whiteboard_create': return t('fadenstack_agent', 'Create whiteboard')
 	case 'nc_flow_create_draft': return t('fadenstack_agent', 'Create blocked Flow draft')
 	case 'nc_flow_update_rule': return t('fadenstack_agent', 'Change personal Flow rule')
+	case 'nc_windmill_draft': return t('fadenstack_agent', 'Create Windmill draft')
+	case 'nc_n8n_draft': return t('fadenstack_agent', 'Create n8n draft')
 	default: return t('fadenstack_agent', 'Replace file')
 	}
 })
 const approving = ref(false)
 const organization = computed(() => ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(part.value.toolName))
-const structured = computed(() => /^(nc_tables_|nc_deck_|nc_mail_|nc_talk_|nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_|nc_whiteboard_|nc_flow_)/.test(part.value.toolName))
-const contentAction = computed(() => /^(nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_|nc_whiteboard_|nc_flow_)/.test(part.value.toolName))
+const structured = computed(() => /^(nc_tables_|nc_deck_|nc_mail_|nc_talk_|nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_|nc_whiteboard_|nc_flow_|nc_windmill_|nc_n8n_)/.test(part.value.toolName))
+const contentAction = computed(() => /^(nc_collectives_|nc_forms_|nc_notes_|nc_bookmarks_|nc_whiteboard_|nc_flow_|nc_windmill_|nc_n8n_)/.test(part.value.toolName))
+const engineAction = computed(() => /^(nc_windmill_|nc_n8n_)/.test(part.value.toolName))
 const communicationSummary = computed(() => {
 	switch (part.value.toolName) {
 	case 'nc_mail_save_draft': return t('fadenstack_agent', 'Save only; no email is sent. Native last-write-wins: another editor can change this draft. Stop can leave a partial draft. Audit only; no Undo.')
@@ -94,6 +97,7 @@ const communicationSummary = computed(() => {
 })
 const fields = computed(() => part.value.request.arguments.fields as { label: string; before: unknown; after: unknown }[] | undefined)
 function fieldText(value: unknown): string { return value === null || value === undefined ? '—' : typeof value === 'string' ? value : JSON.stringify(value) }
+function workflowText(value: unknown): string { try { return JSON.stringify(JSON.parse(String(value)), null, 2) } catch { return fieldText(value) } }
 const problem = ref('')
 async function approve() {
 	approving.value = true
@@ -157,7 +161,15 @@ function deny() {
 			<dl v-if="fields?.length" class="fadenstack-file-fields" :class="{ 'fadenstack-content-fields': contentAction }">
 				<div v-for="(field, index) in fields" :key="index" class="fadenstack-field-row">
 					<dt>{{ field.label }}</dt>
-					<dd><span v-if="field.before !== null && field.before !== undefined">{{ fieldText(field.before) }} → </span>{{ fieldText(field.after) }}</dd>
+					<dd v-if="engineAction && field.label === 'Final workflow JSON including AI origin'">
+						<details>
+							<summary>{{ t('fadenstack_agent', 'Review exact workflow JSON') }}</summary>
+							<pre class="fdn-approval-args">{{ workflowText(field.after) }}</pre>
+						</details>
+					</dd>
+					<dd v-else>
+						<span v-if="field.before !== null && field.before !== undefined">{{ fieldText(field.before) }} → </span>{{ fieldText(field.after) }}
+					</dd>
 				</div>
 			</dl>
 			<dl class="fadenstack-file-fields">

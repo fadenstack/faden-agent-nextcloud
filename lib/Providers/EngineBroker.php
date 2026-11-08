@@ -12,6 +12,10 @@ use OCP\IUserSession;
 /** Engine credentials stay server-side. No native session crosses this boundary. */
 final class EngineBroker {
 	public const MAX_BYTES = 524288;
+	private bool $effectAttempted = false;
+	public function effectAttempted(): bool {
+		return $this->effectAttempted;
+	}
 	public function __construct(
 		private EngineEndpoint $endpoints,
 		private EngineVault $vault,
@@ -20,10 +24,17 @@ final class EngineBroker {
 		private IClientService $clients,
 	) {
 	}
-	public function probe(string $id, string $token): array {
+	public function probe(string $id, string $token, ?string $revision = null): array {
 		$actor = $this->users->getUser()?->getUID() ?? throw new Problem('Sign in to Nextcloud.', 401);
 		$endpoint = $this->endpoints->get($id);
-		$value = $this->send(EngineRequest::probe($actor, $endpoint), $endpoint, EngineVault::token($token), null);
+		$token = EngineVault::token($token);
+		if ($revision !== null) {
+			$connection = $this->vault->resolve($id);
+			if ($connection['revision'] !== $revision || !hash_equals($connection['apiToken'], $token)) {
+				throw new Problem('The workflow credential changed before dispatch.', 409);
+			}
+		}
+		$value = $this->send(EngineRequest::probe($actor, $endpoint), $endpoint, $token, $revision);
 		if (array_key_exists('error', $value) || array_key_exists('errorCode', $value)) {
 			throw new Problem('The workflow engine did not verify this credential.', 503);
 		}
@@ -42,11 +53,20 @@ final class EngineBroker {
 		return ['authenticated' => true, 'principal' => null];
 	}
 	/** Internal native response only; a typed provider must authorize and project it. */
-	public function request(EngineRequest $request): array {
+	public function request(EngineRequest $request, string $expectedRevision, ?callable $beforeEffect = null): ?array {
+		if ($request->method !== 'GET') {
+			$this->effectAttempted = false;
+			if ($beforeEffect === null) {
+				throw new Problem('A durable native dispatch gate is required.', 403);
+			}
+		}
 		$connection = $this->vault->resolve($request->connection);
-		return $this->send($request, $connection['endpoint'], $connection['apiToken'], $connection['revision']);
+		if ($connection['revision'] !== $expectedRevision) {
+			throw new Problem('The workflow credential changed before dispatch.', 409);
+		}
+		return $this->send($request, $connection['endpoint'], $connection['apiToken'], $connection['revision'], $beforeEffect);
 	}
-	private function send(EngineRequest $request, array $endpoint, string $token, ?string $revision): array {
+	private function send(EngineRequest $request, array $endpoint, string $token, ?string $revision, ?callable $beforeEffect = null): ?array {
 		$actor = $this->users->getUser()?->getUID();
 		$session = $this->session->getId();
 		if ($actor === null || $actor !== $request->actor || $session === '' || $request->provider !== $endpoint['provider']
@@ -59,11 +79,20 @@ final class EngineBroker {
 		} else {
 			$headers['X-N8N-API-KEY'] = $token;
 		}
+		if ($request->body !== null) {
+			$headers['Content-Type'] = 'application/json';
+		}
 		$this->session->close();
+		$client = $this->clients->newClient();
+		if ($request->method !== 'GET') {
+			$beforeEffect();
+			$this->effectAttempted = true;
+		}
 		try {
-			$response = $this->clients->newClient()->request('GET', $endpoint['baseUrl'] . $request->path,
+			$response = $client->request($request->method, $endpoint['baseUrl'] . $request->path,
 				['headers' => $headers, 'allow_redirects' => false, 'cookies' => false, 'verify' => true, 'http_errors' => false,
 					'stream' => true, 'timeout' => 15, 'connect_timeout' => 3, 'read_timeout' => 15,
+					...($request->body === null ? [] : ['body' => $request->body]),
 					'nextcloud' => ['allow_local_address' => $endpoint['allowLocal']]]);
 		} catch (\Throwable) {
 			throw new Problem('The workflow engine request could not be confirmed.', 503);
@@ -96,10 +125,10 @@ final class EngineBroker {
 			} catch (\Throwable) {
 				throw new Problem('Malformed workflow engine JSON.', 503);
 			}
-			if (!is_array($value)) {
+			if (!is_array($value) && !($value === null && $request->nullable)) {
 				throw new Problem('Malformed workflow engine response.', 503);
 			}
-			if (array_key_exists('error', $value) || array_key_exists('errorCode', $value)) {
+			if ($value !== null && (array_key_exists('error', $value) || array_key_exists('errorCode', $value))) {
 				throw new Problem('The workflow engine refused to return verified data.', 503);
 			}
 			if ($this->users->getUser()?->getUID() !== $actor || $this->session->getId() !== $session

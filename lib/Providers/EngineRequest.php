@@ -14,6 +14,9 @@ final class EngineRequest {
 		public readonly string $provider,
 		public readonly string $stamp,
 		public readonly string $path,
+		public readonly string $method = 'GET',
+		public readonly ?string $body = null,
+		public readonly bool $nullable = false,
 	) {
 	}
 	public static function probe(string $actor, array $endpoint): self {
@@ -37,5 +40,40 @@ final class EngineRequest {
 			$path = '/api/v1/workflows/' . rawurlencode($reference) . '?excludePinnedData=true';
 		}
 		return new self($actor, $endpoint['id'], $endpoint['provider'], $endpoint['stamp'], $path);
+	}
+	public static function ownDraft(string $actor, array $endpoint, string $path): self {
+		self::windmillPath($actor, $endpoint, $path);
+		return new self($actor, $endpoint['id'], 'windmill', $endpoint['stamp'], '/api/w/' . rawurlencode($endpoint['workspace']) . '/drafts/get_own/flow/' . $path, nullable: true);
+	}
+	private static function windmillPath(string $actor, array $endpoint, string $path): void {
+		if ($endpoint['provider'] !== 'windmill') {
+			throw new Problem('Choose a Windmill draft connection.', 400);
+		}
+		self::definition($actor, $endpoint, $path);
+	}
+	public static function saveOwnDraft(string $actor, array $endpoint, string $path, string $definition): self {
+		self::windmillPath($actor, $endpoint, $path);
+		$value = EngineJson::decode($definition);
+		if (!$value instanceof \stdClass) {
+			throw new Problem('A new Windmill draft needs an object definition.', 400);
+		}
+		return new self($actor, $endpoint['id'], 'windmill', $endpoint['stamp'], '/api/w/' . rawurlencode($endpoint['workspace']) . '/drafts/update/flow/' . $path,
+			'POST', EngineJson::encode(['value' => $value, 'last_sync' => '1970-01-01T00:00:00Z', 'force' => false]));
+	}
+	public static function findN8nDraft(string $actor, array $endpoint, string $name): self {
+		if ($endpoint['provider'] !== 'n8n' || $name === '' || strlen($name) > 200) {
+			throw new Problem('Choose one n8n draft name.', 400);
+		}
+		return new self($actor, $endpoint['id'], 'n8n', $endpoint['stamp'], '/api/v1/workflows?limit=2&excludePinnedData=true&name=' . rawurlencode($name));
+	}
+	public static function createN8nDraft(string $actor, array $endpoint, string $definition): self {
+		if ($endpoint['provider'] !== 'n8n') {
+			throw new Problem('Choose an n8n draft connection.', 400);
+		}
+		$value = EngineJson::decode($definition);
+		if (!$value instanceof \stdClass || property_exists($value, 'active') || property_exists($value, 'projectId') || property_exists($value, 'shared')) {
+			throw new Problem('Use a new inactive personal n8n draft.', 400);
+		}
+		return new self($actor, $endpoint['id'], 'n8n', $endpoint['stamp'], '/api/v1/workflows', 'POST', EngineJson::encode($value));
 	}
 }

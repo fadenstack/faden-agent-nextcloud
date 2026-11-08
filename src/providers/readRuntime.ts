@@ -16,8 +16,8 @@ import type { NativeProvidersApi } from './client.ts'
 import { strongEtagHeader } from '../integrations/nextcloud/adapterGuards.ts'
 
 const IMPLEMENTATIONS = new ProviderRegistry([
-	{ provider: 'windmill', apiVersions: ['windmill-1.841.0-token'], tools: ['nc_windmill_read'] },
-	{ provider: 'n8n', apiVersions: ['n8n-2.43.8-token'], tools: ['nc_n8n_read'] },
+	{ provider: 'windmill', apiVersions: ['windmill-1.841.0-token'], tools: ['nc_windmill_read', 'nc_windmill_draft'] },
+	{ provider: 'n8n', apiVersions: ['n8n-2.43.8-token'], tools: ['nc_n8n_read', 'nc_n8n_draft'] },
 	{ provider: 'whiteboard', apiVersions: ['whiteboard-2.1.2-session'], tools: ['nc_whiteboard_read', 'nc_whiteboard_create'] },
 	{ provider: 'flow', apiVersions: ['flow-3.0.0-session'], tools: ['nc_flow_read', 'nc_flow_create_draft', 'nc_flow_update_rule'] },
 	{ provider: 'collectives', apiVersions: ['collectives-4.7.1-session'], tools: ['nc_collectives_read', 'nc_collectives_create_page', 'nc_collectives_delete_page'] },
@@ -59,8 +59,9 @@ export class ProviderReadRuntime {
 	get offeredTools(): readonly string[] { return this.#scope?.tools.map(tool => tool.name) ?? [] }
 	get hasSources(): boolean { return this.#sources.size > 0 }
 
-	assertStructuredWrite(provider: 'tables' | 'deck' | 'mail' | 'talk' | 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow', collectionId: string): void {
-		if ([...this.#sources.values()].some(source => source.provider !== provider || source.collectionId !== collectionId)) {
+	assertStructuredWrite(provider: 'tables' | 'deck' | 'mail' | 'talk' | 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow' | 'windmill' | 'n8n', collectionId: string): void {
+		if ([...this.#sources.values()].some(source => source.provider !== provider || (source.collectionId !== collectionId
+			&& !(['windmill', 'n8n'].includes(provider) && source.collectionId === 'connections' && source.filename === '{}')))) {
 			throw new ScopeViolation('movement_forbidden', 'Cross-collection source movement needs a separately certified audience policy. Start a new conversation for this native collection.')
 		}
 	}

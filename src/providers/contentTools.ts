@@ -1,7 +1,7 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { ReadProviderId } from './client.ts'
 
-export const CONTENT_MUTATIONS = new Set(['nc_collectives_create_page', 'nc_collectives_delete_page', 'nc_forms_create_form', 'nc_forms_submit_response', 'nc_notes_create', 'nc_bookmarks_create', 'nc_whiteboard_create', 'nc_flow_create_draft', 'nc_flow_update_rule'])
+export const CONTENT_MUTATIONS = new Set(['nc_collectives_create_page', 'nc_collectives_delete_page', 'nc_forms_create_form', 'nc_forms_submit_response', 'nc_notes_create', 'nc_bookmarks_create', 'nc_whiteboard_create', 'nc_flow_create_draft', 'nc_flow_update_rule', 'nc_windmill_draft', 'nc_n8n_draft'])
 export const CONTENT_PROVIDERS = ['collectives', 'forms', 'notes', 'bookmarks'] as const
 interface ContentHost {
 	readContent(provider: ReadProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
@@ -19,6 +19,16 @@ export function nativeEngineReadTools(host: ContentHost) {
 		description: `Read saved ${provider} workflows through your own configured native connection. Call with no arguments to discover your permitted connection IDs. Then supply connectionId to list at most 20 workflows, or also reference to read a saved definition (Windmill path or n8n workflow ID returned by that list). Graphs may contain inline inputs, code and credential references; credential stores are never read. Unsaved editor state, execution and deployment are excluded.`,
 		parameters: { type: 'object', properties: { connectionId: { type: 'string', minLength: 1, maxLength: 32 }, reference: { type: 'string', minLength: 1, maxLength: 255 } }, additionalProperties: false },
 		run: (args, c) => host.readContent(provider, args, c.signal),
+	}))
+}
+
+export function nativeEngineDraftTools(host: ContentHost) {
+	return (['windmill', 'n8n'] as const).map(provider => defineTool({
+		name: `nc_${provider}_draft`,
+		toolClass: 'destructive',
+		description: `Create one new private inactive ${provider} draft through your own configured connection. Supply definitionJson as bounded JSON. ${provider === 'windmill' ? 'Use summary, description, value.modules, and schema. The server chooses a new own-user path and never deploys it.' : 'Use name (up to 80 characters), description, nodes, connections, settings, optional staticData and nodeGroups. No IDs, sharing, project, activation, meta or pinned data. The server adds a unique name suffix, disables subworkflow callers and MCP availability.'} Signed AI origin is added before preview. Existing graphs are never replaced.` + approval,
+		parameters: { type: 'object', properties: { connectionId: { type: 'string', minLength: 1, maxLength: 32 }, definitionJson: { type: 'string', minLength: 2, maxLength: 131072 } }, required: ['connectionId', 'definitionJson'], additionalProperties: false },
+		run: (args, c) => host.commitContentMutation(`nc_${provider}_draft`, args, c),
 	}))
 }
 

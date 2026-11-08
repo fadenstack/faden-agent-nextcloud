@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace OCA\FadenstackAgent\Tests\Unit;
 
 use OCA\FadenstackAgent\Controller\EngineConnectionsController;
+use OCA\FadenstackAgent\Providers\EngineAuthority;
 use OCA\FadenstackAgent\Providers\EngineBroker;
+use OCA\FadenstackAgent\Providers\EngineDraftPlan;
 use OCA\FadenstackAgent\Providers\EngineEndpoint;
 use OCA\FadenstackAgent\Providers\EngineReads;
 use OCA\FadenstackAgent\Providers\EngineRequest;
@@ -103,7 +105,7 @@ final class EngineConnectionTest extends TestCase {
 		$scope = new ScopePolicy($config, $this->createMock(IRootFolder::class), $users, $this->createMock(IManager::class));
 		$policy = new ProviderPolicy($config, new Configuration($config), $scope, $users);
 		$this->connected($vault);
-		return [new EngineReads($vault, $broker, $policy), $vault, $state];
+		return [new EngineReads($vault, $broker, $policy), $vault, $state, $policy, $broker, $config];
 	}
 	private function connected(EngineVault $vault): array {
 		return $vault->replace('engine-test', $vault->status('engine-test')['revision'], self::TOKEN);
@@ -264,10 +266,10 @@ final class EngineConnectionTest extends TestCase {
 		$state->afterRequest = static function () use ($state): void {
 			$state->actor = 'bob';
 		};
-		$this->refused(fn () => $broker->request($request), 409);
+		$this->refused(fn () => $broker->request($request, $vault->status('engine-test')['revision']), 409);
 		$state->actor = 'alice';
 		$state->afterRequest = fn () => $this->connected($vault);
-		$this->refused(fn () => $broker->request($request), 409);
+		$this->refused(fn () => $broker->request($request, $vault->status('engine-test')['revision']), 409);
 	}
 	public function testDefinitionReferencesCannotEscapeTypedRoutes(): void {
 		[$endpoints] = $this->fixture();
@@ -422,5 +424,63 @@ final class EngineConnectionTest extends TestCase {
 			$state->body = json_encode(['id' => 'example', 'nodes' => [], 'connections' => new \stdClass(), 'opaque' => ['echo' => 'Bearer ' . $token]]);
 			$this->refused(fn () => $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'example']), 403);
 		}
+	}
+	public function testCredentialRotationBeforeHttpRefusesTheCapturedGenerationWithoutAnyRequest(): void {
+		[$endpoints, $vault, $broker, $state] = $this->fixture();
+		$old = $this->connected($vault);
+		$this->connected($vault);
+		$this->refused(fn () => $broker->request(EngineRequest::list('alice', $endpoints->get('engine-test')), $old['revision']), 409);
+		$this->refused(fn () => $broker->probe('engine-test', self::TOKEN, $old['revision']), 409);
+		self::assertSame([], $state->trace);
+	}
+	public function testNewDraftPostsRequireAnImmediateDurableGateAndNeverAddNativeSessionHeaders(): void {
+		[$endpoints, $vault, $broker, $state] = $this->fixture();
+		$connected = $this->connected($vault);
+		$request = EngineRequest::saveOwnDraft('alice', $endpoints->get('engine-test'), 'u/alice/new', '{"value":{"modules":[]},"schema":{}}');
+		$this->refused(fn () => $broker->request($request, $connected['revision']), 403);
+		$this->refused(fn () => $broker->request($request, $connected['revision'], static function (): void {
+			throw new Problem('Stopped.', 410);
+		}), 410);
+		self::assertSame([], $state->trace);
+		self::assertFalse($broker->effectAttempted());
+		$state->body = '{"status":"saved","path":"u/alice/new"}';
+		$broker->request($request, $connected['revision'], static function () use ($state): void {
+			self::assertTrue($state->closed);
+		});
+		self::assertTrue($broker->effectAttempted());
+		self::assertCount(1, $state->trace);
+		$sent = $state->trace[0];
+		self::assertSame('POST', $sent['method']);
+		$body = json_decode($sent['options']['body'], true);
+		self::assertSame('1970-01-01T00:00:00Z', $body['last_sync']);
+		self::assertFalse($body['force']);
+		self::assertSame(['Accept', 'Cache-Control', 'Authorization', 'Content-Type'], array_keys($sent['options']['headers']));
+	}
+	public function testOnlyTheNativeOwnDraftReadCanReturnJsonNull(): void {
+		[$endpoints, $vault, $broker, $state] = $this->fixture();
+		$connected = $this->connected($vault);
+		$state->body = 'null';
+		self::assertNull($broker->request(EngineRequest::ownDraft('alice', $endpoints->get('engine-test'), 'u/alice/new'), $connected['revision']));
+		$this->refused(fn () => $broker->request(EngineRequest::list('alice', $endpoints->get('engine-test')), $connected['revision']), 503);
+		self::assertFalse($broker->effectAttempted());
+	}
+	public function testMissingDraftMovementGrantRefusesBeforeAnyEngineRequest(): void {
+		[$reads, $vault, $state, $policy, $broker, $config] = $this->reads('windmill');
+		$config->method('getSystemValueBool')->willReturn(true);
+		$config->method('getSystemValueString')->willReturn('');
+		$state->settings['provider_writes_enabled'] = '1';
+		$providerPolicy = json_decode($state->settings['provider_policy'], true);
+		$providerPolicy['windmill']['writesEnabled'] = true;
+		$state->settings['provider_policy'] = json_encode($providerPolicy);
+		$scope = json_decode($state->settings['scope_policy'], true);
+		$scope['tools'][] = 'nc_windmill_draft';
+		$state->settings['scope_policy'] = json_encode($scope);
+		$plan = new EngineDraftPlan(new EngineAuthority($vault, $broker, $policy), $reads, new Configuration($config));
+		$this->refused(fn () => $plan->prepare('nc_windmill_draft', ['connectionId' => 'engine-test', 'definitionJson' => '{"summary":"New","value":{"modules":[]}}'], str_repeat('a', 48)), 403);
+		self::assertSame([], $state->trace);
+		self::assertFalse(EngineDraftPlan::canMove($policy->engine('windmill')));
+		$scope['movements'] = [['destination' => 'private', 'source' => 'standard']];
+		$state->settings['scope_policy'] = json_encode($scope);
+		self::assertTrue(EngineDraftPlan::canMove($policy->engine('windmill')), 'JSON member order does not change the movement grant.');
 	}
 }

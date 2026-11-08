@@ -65,7 +65,7 @@ export class NextcloudFiles implements FileApi {
 	constructor(readonly initial: Identity, private readonly nativeFetch: typeof fetch = globalThis.fetch.bind(globalThis)) {}
 	#cloudIdentity: ((signal?: AbortSignal) => Promise<string>) | undefined
 	setCloudIdentity(provider?: (signal?: AbortSignal) => Promise<string>): void { this.#cloudIdentity = provider }
-	readonly nativeProviders = nativeProvidersApi((path, body, signal) => this.post(path, body, signal))
+	readonly nativeProviders = nativeProvidersApi((path, body, signal) => this.post(path, body, signal), (path, body, signal) => this.authenticatedPost(path, body, signal))
 	readonly fileOperations = fileOperationsApi((path, body, signal) => this.post(path, body, signal), async id => {
 		if (!/^(?:[a-f0-9]{48}|request-[a-f0-9-]{36})$/.test(id)) throw new Error('Invalid Files cancellation identifier.')
 		await axios.post(generateUrl(`/apps/fadenstack_agent/files/operations/${id}/cancel`), {}, {

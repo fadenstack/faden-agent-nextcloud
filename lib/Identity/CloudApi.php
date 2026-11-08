@@ -8,7 +8,7 @@ use OCA\FadenstackAgent\Service\Configuration;
 use OCA\FadenstackAgent\Service\Problem;
 use OCP\Http\Client\IClientService;
 
-/** Two fixed authenticated agent routes. Never a caller-controlled fetch proxy. */
+/** Fixed authenticated agent routes. Never a caller-controlled fetch proxy. */
 final class CloudApi {
 	public const MAX_RESPONSE_BYTES = 262144;
 
@@ -23,7 +23,7 @@ final class CloudApi {
 		$config = $this->configuration->get();
 		$origin = Configuration::origin($config['serverUrl'], $config['development']);
 		if (!preg_match('/^[A-Za-z0-9_-]{1,100}$/D', $config['agent'])
-			|| !in_array($route, ['profile', 'tools/check'], true) || ($route === 'profile') !== ($payload === null)) {
+			|| !in_array($route, ['profile', 'tools/check', 'provenance/records', 'provenance/anchors'], true) || in_array($route, ['profile', 'provenance/anchors'], true) !== ($payload === null)) {
 			throw new Problem('The configured Fadenstack request is invalid.', 503);
 		}
 		if (!preg_match('/^[A-Za-z0-9._~+\/=\-]{16,8192}$/D', $accessToken)) {
@@ -41,7 +41,7 @@ final class CloudApi {
 		}
 		try {
 			$client = $this->clients->newClient();
-			$url = $origin . '/v1/agents/' . rawurlencode($config['agent']) . '/' . $route;
+			$url = $origin . ($route === 'provenance/anchors' ? '/v1/provenance/anchors' : '/v1/agents/' . rawurlencode($config['agent']) . '/' . $route);
 			$response = $payload === null ? $client->get($url, $options) : $client->post($url, $options);
 		} catch (\Throwable) {
 			throw new Problem('The configured Fadenstack service is unavailable.', 503);
@@ -67,7 +67,10 @@ final class CloudApi {
 			if (!is_string($raw) || strlen($raw) > self::MAX_RESPONSE_BYTES) {
 				throw new Problem('The Fadenstack response is too large or invalid.', 503);
 			}
-			$value = json_decode($raw, true, 24, JSON_THROW_ON_ERROR);
+			$value = json_decode($raw, $route !== 'provenance/records', 24, JSON_THROW_ON_ERROR);
+			if ($value instanceof \stdClass) {
+				$value = (array)$value;
+			}
 			if (!is_array($value)) {
 				throw new Problem('The Fadenstack response is invalid.', 503);
 			}

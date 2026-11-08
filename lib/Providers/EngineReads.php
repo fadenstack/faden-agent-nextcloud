@@ -48,7 +48,7 @@ final class EngineReads {
 			foreach ($policy['collections'] as $id) {
 				try {
 					$connection = $this->connection($provider, $id, $policy);
-					$this->broker->probe($id, $connection['apiToken']);
+					$this->broker->probe($id, $connection['apiToken'], $connection['revision']);
 					$available[] = [$id, $connection['endpoint']['stamp'], $connection['revision']];
 				} catch (Problem $error) {
 					if (!in_array($error->status, [401, 403, 404, 409, 413, 423, 429, 503], true)) {
@@ -80,7 +80,7 @@ final class EngineReads {
 			foreach ($policy['collections'] as $id) {
 				try {
 					$connection = $this->connection($provider, $id, $policy);
-					$this->broker->probe($id, $connection['apiToken']);
+					$this->broker->probe($id, $connection['apiToken'], $connection['revision']);
 					$items[] = ['connectionId' => $id, 'name' => $connection['endpoint']['label'], 'workspace' => $connection['endpoint']['workspace']];
 					$versions[] = [$id, $connection['endpoint']['stamp'], $connection['revision']];
 				} catch (Problem $error) {
@@ -99,7 +99,7 @@ final class EngineReads {
 		$endpoint = $connection['endpoint'];
 		$reference = $args['reference'] ?? null;
 		$request = $reference === null ? EngineRequest::list($policy['actor'], $endpoint) : EngineRequest::definition($policy['actor'], $endpoint, $reference);
-		$data = $this->broker->request($request);
+		$data = $this->broker->request($request, $connection['revision']);
 		if ($reference === null) {
 			$rows = $provider === 'windmill' ? $data : ($data['data'] ?? null);
 			if (!is_array($rows) || !array_is_list($rows) || count($rows) > 21) {

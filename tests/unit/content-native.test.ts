@@ -25,7 +25,7 @@ const identity: Identity = { userId: 'alice', binding: 'native-session', enabled
 	scopePolicy: { version: 'test', gatewayOrigin: 'https://faden.test', sources: [{ kind: 'user-files' }], destinations: [], tools, sourceClasses: ['standard'], downstreamPolicy: 'unverified', destinationAudiences: ['private', 'unknown', 'shared'], movements: ['private', 'unknown', 'shared'].map(destination => ({ source: 'standard' as const, destination: destination as 'private' | 'unknown' | 'shared' })), developmentLoopback: true } }
 async function flow(name: string, args: Readonly<Record<string, unknown>>, option = '') {
 	const config: Identity = option === 'protected-source' ? { ...identity, scopePolicy: { ...identity.scopePolicy!, sourceClasses: ['standard', 'protected'], downstreamPolicy: 'configured' } } : identity
-	const provider = name.split('_')[1] as ContentProviderId
+	const provider = name.split('_')[1] as Exclude<ContentProviderId, 'windmill' | 'n8n'>
 	const version = { collectives: '4.7.1', forms: '5.4.1', notes: '6.1.0', bookmarks: '17.0.0', whiteboard: '2.1.2', flow: '3.0.0' }[provider]
 	const resource: ProviderResource = { provider, resourceId: `nextcloud:${provider}:MQ`, collectionId: provider === 'collectives' ? '1' : 'personal', revision: 'a'.repeat(64), policyVersion: 'native-policy', sourceClass: 'standard', audience: 'unknown', filename: '{}' }
 	let agent: NextcloudAgent, step = 0

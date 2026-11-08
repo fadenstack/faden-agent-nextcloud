@@ -1,6 +1,6 @@
-# Workflow engine connections and reads
+# Workflow engine connections, reads and drafts
 
-This experimental slice reads saved Windmill **1.841.0** and n8n **2.43.8**
+This experimental slice reads saved workflows and creates new private drafts in Windmill **1.841.0** and n8n **2.43.8**
 workflows through your own engine account. Your administrator must configure
 the endpoint, opt in to provider reads and publish the matching agent tools.
 The engine and Nextcloud integration apps need no source changes.
@@ -35,8 +35,31 @@ that was already running.
 
 ![Working overlay with Stop](screenshots/engine-read-stop.png)
 
-Draft creation, execution, engine-editor refresh and their audit receipts are
-still being implemented. This checkpoint exposes only `nc_windmill_read`
-and `nc_n8n_read`; it offers no engine Undo/Redo and is not a release acceptance
-claim. Illustrated research and test evidence live in the
+Draft creation needs a separate administrator write and movement grant and a
+published draft tool. Ask for a **new private draft**, then review the accounts,
+destination and exact JSON before **Allow**. Windmill saves an own-user draft
+without deploying a flow. n8n creates an inactive workflow with a unique name;
+subworkflow callers and MCP availability are disabled. Existing graphs are not
+replaced. The engine enforces current creation permissions when called.
+
+![Review a Windmill draft](screenshots/engine-windmill-draft.png)
+
+AI origin is written inside the workflow before approval. Windmill uses
+`schema.x-fadenstack-provenance`; n8n uses a metadata comment in the description.
+The signed record is checked against the configured publisher's signing key.
+This marks origin; it does not grant access or certify legal compliance.
+
+![Review an inactive n8n draft](screenshots/engine-n8n-draft.png)
+
+Use **Agent actions → Inspect outcome** after an interrupted acknowledgement.
+The generated draft reference identifies the attempt. Inspection sends no
+write. Drafts have an audit trail and no Undo/Redo. Never repeat an uncertain
+create: Stop can arrive after the engine already saved it.
+
+![Inspect a saved draft after Stop](screenshots/engine-draft-audit.png)
+
+Execution and engine-editor refresh remain pending. The four local runtimes
+are `nc_windmill_read`, `nc_n8n_read`, `nc_windmill_draft` and `nc_n8n_draft`.
+Providers remain experimental and default off. Live server, broader role and
+package lifecycle acceptance are separate gates. Illustrated research lives in the
 [development report](https://github.com/fadenstack/fadenstack-dev/blob/master/nextcloud-agent-engines-2026-11-08/READ_CHECKPOINT.md).

@@ -4,8 +4,8 @@ import type { TableSnapshot, DeckBoardSnapshot } from '../integrations/nextcloud
 import { changedEngineConnection, engineConnectionList, type EngineConnectionSummary } from './engineConnections.ts'
 
 export interface CommunicationRead extends Record<string, unknown> { resource: ProviderResource }
-export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow'
-export type ReadProviderId = ContentProviderId | 'windmill' | 'n8n'
+export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow' | 'windmill' | 'n8n'
+export type ReadProviderId = ContentProviderId
 export interface CommunicationOutcome {
 	readonly outcome: 'verified' | 'running' | 'partial'
 	readonly continue: boolean
@@ -39,7 +39,7 @@ export interface StructuredRead {
 	readonly resource: ProviderResource
 }
 export interface CommunicationProposal extends Omit<StructuredProposal, 'provider'> { provider: 'mail' | 'talk' }
-export interface ContentProposal extends Omit<StructuredProposal, 'provider'> { provider: ContentProviderId }
+export interface ContentProposal extends Omit<StructuredProposal, 'provider'> { provider: ContentProviderId; destinationAudience?: 'private' }
 export interface ContentOutcome extends Omit<CommunicationOutcome, 'provider' | 'outcome'> { provider: ContentProviderId; outcome: 'verified' | 'running' | 'partial' | 'unknown' }
 export interface StructuredOutcome {
 	readonly status: 'saved' | 'deleted'
@@ -115,7 +115,7 @@ export interface ProviderInspection {
 	readonly action: ProviderAuditItem
 	readonly observed: 'present' | 'absent' | 'matches_saved_content' | 'different_content' | 'not_in_active_collection' | 'recorded-attempt'
 	readonly journalState: string
-	readonly outcome: 'verified_committed' | 'unknown'
+	readonly outcome: 'verified_committed' | 'not_dispatched' | 'unknown'
 	readonly repeatedDispatch: false
 	readonly message: string
 }
@@ -166,7 +166,7 @@ export interface NativeProvidersApi {
 }
 
 /** Only our fixed native endpoints; credentials/URLs never appear in tool arguments. */
-export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>): NativeProvidersApi {
+export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>, authenticatedPost = post): NativeProvidersApi {
 	const family = (provider: string) => ['windmill', 'n8n'].includes(provider) ? 'engines' : ['whiteboard', 'flow'].includes(provider) ? 'workflow' : 'content'
 	return {
 		engineConnections: async signal => engineConnectionList(await post('/engines/connections', {}, signal)),
@@ -177,9 +177,10 @@ export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal
 			const route = family(toolName.split('_')[1]!)
 			const requestId = [...crypto.getRandomValues(new Uint8Array(24))].map(value => value.toString(16).padStart(2, '0')).join('')
 			try {
-				const value = await post<ContentProposal>(`/providers/${route}/propose`, { toolName, args, requestId }, signal)
-				if (value.id !== requestId || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName || !['collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'].includes(value.provider) || value.provider !== toolName.split('_')[1]
-					|| value.history !== 'audit-only' || !Array.isArray(value.display) || !value.resource || !value.payload || typeof value.target !== 'string' || typeof value.limitation !== 'string') throw new Error('Invalid native content preview.')
+				const value = await (route === 'engines' ? authenticatedPost : post)<ContentProposal>(`/providers/${route}/propose`, { toolName, args, requestId }, signal)
+				if (value.id !== requestId || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName || !['collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'].includes(value.provider) || value.provider !== toolName.split('_')[1]
+					|| value.history !== 'audit-only' || !Array.isArray(value.display) || !value.resource || !value.payload || typeof value.target !== 'string' || typeof value.limitation !== 'string'
+					|| (route === 'engines' && value.destinationAudience !== 'private')) throw new Error('Invalid native content preview.')
 				signal.throwIfAborted()
 				return value
 			} catch (error) { await post(`/providers/${route}/${requestId}/cancel`, {}, new AbortController().signal).catch(() => {}); throw error }

@@ -11,6 +11,7 @@ use OCA\FadenstackAgent\History\CalendarAccessResolver;
 use OCA\FadenstackAgent\History\CommunicationAccessResolver;
 use OCA\FadenstackAgent\History\ContactsAccessResolver;
 use OCA\FadenstackAgent\History\ContentAccessResolver;
+use OCA\FadenstackAgent\History\EngineAccessResolver;
 use OCA\FadenstackAgent\History\FilesAccessResolver;
 use OCA\FadenstackAgent\History\StructuredAccessResolver;
 use OCA\FadenstackAgent\History\TasksAccessResolver;
@@ -48,6 +49,9 @@ class Application extends App implements IBootstrap {
 			}
 			foreach (['whiteboard', 'flow'] as $provider) {
 				$registry->register($provider, $container->get(WorkflowAccessResolver::class));
+			}
+			foreach (['windmill', 'n8n'] as $provider) {
+				$registry->register($provider, $container->get(EngineAccessResolver::class));
 			}
 			return $registry;
 		});
