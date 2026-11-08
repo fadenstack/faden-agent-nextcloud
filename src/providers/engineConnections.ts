@@ -1,0 +1,49 @@
+/** Human settings metadata only. No credential getter or agent-tool registration. */
+export interface EngineConnectionSummary {
+	readonly id: string
+	readonly provider: 'windmill' | 'n8n' | 'unavailable'
+	readonly label: string
+	readonly baseUrl: string
+	readonly workspace: string
+	readonly version: string
+	readonly revision: string
+	readonly connected: boolean
+	readonly expiresAt: number | null
+	readonly setupAllowed: boolean
+	readonly keyAccess: string
+}
+
+export function engineConnectionSummary(value: unknown): EngineConnectionSummary {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid workflow connection metadata.')
+	const item = value as Record<string, unknown>
+	const keys = ['id', 'provider', 'label', 'baseUrl', 'workspace', 'version', 'revision', 'connected', 'expiresAt', 'setupAllowed', 'keyAccess']
+	if (Object.keys(item).some(key => !keys.includes(key)) || keys.some(key => !(key in item))
+		|| typeof item.id !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/.test(item.id)
+		|| !['windmill', 'n8n', 'unavailable'].includes(item.provider as string)
+		|| typeof item.label !== 'string' || !item.label || item.label.length > 160
+		|| typeof item.baseUrl !== 'string' || item.baseUrl.length > 2048
+		|| typeof item.workspace !== 'string' || item.workspace.length > 64
+		|| typeof item.version !== 'string' || item.version.length > 30
+		|| typeof item.revision !== 'string' || !/^[a-f0-9]{64}$/.test(item.revision)
+		|| typeof item.connected !== 'boolean' || typeof item.setupAllowed !== 'boolean'
+		|| (item.expiresAt !== null && (!Number.isSafeInteger(item.expiresAt) || (item.expiresAt as number) < 1))
+		|| typeof item.keyAccess !== 'string' || item.keyAccess.length > 1000
+		|| (item.provider === 'unavailable' && (item.setupAllowed || item.connected))) throw new Error('Invalid workflow connection metadata.')
+	return Object.freeze({ ...item }) as unknown as EngineConnectionSummary
+}
+
+export function engineConnectionList(value: unknown): readonly EngineConnectionSummary[] {
+	if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'connections')
+		|| !Array.isArray((value as { connections?: unknown }).connections)) throw new Error('Invalid workflow connections.')
+	const values = (value as { connections: unknown[] }).connections
+	if (values.length > 64) throw new Error('Narrow the workflow connection list.')
+	const result = values.map(engineConnectionSummary)
+	if (new Set(result.map(item => item.id)).size !== result.length) throw new Error('Duplicate workflow connection metadata.')
+	return Object.freeze(result)
+}
+
+export function changedEngineConnection(value: unknown, id: string, revision: string, connected: boolean): EngineConnectionSummary {
+	const result = engineConnectionSummary(value)
+	if (result.id !== id || result.revision === revision || result.connected !== connected) throw new Error('The workflow connection change could not be confirmed.')
+	return result
+}

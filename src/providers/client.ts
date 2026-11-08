@@ -1,6 +1,7 @@
 import type { ProviderCapability } from './registry.ts'
 import type { ProviderResource } from './scope.ts'
 import type { TableSnapshot, DeckBoardSnapshot } from '../integrations/nextcloud/types.ts'
+import { changedEngineConnection, engineConnectionList, type EngineConnectionSummary } from './engineConnections.ts'
 
 export interface CommunicationRead extends Record<string, unknown> { resource: ProviderResource }
 export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow'
@@ -119,6 +120,10 @@ export interface ProviderInspection {
 }
 
 export interface NativeProvidersApi {
+	/** Native human settings only; these methods are never exposed as agent tools. */
+	engineConnections?(signal: AbortSignal): Promise<readonly EngineConnectionSummary[]>
+	engineConnect?(id: string, revision: string, token: string, signal: AbortSignal): Promise<EngineConnectionSummary>
+	engineDisconnect?(id: string, revision: string, signal: AbortSignal): Promise<EngineConnectionSummary>
 	contentRead?(provider: ContentProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationRead>
 	contentPropose?(toolName: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<ContentProposal>
 	contentApprove?(proposal: ContentProposal, signal: AbortSignal): Promise<unknown>
@@ -163,6 +168,9 @@ export interface NativeProvidersApi {
 export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>): NativeProvidersApi {
 	const family = (provider: string) => ['whiteboard', 'flow'].includes(provider) ? 'workflow' : 'content'
 	return {
+		engineConnections: async signal => engineConnectionList(await post('/engines/connections', {}, signal)),
+		engineConnect: async (id, revision, token, signal) => changedEngineConnection(await post('/engines/connections/connect', { id, revision, token }, signal), id, revision, true),
+		engineDisconnect: async (id, revision, signal) => changedEngineConnection(await post('/engines/connections/disconnect', { id, revision }, signal), id, revision, false),
 		contentRead: (provider, args, signal) => post(`/providers/${family(provider)}/read`, { provider, args }, signal),
 		contentPropose: async (toolName, args, signal) => {
 			const route = family(toolName.split('_')[1]!)

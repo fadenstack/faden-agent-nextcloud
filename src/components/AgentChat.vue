@@ -20,6 +20,7 @@ import FolderResultsCard from './FolderResultsCard.vue'
 import SharesResultsCard from './SharesResultsCard.vue'
 import AssistantDetails from './AssistantDetails.vue'
 import ActionHistory from './ActionHistory.vue'
+import EngineConnections from './EngineConnections.vue'
 import '../styles/nextcloud.css'
 
 const props = defineProps<{ host: NextcloudAgent; context?: FileContext; loadingContext?: boolean; documentContext?: boolean; contextError?: string }>()
@@ -61,6 +62,7 @@ const contextLabel = computed(() => {
 })
 const detailsOpen = ref(false)
 const actionsOpen = ref(false)
+const engineConnectionsOpen = ref(false)
 const detailsButton = ref<HTMLButtonElement>()
 let detailsTrigger: HTMLElement | undefined
 function openDetails(event: Event) {
@@ -111,6 +113,7 @@ function escape(event: KeyboardEvent) {
 	if (event.key !== 'Escape') return
 	event.stopPropagation()
 	if (detailsOpen.value) void closeDetails()
+	else if (engineConnectionsOpen.value) engineConnectionsOpen.value = false
 	else if (actionsOpen.value) actionsOpen.value = false
 	else if (chat.isSettingsOpen || chat.isModeMenuOpen || chat.isHistoryOpen) {
 		chat.setSettingsOpen(false)
@@ -158,6 +161,15 @@ function signOut() {
 				<div class="fdn-menu-note">
 					{{ host.config.serverUrl }}<br>{{ host.config.agent }} · {{ t('fadenstack_agent', 'Connected') }}
 				</div>
+				<button v-if="host.files.nativeProviders?.engineConnections"
+					type="button"
+					role="menuitem"
+					class="fdn-menu-item"
+					:disabled="chat.isBusy"
+					@click="chat.setSettingsOpen(false); engineConnectionsOpen = true">
+					<span class="fdn-menu-check" />
+					<span class="fdn-menu-label">{{ t('fadenstack_agent', 'Workflow connections') }}</span>
+				</button>
 				<button type="button"
 					role="menuitem"
 					class="fdn-menu-item"
@@ -211,6 +223,9 @@ function signOut() {
 			</template>
 		</ChatPanel>
 		<ActionHistory v-if="actionsOpen" :host="host" @close="actionsOpen = false" />
+		<EngineConnections v-if="engineConnectionsOpen && host.files.nativeProviders"
+			:api="host.files.nativeProviders"
+			@close="engineConnectionsOpen = false; chat.requestComposerFocus()" />
 		<AssistantDetails v-if="detailsOpen"
 			:title="chat.title"
 			:server-url="host.config.serverUrl"

@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 return ['routes' => [
+	['name' => 'engine_connections#listing', 'url' => '/engines/connections', 'verb' => 'POST'],
+	['name' => 'engine_connections#connect', 'url' => '/engines/connections/connect', 'verb' => 'POST'],
+	['name' => 'engine_connections#disconnect', 'url' => '/engines/connections/disconnect', 'verb' => 'POST'],
 	['name' => 'file_operations#capabilities', 'url' => '/files/operations/capabilities', 'verb' => 'POST'],
 	['name' => 'file_operations#actions', 'url' => '/files/operations/actions', 'verb' => 'POST'],
 	['name' => 'file_operations#inspect', 'url' => '/files/operations/actions/{id}/inspect', 'verb' => 'POST'],
