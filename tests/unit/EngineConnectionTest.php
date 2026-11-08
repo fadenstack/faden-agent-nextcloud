@@ -7,11 +7,16 @@ namespace OCA\FadenstackAgent\Tests\Unit;
 use OCA\FadenstackAgent\Controller\EngineConnectionsController;
 use OCA\FadenstackAgent\Providers\EngineBroker;
 use OCA\FadenstackAgent\Providers\EngineEndpoint;
+use OCA\FadenstackAgent\Providers\EngineReads;
 use OCA\FadenstackAgent\Providers\EngineRequest;
 use OCA\FadenstackAgent\Providers\EngineVault;
+use OCA\FadenstackAgent\Providers\ProviderPolicy;
+use OCA\FadenstackAgent\Service\Configuration;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
+use OCA\FadenstackAgent\Service\ScopePolicy;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\Files\IRootFolder;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
@@ -22,6 +27,7 @@ use OCP\IUser;
 use OCP\IUserSession;
 use OCP\Lock\ILockingProvider;
 use OCP\Security\ICrypto;
+use OCP\Share\IManager;
 use PHPUnit\Framework\TestCase;
 
 final class EngineConnectionTest extends TestCase {
@@ -85,7 +91,19 @@ final class EngineConnectionTest extends TestCase {
 			}
 			return $response;
 		});
-		return [$endpoints, $vault, new EngineBroker($endpoints, $vault, $users, $session, $clients), $state];
+		return [$endpoints, $vault, new EngineBroker($endpoints, $vault, $users, $session, $clients), $state, $config, $users];
+	}
+	private function reads(string $provider): array {
+		[, $vault, $broker, $state, $config, $users] = $this->fixture($provider);
+		$state->settings += ['integration_enabled' => '1', 'server_url' => 'https://faden.example.test', 'agent' => 'engine-test',
+			'development' => '1', 'provider_reads_enabled' => '1',
+			'provider_policy' => json_encode(['version' => 1, $provider => ['enabled' => true, 'collections' => ['engine-test'], 'sourceClass' => 'standard']]),
+			'scope_policy' => json_encode(['revision' => 'test-1', 'sources' => [['kind' => 'user-files']], 'tools' => [EngineReads::TOOLS[$provider]],
+				'sourceClasses' => ['standard'], 'downstreamPolicy' => 'unverified'])];
+		$scope = new ScopePolicy($config, $this->createMock(IRootFolder::class), $users, $this->createMock(IManager::class));
+		$policy = new ProviderPolicy($config, new Configuration($config), $scope, $users);
+		$this->connected($vault);
+		return [new EngineReads($vault, $broker, $policy), $vault, $state];
 	}
 	private function connected(EngineVault $vault): array {
 		return $vault->replace('engine-test', $vault->status('engine-test')['revision'], self::TOKEN);
@@ -256,7 +274,7 @@ final class EngineConnectionTest extends TestCase {
 		foreach (['../admin', 'u/alice/a?token=x', 'u/alice/%2fsecret', 'https://other.test', 'u/alice/a/../../b'] as $path) {
 			$this->refused(fn () => EngineRequest::definition('alice', $endpoints->get('engine-test'), $path), 400);
 		}
-		self::assertStringEndsWith('/flows/get/p/u/alice/new_flow', EngineRequest::definition('alice', $endpoints->get('engine-test'), 'u/alice/new_flow')->path);
+		self::assertStringEndsWith('/flows/get/u/alice/new_flow', EngineRequest::definition('alice', $endpoints->get('engine-test'), 'u/alice/new_flow')->path);
 	}
 	private function controller(EngineVault $vault, EngineBroker $broker, bool $csrf = true, string $ocs = '', string $binding = 'native-binding', bool $enabled = true): EngineConnectionsController {
 		$request = $this->createMock(IRequest::class);
@@ -312,5 +330,97 @@ final class EngineConnectionTest extends TestCase {
 		$state->actor = '';
 		self::assertSame(401, $this->controller($vault, $broker)->listing()->getStatus());
 		$this->refused(fn () => $vault->resolve('engine-test'), 401);
+	}
+	public function testEngineReadDiscoveryRequiresOwnConnectionAndBothNativeGates(): void {
+		[$reads, , $state] = $this->reads('windmill');
+		self::assertSame(['nc_windmill_read'], $reads->capabilities()[0]['tools']);
+		$discovery = $reads->read('windmill', []);
+		self::assertSame('engine-test', $discovery['connections'][0]['connectionId']);
+		self::assertSame('{}', $discovery['resource']['filename']);
+		self::assertStringNotContainsString(self::TOKEN, json_encode($discovery));
+		$state->actor = 'bob';
+		self::assertSame([], $reads->capabilities());
+		$this->refused(fn () => $reads->read('windmill', []), 403);
+		$state->actor = 'alice';
+		foreach (['provider_reads_enabled', 'development', 'integration_enabled'] as $gate) {
+			$state->settings[$gate] = '0';
+			self::assertSame([], $reads->capabilities());
+			$this->refused(fn () => $reads->read('windmill', []), 403);
+			$state->settings[$gate] = '1';
+		}
+	}
+	public function testReadScopeAndMalformedSelectorsRefuseBeforeEngineHttp(): void {
+		[$reads, , $state] = $this->reads('windmill');
+		foreach ([['url' => 'https://untrusted.test'], ['connectionId' => []], ['reference' => 'u/alice/x'],
+			['connectionId' => 'engine-test', 'reference' => '../escape']] as $args) {
+			$this->refused(fn () => $reads->read('windmill', $args), 400);
+		}
+		$this->refused(fn () => $reads->read('windmill', ['connectionId' => 'outside-scope']), 403);
+		self::assertSame([], $state->trace);
+		$state->settings['scope_policy'] = json_encode(['revision' => 'no-engine', 'sources' => [['kind' => 'user-files']], 'tools' => ['nc_read_file']]);
+		$this->refused(fn () => $reads->read('windmill', []), 403);
+		self::assertSame([], $state->trace);
+	}
+	public function testReadDefinitionsPreserveGraphTypesUnknownFieldsAndNativeCredentialsReferences(): void {
+		foreach (['windmill', 'n8n'] as $provider) {
+			[$reads, , $state] = $this->reads($provider);
+			$reference = $provider === 'windmill' ? 'u/alice/synthetic' : 'synthetic-workflow';
+			$state->body = $provider === 'windmill'
+				? '{"path":"u/alice/synthetic","value":{"modules":[],"future":{}},"schema":{"properties":{},"x-fadenstack-provenance":{"opaque":true}}}'
+				: '{"id":"synthetic-workflow","nodes":[{"credentials":{"test":{"id":"native-ref"}}}],"connections":{},"pinData":{"secret":"not-for-model"},"future":{}}';
+			$result = $reads->read($provider, ['connectionId' => 'engine-test', 'reference' => $reference]);
+			$definition = $result['definition'];
+			self::assertInstanceOf(\stdClass::class, $definition);
+			self::assertStringNotContainsString(self::TOKEN, json_encode($result));
+			self::assertObjectNotHasProperty('pinData', $definition);
+			self::assertInstanceOf(\stdClass::class, $provider === 'windmill' ? $definition->schema->properties : $definition->connections);
+			self::assertCount(1, $state->trace);
+			self::assertSame('GET', $state->trace[0]['method']);
+			self::assertSame('unknown', $result['resource']['audience']);
+			if ($provider === 'n8n') {
+				self::assertSame('native-ref', $definition->nodes[0]->credentials->test->id);
+			}
+		}
+	}
+	public function testReadCollectionsAreBoundedAndPaginationDoesNotClaimCompleteness(): void {
+		foreach (['windmill', 'n8n'] as $provider) {
+			[$reads, , $state] = $this->reads($provider);
+			$rows = array_fill(0, 21, $provider === 'windmill' ? ['path' => 'u/alice/example', 'summary' => 'Synthetic'] : ['id' => 'example', 'name' => 'Synthetic']);
+			$state->body = json_encode($provider === 'windmill' ? $rows : ['data' => $rows, 'nextCursor' => 'opaque']);
+			$result = $reads->read($provider, ['connectionId' => 'engine-test']);
+			self::assertCount(20, $result['workflows']);
+			self::assertFalse($result['complete']);
+			$rows[] = $rows[0];
+			$state->body = json_encode($provider === 'windmill' ? $rows : ['data' => $rows]);
+			$this->refused(fn () => $reads->read($provider, ['connectionId' => 'engine-test']), 503);
+		}
+	}
+	public function testMalformedDefinitionsAndHttp200ErrorsNeverDiscloseWorkflowData(): void {
+		[$reads, , $state] = $this->reads('n8n');
+		foreach (['{"id":"other","nodes":[],"connections":{}}', '{"id":"example","nodes":[],"connections":{},"error":"not authorized"}'] as $body) {
+			$state->body = $body;
+			$this->refused(fn () => $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'example']), 503);
+		}
+		$state->body = '{"id":"example","nodes":[],"connections":[]}';
+		$this->refused(fn () => $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'example']), 413);
+		self::assertCount(3, $state->trace);
+	}
+	public function testRevokedOrRotatedConnectionsCannotReturnAFormerWorkflowRead(): void {
+		[$reads, $vault, $state] = $this->reads('n8n');
+		$state->body = '{"id":"example","nodes":[],"connections":{}}';
+		$state->afterRequest = fn () => $this->connected($vault);
+		$this->refused(fn () => $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'example']), 409);
+		$state->afterRequest = null;
+		$vault->replace('engine-test', $vault->status('engine-test')['revision'], null);
+		$this->refused(fn () => $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'example']), 403);
+		self::assertCount(1, $state->trace);
+	}
+	public function testAnEngineCannotEchoTheVaultTokenThroughOpaqueGraphFields(): void {
+		[$reads, $vault, $state] = $this->reads('n8n');
+		foreach ([self::TOKEN, 'printable-"quoted"-\\-credential'] as $token) {
+			$vault->replace('engine-test', $vault->status('engine-test')['revision'], $token);
+			$state->body = json_encode(['id' => 'example', 'nodes' => [], 'connections' => new \stdClass(), 'opaque' => ['echo' => 'Bearer ' . $token]]);
+			$this->refused(fn () => $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'example']), 403);
+		}
 	}
 }

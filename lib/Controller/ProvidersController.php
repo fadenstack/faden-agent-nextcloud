@@ -8,6 +8,7 @@ use OCA\FadenstackAgent\Providers\CalendarProvider;
 use OCA\FadenstackAgent\Providers\CommunicationProvider;
 use OCA\FadenstackAgent\Providers\ContactsProvider;
 use OCA\FadenstackAgent\Providers\ContentProvider;
+use OCA\FadenstackAgent\Providers\EngineReads;
 use OCA\FadenstackAgent\Providers\ProviderAuditService;
 use OCA\FadenstackAgent\Providers\StructuredProvider;
 use OCA\FadenstackAgent\Providers\TasksProvider;
@@ -34,6 +35,7 @@ final class ProvidersController extends Controller {
 		private CommunicationProvider $communications,
 		private ContentProvider $content,
 		private WorkflowProvider $workflows,
+		private EngineReads $engines,
 		private LoggerInterface $logger,
 	) {
 		parent::__construct($appName, $request);
@@ -126,10 +128,14 @@ final class ProvidersController extends Controller {
 				$calendar = [[...$tasks[0], 'provider' => 'calendar', 'tools' => ['nc_calendar_list'],
 					'conflict' => 'read-only', 'history' => 'not-applicable', 'canWrite' => false, 'discoveryOnly' => true]];
 			}
-			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities(), $this->communications->capabilities(), $this->content->capabilities(), $this->workflows->capabilities())];
+			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities(), $this->communications->capabilities(), $this->content->capabilities(), $this->workflows->capabilities(), $this->engines->capabilities())];
 		});
 	}
 
+	#[NoAdminRequired]
+	public function engineRead(string $provider, array $args = []): DataResponse {
+		return $this->run(fn () => $this->engines->read($provider, $args));
+	}
 	#[NoAdminRequired]
 	public function workflowRead(string $provider, array $args = []): DataResponse {
 		return $this->run(fn () => $this->workflows->read($provider, $args));

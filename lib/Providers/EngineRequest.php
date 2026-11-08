@@ -29,7 +29,7 @@ final class EngineRequest {
 			if (strlen($reference) > 255 || !preg_match('~^[uf]/[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)+$~D', $reference)) {
 				throw new Problem('Choose a canonical Windmill flow path.', 400);
 			}
-			$path = '/api/w/' . rawurlencode($endpoint['workspace']) . '/flows/get/p/' . implode('/', array_map('rawurlencode', explode('/', $reference)));
+			$path = '/api/w/' . rawurlencode($endpoint['workspace']) . '/flows/get/' . implode('/', array_map('rawurlencode', explode('/', $reference)));
 		} else {
 			if (!preg_match('/^[a-zA-Z0-9_-]{1,64}$/D', $reference)) {
 				throw new Problem('Choose a canonical n8n workflow identifier.', 400);

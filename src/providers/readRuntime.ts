@@ -16,6 +16,8 @@ import type { NativeProvidersApi } from './client.ts'
 import { strongEtagHeader } from '../integrations/nextcloud/adapterGuards.ts'
 
 const IMPLEMENTATIONS = new ProviderRegistry([
+	{ provider: 'windmill', apiVersions: ['windmill-1.841.0-token'], tools: ['nc_windmill_read'] },
+	{ provider: 'n8n', apiVersions: ['n8n-2.43.8-token'], tools: ['nc_n8n_read'] },
 	{ provider: 'whiteboard', apiVersions: ['whiteboard-2.1.2-session'], tools: ['nc_whiteboard_read', 'nc_whiteboard_create'] },
 	{ provider: 'flow', apiVersions: ['flow-3.0.0-session'], tools: ['nc_flow_read', 'nc_flow_create_draft', 'nc_flow_update_rule'] },
 	{ provider: 'collectives', apiVersions: ['collectives-4.7.1-session'], tools: ['nc_collectives_read', 'nc_collectives_create_page', 'nc_collectives_delete_page'] },
@@ -101,7 +103,7 @@ export class ProviderReadRuntime {
 				const args = resource.provider === 'talk' ? { roomToken: resource.collectionId } : JSON.parse(resource.filename || '{}')
 				const value = await this.api.communicationRead?.(resource.provider, args, innerSignal)
 				values = value ? [value.resource] : []
-			} else if (resource.provider === 'collectives' || resource.provider === 'forms' || resource.provider === 'notes' || resource.provider === 'bookmarks' || resource.provider === 'whiteboard' || resource.provider === 'flow') {
+			} else if (resource.provider === 'collectives' || resource.provider === 'forms' || resource.provider === 'notes' || resource.provider === 'bookmarks' || resource.provider === 'whiteboard' || resource.provider === 'flow' || resource.provider === 'windmill' || resource.provider === 'n8n') {
 				const value = await this.api.contentRead?.(resource.provider, JSON.parse(resource.filename || '{}'), innerSignal)
 				values = value ? [value.resource] : []
 			} else if (resource.provider === 'tables' || resource.provider === 'deck') {
@@ -146,7 +148,7 @@ export class ProviderReadRuntime {
 
 	private record(resource: ProviderResource, retain = true): void {
 		if (!this.#scope || !this.#policy) throw new Error('The native provider turn is unavailable.')
-		if (!['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'].includes(resource.provider) || resource.sourceClass === 'unknown' || !this.#policy.sourceClasses.includes(resource.sourceClass)
+		if (!['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'].includes(resource.provider) || resource.sourceClass === 'unknown' || !this.#policy.sourceClasses.includes(resource.sourceClass)
 			|| (resource.sourceClass === 'protected' && this.#policy.downstreamPolicy !== 'configured')) throw new ScopeViolation('processing_forbidden', 'This provider source cannot be sent to the configured model.')
 		const previous = this.#sources.get(resource.resourceId)
 		if (previous && previous.sourceClass !== resource.sourceClass) throw new ScopeViolation('processing_forbidden', 'Earlier source classification changed. Start a new conversation.')

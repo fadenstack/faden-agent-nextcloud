@@ -41,7 +41,7 @@ final class ProviderPolicy {
 				throw new \InvalidArgumentException();
 			}
 			$value = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
-			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'])) {
+			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'])) {
 				throw new \InvalidArgumentException();
 			}
 			if (!array_key_exists($section, $value)) {
@@ -146,6 +146,20 @@ final class ProviderPolicy {
 		$policy = $this->parsePolicy($provider, $audit);
 		if ($policy['collections'] !== ['personal']) {
 			throw new Problem('Only the current native personal workflow collection is supported.', 503);
+		}
+		return $policy;
+	}
+	public function engine(string $provider, bool $audit = false): array {
+		if (!in_array($provider, ['windmill', 'n8n'], true)) {
+			throw new Problem('Unsupported workflow engine.', 400);
+		}
+		$policy = $this->parsePolicy($provider, $audit);
+		foreach ($policy['collections'] as $id) {
+			try {
+				EngineEndpoint::id($id);
+			} catch (Problem) {
+				throw new Problem('Use canonical administrator-configured engine connection identifiers.', 503);
+			}
 		}
 		return $policy;
 	}

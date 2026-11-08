@@ -1,15 +1,26 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
-import type { ContentProviderId } from './client.ts'
+import type { ReadProviderId } from './client.ts'
 
 export const CONTENT_MUTATIONS = new Set(['nc_collectives_create_page', 'nc_collectives_delete_page', 'nc_forms_create_form', 'nc_forms_submit_response', 'nc_notes_create', 'nc_bookmarks_create', 'nc_whiteboard_create', 'nc_flow_create_draft', 'nc_flow_update_rule'])
 export const CONTENT_PROVIDERS = ['collectives', 'forms', 'notes', 'bookmarks'] as const
 interface ContentHost {
-	readContent(provider: ContentProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
+	readContent(provider: ReadProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
 	commitContentMutation(name: string, args: Readonly<Record<string, unknown>>, context: ToolCallContext): Promise<unknown>
 }
 const id = { type: 'integer', minimum: 1 } as const
 const text = { type: 'string', maxLength: 200 } as const
 const approval = ' Invoke this tool to request the real Allow/Deny preview. No effect occurs before Allow. Do not ask for typed approval or imitate an approval card. Audit only; no Undo. Never repeat a timed-out mutation.'
+
+/** Engine writes are deliberately absent until native proposals and receipts exist. */
+export function nativeEngineReadTools(host: ContentHost) {
+	return (['windmill', 'n8n'] as const).map(provider => defineTool({
+		name: `nc_${provider}_read`,
+		toolClass: 'read',
+		description: `Read saved ${provider} workflows through your own configured native connection. Call with no arguments to discover your permitted connection IDs. Then supply connectionId to list at most 20 workflows, or also reference to read a saved definition (Windmill path or n8n workflow ID returned by that list). Graphs may contain inline inputs, code and credential references; credential stores are never read. Unsaved editor state, execution and deployment are excluded.`,
+		parameters: { type: 'object', properties: { connectionId: { type: 'string', minLength: 1, maxLength: 32 }, reference: { type: 'string', minLength: 1, maxLength: 255 } }, additionalProperties: false },
+		run: (args, c) => host.readContent(provider, args, c.signal),
+	}))
+}
 
 /** Native production tools are offered only through registry/contract/scope intersection. */
 export function nativeContentTools(host: ContentHost) {

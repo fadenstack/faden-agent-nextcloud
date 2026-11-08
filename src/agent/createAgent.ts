@@ -92,8 +92,8 @@ import { commandChat } from './commands.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
-import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, ContentProposal, ContentProviderId, ProviderInspection, StructuredProposal } from '../providers/client.ts'
-import { CONTENT_MUTATIONS, nativeContentTools, nativeWorkflowTools } from '../providers/contentTools.ts'
+import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, ContentProposal, ContentProviderId, ProviderInspection, ReadProviderId, StructuredProposal } from '../providers/client.ts'
+import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeWorkflowTools } from '../providers/contentTools.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
@@ -188,12 +188,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const mailEnabled = (!!this.#providerReads && !!files.nativeProviders?.communicationPropose) || (experimental && config.mailEnabled === true && !!files.mail)
 		const talkEnabled = (!!this.#providerReads && !!files.nativeProviders?.communicationPropose) || (experimental && config.talkEnabled === true && !!files.talk)
 		const nativeContent = !!this.#providerReads && !!files.nativeProviders?.contentPropose
+		const nativeEngines = !!this.#providerReads && !!files.nativeProviders?.contentRead
 		const collectivesEnabled = !nativeContent && experimental && config.collectivesEnabled === true && !!files.collectives
 		const formsEnabled = !nativeContent && experimental && config.formsEnabled === true && !!files.forms
 		const whiteboardEnabled = !nativeContent && experimental && config.whiteboardEnabled === true && !!files.whiteboard
 		const flowEnabled = !nativeContent && experimental && config.flowEnabled === true && !!files.flow
-		const windmillEnabled = experimental && config.windmillEnabled === true && !!files.windmill
-		const n8nEnabled = experimental && config.n8nEnabled === true && !!files.n8n
+		const windmillEnabled = !this.#providerReads && experimental && config.windmillEnabled === true && !!files.windmill
+		const n8nEnabled = !this.#providerReads && experimental && config.n8nEnabled === true && !!files.n8n
 		const agentfileEnabled = experimental && config.agentfileEnabled === true && !!files.agentfile
 		const notesEnabled = !nativeContent && experimental && config.notesEnabled === true && !!files.notes
 		const bookmarksEnabled = !nativeContent && experimental && config.bookmarksEnabled === true && !!files.bookmarks
@@ -224,6 +225,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(bookmarksEnabled ? bookmarksTools(this) : []))
 			.addTools(...(nativeContent ? nativeContentTools(this) : []))
 			.addTools(...(nativeContent ? nativeWorkflowTools(this) : []))
+			.addTools(...(nativeEngines ? nativeEngineReadTools(this) : []))
 			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeTasksTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeContactsTools(this.#providerReads, this) : []))
@@ -239,7 +241,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
-					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
+					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
 					return inner.stream(messages, available
 						? {
 							...options,
@@ -251,7 +253,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addToolStage(StageOrder.custom, {
 				invoke: async (invocation, next) => {
-					if (this.#providerReads && ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
+					if (this.#providerReads && ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
 					else this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
 					if (this.#providerReads?.hasSources && fileCapability(invocation.tool.name)?.subsystem === 'files' && fileCapability(invocation.tool.name)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
@@ -2249,7 +2251,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		return this.files.mail!.readMail(args.query as string | undefined, args.accountId as string | undefined, signal)
 	}
 
-	async readContent(provider: ContentProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown> {
+	async readContent(provider: ReadProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown> {
 		await this.files.assertIdentity(signal)
 		const guard = this.#providerReads!.readGuard()
 		const result = await this.files.nativeProviders!.contentRead!(provider, args, signal)

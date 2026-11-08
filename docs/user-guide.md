@@ -28,6 +28,10 @@ other native actions have an audit trail. See [Mail and Talk](mail-talk.md) and
 [Collectives, Forms, Notes and Bookmarks](content-tools.md), and
 [saved Whiteboard and personal Flow](whiteboard-flow.md) for their exact bounds.
 
+Experimental [workflow engine connections and reads](workflow-engines.md) use
+your own Windmill or n8n API token stored encrypted in Nextcloud. This slice
+reads saved workflows; engine draft creation and execution remain pending.
+
 Ask naturally: “Find the latest supplier contract”, “Find all PDFs inside
 Engineering”, or “Show my ten most recently modified documents”. Discovery
 searches the filenames and metadata you can access, including shared files.

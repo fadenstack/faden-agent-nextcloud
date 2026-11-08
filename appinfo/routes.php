@@ -15,6 +15,7 @@ return ['routes' => [
 	['name' => 'providers#actions', 'url' => '/providers/actions', 'verb' => 'POST'],
 	['name' => 'providers#inspectAction', 'url' => '/providers/actions/{id}/inspect', 'verb' => 'POST'],
 	['name' => 'providers#capabilities', 'url' => '/providers/capabilities', 'verb' => 'POST'],
+	['name' => 'providers#engineRead', 'url' => '/providers/engines/read', 'verb' => 'POST'],
 	['name' => 'providers#workflowRead', 'url' => '/providers/workflow/read', 'verb' => 'POST'],
 	['name' => 'providers#workflowPropose', 'url' => '/providers/workflow/propose', 'verb' => 'POST'],
 	['name' => 'providers#workflowApprove', 'url' => '/providers/workflow/{id}/approve', 'verb' => 'POST'],

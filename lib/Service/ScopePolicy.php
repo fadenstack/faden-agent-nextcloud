@@ -25,6 +25,7 @@ class ScopePolicy {
 		'nc_deck_read', 'nc_deck_patch', 'nc_deck_create', 'nc_deck_move', 'nc_deck_assign', 'nc_deck_label'];
 	public const COMMUNICATION_TOOLS = ['nc_mail_read', 'nc_mail_save_draft', 'nc_mail_send_draft', 'nc_talk_read', 'nc_talk_send_message'];
 	public const WORKFLOW_TOOLS = ['nc_whiteboard_read', 'nc_whiteboard_create', 'nc_flow_read', 'nc_flow_create_draft', 'nc_flow_update_rule'];
+	public const ENGINE_TOOLS = ['nc_windmill_read', 'nc_windmill_draft', 'nc_windmill_run', 'nc_n8n_read', 'nc_n8n_draft', 'nc_n8n_execute'];
 	public const CONTENT_TOOLS = ['nc_collectives_read', 'nc_collectives_create_page', 'nc_collectives_delete_page', 'nc_forms_read', 'nc_forms_create_form', 'nc_forms_submit_response', 'nc_notes_read', 'nc_notes_create', 'nc_bookmarks_read', 'nc_bookmarks_create'];
 	public const DAV_TOOLS = ['nc_calendar_list', 'nc_calendar_read', 'nc_calendar_create', 'nc_calendar_patch', 'nc_calendar_delete',
 		'nc_tasks_read', 'nc_tasks_create', 'nc_tasks_patch', 'nc_tasks_delete',
@@ -145,7 +146,7 @@ class ScopePolicy {
 			$this->keys($value, ['revision', 'sources', 'destinations', 'tools', 'sourceClasses', 'downstreamPolicy', 'destinationAudiences', 'movements', 'classificationDefault', 'classificationRules', 'limits']);
 			$sources = $this->scopes($value['sources'] ?? []);
 			$destinations = $this->scopes($value['destinations'] ?? []);
-			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS, ...self::FILE_MUTATION_TOOLS, ...self::DAV_TOOLS, ...self::STRUCTURED_TOOLS, ...self::COMMUNICATION_TOOLS, ...self::CONTENT_TOOLS, ...self::WORKFLOW_TOOLS, 'nc_files_create_folder']);
+			$tools = $this->enumList($value['tools'] ?? [], [...self::FILE_TOOLS, ...self::HISTORY_TOOLS, ...self::EXTENDED_READ_TOOLS, ...self::FILE_MUTATION_TOOLS, ...self::DAV_TOOLS, ...self::STRUCTURED_TOOLS, ...self::COMMUNICATION_TOOLS, ...self::CONTENT_TOOLS, ...self::WORKFLOW_TOOLS, ...self::ENGINE_TOOLS, 'nc_files_create_folder']);
 			if (!$sources || !$tools || !is_string($value['revision'] ?? null) || strlen($value['revision']) < 1 || strlen($value['revision']) > 100) {
 				throw new \InvalidArgumentException();
 			}
@@ -158,7 +159,7 @@ class ScopePolicy {
 			}
 			if ($this->config->getAppValue(Application::APP_ID, 'development', '0') !== '1'
 				|| $this->config->getAppValue(Application::APP_ID, 'provider_reads_enabled', '0') !== '1') {
-				$tools = array_values(array_diff($tools, self::DAV_TOOLS, self::STRUCTURED_TOOLS, self::COMMUNICATION_TOOLS, self::CONTENT_TOOLS, self::WORKFLOW_TOOLS));
+				$tools = array_values(array_diff($tools, self::DAV_TOOLS, self::STRUCTURED_TOOLS, self::COMMUNICATION_TOOLS, self::CONTENT_TOOLS, self::WORKFLOW_TOOLS, self::ENGINE_TOOLS));
 			}
 			if ($this->config->getAppValue(Application::APP_ID, 'development', '0') !== '1'
 				|| $this->config->getAppValue(Application::APP_ID, 'folder_create_enabled', '0') !== '1') {

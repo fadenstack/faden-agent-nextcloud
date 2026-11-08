@@ -89,12 +89,18 @@ final class EngineBroker {
 				throw new Problem('Narrow the workflow engine request.', 413);
 			}
 			try {
-				$value = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
+				$value = json_decode($raw, false, 32, JSON_THROW_ON_ERROR);
+				if ($value instanceof \stdClass) {
+					$value = (array)$value;
+				}
 			} catch (\Throwable) {
 				throw new Problem('Malformed workflow engine JSON.', 503);
 			}
 			if (!is_array($value)) {
 				throw new Problem('Malformed workflow engine response.', 503);
+			}
+			if (array_key_exists('error', $value) || array_key_exists('errorCode', $value)) {
+				throw new Problem('The workflow engine refused to return verified data.', 503);
 			}
 			if ($this->users->getUser()?->getUID() !== $actor || $this->session->getId() !== $session
 				|| $this->endpoints->get($endpoint['id'])['stamp'] !== $endpoint['stamp']

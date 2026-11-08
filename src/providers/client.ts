@@ -5,6 +5,7 @@ import { changedEngineConnection, engineConnectionList, type EngineConnectionSum
 
 export interface CommunicationRead extends Record<string, unknown> { resource: ProviderResource }
 export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow'
+export type ReadProviderId = ContentProviderId | 'windmill' | 'n8n'
 export interface CommunicationOutcome {
 	readonly outcome: 'verified' | 'running' | 'partial'
 	readonly continue: boolean
@@ -124,7 +125,7 @@ export interface NativeProvidersApi {
 	engineConnections?(signal: AbortSignal): Promise<readonly EngineConnectionSummary[]>
 	engineConnect?(id: string, revision: string, token: string, signal: AbortSignal): Promise<EngineConnectionSummary>
 	engineDisconnect?(id: string, revision: string, signal: AbortSignal): Promise<EngineConnectionSummary>
-	contentRead?(provider: ContentProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationRead>
+	contentRead?(provider: ReadProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationRead>
 	contentPropose?(toolName: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<ContentProposal>
 	contentApprove?(proposal: ContentProposal, signal: AbortSignal): Promise<unknown>
 	contentCommit?(proposal: ContentProposal, signal: AbortSignal, step: number): Promise<ContentOutcome>
@@ -166,7 +167,7 @@ export interface NativeProvidersApi {
 
 /** Only our fixed native endpoints; credentials/URLs never appear in tool arguments. */
 export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>): NativeProvidersApi {
-	const family = (provider: string) => ['whiteboard', 'flow'].includes(provider) ? 'workflow' : 'content'
+	const family = (provider: string) => ['windmill', 'n8n'].includes(provider) ? 'engines' : ['whiteboard', 'flow'].includes(provider) ? 'workflow' : 'content'
 	return {
 		engineConnections: async signal => engineConnectionList(await post('/engines/connections', {}, signal)),
 		engineConnect: async (id, revision, token, signal) => changedEngineConnection(await post('/engines/connections/connect', { id, revision, token }, signal), id, revision, true),
