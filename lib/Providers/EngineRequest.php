@@ -17,6 +17,7 @@ final class EngineRequest {
 		public readonly string $method = 'GET',
 		public readonly ?string $body = null,
 		public readonly bool $nullable = false,
+		public readonly bool $jobAck = false,
 	) {
 	}
 	public static function probe(string $actor, array $endpoint): self {
@@ -75,5 +76,20 @@ final class EngineRequest {
 			throw new Problem('Use a new inactive personal n8n draft.', 400);
 		}
 		return new self($actor, $endpoint['id'], 'n8n', $endpoint['stamp'], '/api/v1/workflows', 'POST', EngineJson::encode($value));
+	}
+	public static function windmillRun(string $actor, array $endpoint, string $version, string $jobId, string $args): self {
+		if ($endpoint['provider'] !== 'windmill' || !preg_match('/^[1-9][0-9]{0,18}$/D', $version)
+			|| (string)(int)$version !== $version || !preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/D', $jobId)
+			|| !EngineJson::decode($args) instanceof \stdClass) {
+			throw new Problem('Choose one exact deployed version, unique job ID and bounded argument object.', 400);
+		}
+		return new self($actor, $endpoint['id'], 'windmill', $endpoint['stamp'], '/api/w/' . rawurlencode($endpoint['workspace']) . '/jobs/run/fv/' . $version . '?job_id=' . $jobId,
+			'POST', $args, jobAck: true);
+	}
+	public static function windmillJob(string $actor, array $endpoint, string $jobId): self {
+		if ($endpoint['provider'] !== 'windmill' || !preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/D', $jobId)) {
+			throw new Problem('Choose a canonical Windmill job ID.', 400);
+		}
+		return new self($actor, $endpoint['id'], 'windmill', $endpoint['stamp'], '/api/w/' . rawurlencode($endpoint['workspace']) . '/jobs_u/get/' . $jobId . '?no_logs=true&no_code=true');
 	}
 }

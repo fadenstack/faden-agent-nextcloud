@@ -15,7 +15,7 @@ use OCP\IUserSession;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
 
-/** Existing journal and tickets; one approved new-draft effect, never a retry. */
+/** Existing journal and tickets; one approved engine effect, never a retry. */
 final class EngineProvider {
 	private const KEY = 'fadenstack_agent.engine_proposals';
 	private ?string $attempt = null;
@@ -33,6 +33,7 @@ final class EngineProvider {
 		private JournalService $journal,
 		private StructuredTickets $tickets,
 		private ILockingProvider $locks,
+		private EngineRunPlan $runs,
 	) {
 	}
 	public function attemptId(): ?string {
@@ -55,6 +56,22 @@ final class EngineProvider {
 		$rows = $this->reads->capabilities();
 		foreach ($rows as &$row) {
 			$policy = $this->policies->engine($row['provider']);
+			if ($row['provider'] === 'windmill' && $policy['writesEnabled'] && EngineRunPlan::canMove($policy)
+				&& $this->configuration->folderDispatchSupported() && in_array(EngineRunPlan::TOOL, $policy['processing']['tools'], true)) {
+				foreach ($policy['collections'] as $id) {
+					foreach ($this->runs->targets($id) as $reference) {
+						try {
+							$this->runs->prepare(['connectionId' => $id, 'reference' => $reference, 'argsJson' => '{}'], str_repeat('0', 48));
+							$row['tools'][] = EngineRunPlan::TOOL;
+							$row['canWrite'] = true;
+							$row['conflict'] = 'native';
+							$row['history'] = 'audit-only';
+							break 2;
+						} catch (Problem) { /* No unverified run capability. */
+						}
+					}
+				}
+			}
 			$tool = EngineDraftPlan::TOOLS[$row['provider']];
 			if (!$policy['writesEnabled'] || !EngineDraftPlan::canMove($policy) || !$this->configuration->folderDispatchSupported() || !in_array($tool, $policy['processing']['tools'], true)) {
 				continue;
@@ -73,18 +90,32 @@ final class EngineProvider {
 		}
 		return $rows;
 	}
+	private function prepare(string $tool, array $args, string $id): array {
+		return $tool === EngineRunPlan::TOOL ? $this->runs->prepare($args, $id) : $this->plans->prepare($tool, $args, $id);
+	}
 	public function propose(string $toolName, array $args, string $requestId, #[\SensitiveParameter] string $cloudToken): array {
 		$identity = $this->identity();
 		$this->tickets->start($identity, $requestId);
 		try {
-			$p = $this->plans->prepare($toolName, $args, $requestId);
-			$value = EngineJson::decode($p['unsignedJson']);
-			$signed = $this->provenance->sign($p['provider'], EngineDraft::source($p['provider'], $value), $cloudToken);
-			$p['payload'] = ['definitionJson' => EngineDraft::mark($p['provider'], $value, $signed)];
+			$p = $this->prepare($toolName, $args, $requestId);
+			$run = $toolName === EngineRunPlan::TOOL;
+			if (!$run) {
+				$value = EngineJson::decode($p['unsignedJson']);
+				$signed = $this->provenance->sign($p['provider'], EngineDraft::source($p['provider'], $value), $cloudToken);
+				$p['payload'] = ['definitionJson' => EngineDraft::mark($p['provider'], $value, $signed)];
+			}
 			$p['display'] = [['label' => 'Nextcloud account', 'before' => null, 'after' => $identity->userId],
-				['label' => 'Engine account / connection', 'before' => null, 'after' => $p['enginePrincipal'] . ' / ' . $p['connectionId']],
+				['label' => 'Engine account / connection', 'before' => null, 'after' => $p['enginePrincipal'] . ' / ' . $p['connectionId']]];
+			$p['display'] = [...$p['display'], ...($run ? [
+				['label' => 'Deployed flow version', 'before' => null, 'after' => $p['payload']['version']],
+				['label' => 'Unique job ID', 'before' => null, 'after' => $p['payload']['jobId']],
+				['label' => 'Final run inputs', 'before' => null, 'after' => $p['payload']['argsJson']],
+				['label' => 'Approved deployed workflow JSON', 'before' => null, 'after' => $p['payload']['workflowJson']],
+				['label' => 'Effect audience', 'before' => null, 'after' => 'Unknown; native credentials and external destinations may be used.'],
+			] : [
 				['label' => 'Final workflow JSON including AI origin', 'before' => null, 'after' => $p['payload']['definitionJson']],
-				['label' => 'AI origin', 'before' => null, 'after' => 'Signed and stored inside the workflow.']];
+				['label' => 'AI origin', 'before' => null, 'after' => 'Signed and stored inside the workflow.'],
+			])];
 			$p['id'] = $requestId;
 			$p['expires'] = time() + 600;
 			$p['approved'] = false;
@@ -117,7 +148,7 @@ final class EngineProvider {
 		return $p;
 	}
 	private function validate(array $p): void {
-		$now = $this->plans->prepare($p['toolName'], $p['args'], $p['id']);
+		$now = $this->prepare($p['toolName'], $p['args'], $p['id']);
 		if (!hash_equals(StructuredProvider::digest(array_intersect_key($p, $now)), StructuredProvider::digest($now))) {
 			throw new Problem('The engine account, connection, target, source, payload or policy changed.', 409);
 		}
@@ -166,6 +197,17 @@ final class EngineProvider {
 		return ['cancelled' => $stopped, 'message' => 'Further engine dispatch is stopped. An in-flight request can still commit. Inspect without repeating it.'];
 	}
 	private function observe(array $p, array $connection): array {
+		if ($p['toolName'] === EngineRunPlan::TOOL) {
+			try {
+				$job = $this->broker->request(EngineRequest::windmillJob($connection['actor'], $connection['endpoint'], $p['payload']['jobId']), $connection['revision']);
+			} catch (Problem $error) {
+				if ($error->status === 404) {
+					return ['present' => false, 'matches' => false, 'executionState' => 'unknown'];
+				}
+				throw $error;
+			}
+			return EngineRunPlan::observe($p, $job);
+		}
 		if ($p['provider'] === 'windmill') {
 			$saved = $this->native->ownDraft($connection, $p['target']);
 			if ($saved === null) {
@@ -205,15 +247,20 @@ final class EngineProvider {
 			}
 			$this->journal->markDispatched($identity, $p['actionId'], $p['ticket']);
 			$marked = true;
-			$request = $p['provider'] === 'windmill' ? EngineRequest::saveOwnDraft($connection['actor'], $connection['endpoint'], $p['target'], $p['payload']['definitionJson'])
-				: EngineRequest::createN8nDraft($connection['actor'], $connection['endpoint'], $p['payload']['definitionJson']);
+			$run = $p['toolName'] === EngineRunPlan::TOOL;
+			$request = $run ? EngineRequest::windmillRun($connection['actor'], $connection['endpoint'], $p['payload']['version'], $p['payload']['jobId'], $p['payload']['argsJson'])
+				: ($p['provider'] === 'windmill' ? EngineRequest::saveOwnDraft($connection['actor'], $connection['endpoint'], $p['target'], $p['payload']['definitionJson'])
+					: EngineRequest::createN8nDraft($connection['actor'], $connection['endpoint'], $p['payload']['definitionJson']));
 			$ack = $this->broker->request($request, $p['connectionRevision'], function () use ($identity, $id): void {
 				if ($this->tickets->state($identity, $id) !== 'dispatching') {
 					throw new Problem('Stop prevented this engine dispatch.', 410);
 				}
 			});
 			$this->dispatched = true;
-			if ($p['provider'] === 'windmill' && (($ack['status'] ?? null) !== 'saved' || ($ack['path'] ?? null) !== $p['target'])) {
+			if ($run && ($ack['jobId'] ?? null) !== $p['payload']['jobId']) {
+				throw new Problem('The unique native job acknowledgement could not be verified.', 503);
+			}
+			if (!$run && $p['provider'] === 'windmill' && (($ack['status'] ?? null) !== 'saved' || ($ack['path'] ?? null) !== $p['target'])) {
 				throw new Problem('The native draft save was not confirmed.', 409);
 			}
 			if ($p['provider'] === 'n8n' && (!is_string($ack['id'] ?? null) || ($ack['name'] ?? null) !== $p['target'] || ($ack['active'] ?? null) !== false)) {
@@ -229,7 +276,7 @@ final class EngineProvider {
 			unset($state[$id]);
 			$this->session->set(self::KEY, $state);
 			return ['outcome' => 'verified', 'continue' => false, 'actionId' => $p['actionId'], 'provider' => $p['provider'], 'collectionId' => $p['connectionId'], 'target' => $p['target'],
-				'result' => ['reference' => $result['reference'], 'inactiveDraft' => true, 'originStored' => true], 'history' => 'audit-only', 'limitation' => $p['limitation']];
+				'result' => $run ? $result : ['reference' => $result['reference'], 'inactiveDraft' => true, 'originStored' => true], 'history' => 'audit-only', 'limitation' => $p['limitation']];
 		} catch (\Throwable $error) {
 			$this->dispatched = $this->broker->effectAttempted();
 			try {
@@ -240,7 +287,9 @@ final class EngineProvider {
 					if ($current['endpoint']['stamp'] !== $p['endpointStamp'] || $this->native->principal($current) !== $p['enginePrincipal']) {
 						throw new Problem('The engine identity changed.', 409);
 					}
-					$this->native->absent($current, $p['target']);
+					if ($p['toolName'] !== EngineRunPlan::TOOL) {
+						$this->native->absent($current, $p['target']);
+					}
 					$this->journal->finish($identity, $p['actionId'], $p['ticket'], 'unchanged', new VerifiedReadback(StructuredProvider::digest(['target' => $p['target'], 'present' => false, 'effectAttempted' => false])));
 				} else {
 					$this->journal->abort($identity, $p['actionId'], $p['ticket']);
@@ -263,8 +312,9 @@ final class EngineProvider {
 	private function item(array $entry): array {
 		$provider = $entry['resource']['provider'];
 		$requestId = substr($entry['resource']['reference'], 7);
-		return ['id' => $entry['id'], 'provider' => $provider, 'name' => ($provider === 'n8n' ? 'n8n' : 'Windmill') . ' draft',
-			'target' => 'Draft ' . substr($requestId, 0, 12), 'requestId' => $requestId,
+		$run = ($entry['operation'] ?? null) === EngineRunPlan::TOOL;
+		return ['id' => $entry['id'], 'provider' => $provider, 'operation' => $entry['operation'], 'name' => ($provider === 'n8n' ? 'n8n' : 'Windmill') . ($run ? ' run' : ' draft'),
+			'target' => ($run ? 'Run ' : 'Draft ') . substr($requestId, 0, 12), 'requestId' => $requestId,
 			'state' => $entry['state'], 'eligible' => 'none', 'auditOnly' => true, 'version' => $entry['version'], 'createdAt' => $entry['createdAt']];
 	}
 	public function inspect(string $id): array {
@@ -274,14 +324,37 @@ final class EngineProvider {
 			throw new Problem('Unavailable engine action.', 404);
 		}
 		$observed = 'recorded-attempt';
+		$execution = [];
 		if ($entry['snapshotAvailable']) {
 			$p = $this->journal->preview($identity, $id)['snapshot']['forward']['proposal'];
 			$connection = $this->native->connection($p['provider'], $p['connectionId'], false, true);
 			$current = $this->observe($p, $connection);
-			$observed = !$current['present'] ? 'draft_absent' : ($current['matches'] ? 'matches_saved_draft' : 'different_or_ambiguous');
+			if ($p['toolName'] === EngineRunPlan::TOOL) {
+				$observed = $current['present'] ? 'job_' . $current['executionState'] : 'job_unconfirmed';
+				$execution = ['jobId' => $p['payload']['jobId'], 'executionState' => $current['executionState'], 'dispatchVerified' => $current['matches'], 'externalEffectsVerified' => false];
+			} else {
+				$observed = !$current['present'] ? 'draft_absent' : ($current['matches'] ? 'matches_saved_draft' : 'different_or_ambiguous');
+			}
 		}
 		return ['action' => $this->item($entry),
 			'observed' => $observed, 'journalState' => $entry['state'], 'outcome' => $entry['state'] === 'applied' ? 'verified_committed' : (in_array($entry['state'], ['cancelled', 'failed'], true) ? 'not_dispatched' : 'unknown'), 'repeatedDispatch' => false,
-			'message' => 'Read-only inspection; the original commitment state is retained. No retry, deployment, execution or Undo is authorized.'];
+			...$execution, 'message' => 'Read-only inspection; the original dispatch record is retained. Native job success does not verify external effects. No retry, deployment, execution or Undo is authorized.'];
+	}
+	/** Existing read tool, scoped to an authorized encrypted run record. */
+	public function readJob(array $args): array {
+		if (array_keys($args) !== ['actionId'] || !is_string($args['actionId']) || !preg_match('/^[a-f0-9]{32}$/D', $args['actionId'])) {
+			throw new Problem('Choose one recorded Windmill action ID.', 400);
+		}
+		$p = $this->journal->preview($this->identity(), $args['actionId'])['snapshot']['forward']['proposal'];
+		if ($p['toolName'] !== EngineRunPlan::TOOL) {
+			throw new Problem('Choose a recorded Windmill run.', 400);
+		}
+		$source = $this->reads->read('windmill', ['connectionId' => $p['connectionId']])['resource'];
+		$result = $this->inspect($args['actionId']);
+		$filename = EngineJson::encode((object)$args);
+		$source['filename'] = $filename;
+		$source['resourceId'] = 'nextcloud:windmill:' . rtrim(strtr(base64_encode($filename), '+/', '-_'), '=');
+		$source['revision'] = StructuredProvider::digest([$result, $source['revision']]);
+		return [...$result, 'provider' => 'windmill', 'connectionId' => $p['connectionId'], 'resource' => $source];
 	}
 }

@@ -39,7 +39,7 @@ export interface StructuredRead {
 	readonly resource: ProviderResource
 }
 export interface CommunicationProposal extends Omit<StructuredProposal, 'provider'> { provider: 'mail' | 'talk' }
-export interface ContentProposal extends Omit<StructuredProposal, 'provider'> { provider: ContentProviderId; destinationAudience?: 'private' }
+export interface ContentProposal extends Omit<StructuredProposal, 'provider'> { provider: ContentProviderId; destinationAudience?: 'private' | 'unknown' }
 export interface ContentOutcome extends Omit<CommunicationOutcome, 'provider' | 'outcome'> { provider: ContentProviderId; outcome: 'verified' | 'running' | 'partial' | 'unknown' }
 export interface StructuredOutcome {
 	readonly status: 'saved' | 'deleted'
@@ -101,6 +101,7 @@ export type ContactReadResult = (ContactSummary & { readonly etag: string })
 
 export interface ProviderAuditItem {
 	readonly id: string
+	readonly operation?: string
 	readonly provider: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'talk' | ContentProviderId
 	readonly name: string
 	readonly target: string
@@ -114,6 +115,7 @@ export interface ProviderAuditItem {
 export interface ProviderInspection {
 	readonly action: ProviderAuditItem
 	readonly observed: 'present' | 'absent' | 'matches_saved_content' | 'different_content' | 'not_in_active_collection' | 'recorded-attempt'
+		| 'matches_saved_draft' | 'different_or_ambiguous' | 'draft_absent' | 'job_running' | 'job_succeeded' | 'job_failed' | 'job_cancelled' | 'job_unconfirmed'
 	readonly journalState: string
 	readonly outcome: 'verified_committed' | 'not_dispatched' | 'unknown'
 	readonly repeatedDispatch: false
@@ -180,7 +182,7 @@ export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal
 				const value = await (route === 'engines' ? authenticatedPost : post)<ContentProposal>(`/providers/${route}/propose`, { toolName, args, requestId }, signal)
 				if (value.id !== requestId || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName || !['collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'].includes(value.provider) || value.provider !== toolName.split('_')[1]
 					|| value.history !== 'audit-only' || !Array.isArray(value.display) || !value.resource || !value.payload || typeof value.target !== 'string' || typeof value.limitation !== 'string'
-					|| (route === 'engines' && value.destinationAudience !== 'private')) throw new Error('Invalid native content preview.')
+					|| (route === 'engines' && value.destinationAudience !== (toolName === 'nc_windmill_run' ? 'unknown' : 'private'))) throw new Error('Invalid native content preview.')
 				signal.throwIfAborted()
 				return value
 			} catch (error) { await post(`/providers/${route}/${requestId}/cancel`, {}, new AbortController().signal).catch(() => {}); throw error }

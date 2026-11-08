@@ -11,6 +11,7 @@ use OCA\FadenstackAgent\Providers\EngineDraftPlan;
 use OCA\FadenstackAgent\Providers\EngineEndpoint;
 use OCA\FadenstackAgent\Providers\EngineReads;
 use OCA\FadenstackAgent\Providers\EngineRequest;
+use OCA\FadenstackAgent\Providers\EngineRunPlan;
 use OCA\FadenstackAgent\Providers\EngineVault;
 use OCA\FadenstackAgent\Providers\ProviderPolicy;
 use OCA\FadenstackAgent\Service\Configuration;
@@ -82,6 +83,9 @@ final class EngineConnectionTest extends TestCase {
 		$client->method('request')->willReturnCallback(function ($method, $url, $options) use ($state): IResponse {
 			self::assertTrue($state->closed, 'Release the native session before engine HTTP.');
 			$state->trace[] = compact('method', 'url', 'options');
+			if (isset($state->beforeResponse)) {
+				($state->beforeResponse)($url);
+			}
 			$response = $this->createMock(IResponse::class);
 			$response->method('getStatusCode')->willReturn($state->status);
 			$response->method('getBody')->willReturn($state->body);
@@ -482,5 +486,64 @@ final class EngineConnectionTest extends TestCase {
 		$scope['movements'] = [['destination' => 'private', 'source' => 'standard']];
 		$state->settings['scope_policy'] = json_encode($scope);
 		self::assertTrue(EngineDraftPlan::canMove($policy->engine('windmill')), 'JSON member order does not change the movement grant.');
+	}
+	public function testRunUsesOneVersionBoundPostAndAcceptsOnlyTheNativePlainUuidAck(): void {
+		[$endpoints, $vault, $broker, $state] = $this->fixture();
+		$connected = $this->connected($vault);
+		$job = EngineRunPlan::jobId(str_repeat('a', 48));
+		$request = EngineRequest::windmillRun('alice', $endpoints->get('engine-test'), '7', $job, '{}');
+		$this->refused(fn () => $broker->request($request, $connected['revision']), 403);
+		self::assertSame([], $state->trace);
+		$state->contentType = 'text/plain; charset=utf-8';
+		$state->status = 201;
+		$state->body = $job;
+		self::assertSame(['jobId' => $job], $broker->request($request, $connected['revision'], static function (): void {
+		}));
+		self::assertStringEndsWith('/jobs/run/fv/7?job_id=' . $job, $state->trace[0]['url']);
+		self::assertSame('{}', $state->trace[0]['options']['body']);
+		foreach ([['text/plain', 200, $job], ['application/json', 201, '"' . $job . '"'], ['text/plain', 201, 'unverified']] as [$type, $status, $body]) {
+			$state->contentType = $type;
+			$state->status = $status;
+			$state->body = $body;
+			$this->refused(fn () => $broker->request($request, $connected['revision'], static function (): void {
+			}), 503);
+		}
+		self::assertCount(4, $state->trace, 'No retry within any request.');
+	}
+	public function testRunPolicyRequiresExplicitTargetAndUnknownAudienceGrantBeforeHttp(): void {
+		[$reads, $vault, $state, $policy, $broker, $config] = $this->reads('windmill');
+		$config->method('getSystemValueBool')->willReturn(true);
+		$config->method('getSystemValueString')->willReturn('');
+		$state->settings['provider_writes_enabled'] = '1';
+		$provider = json_decode($state->settings['provider_policy'], true);
+		$provider['windmill']['writesEnabled'] = true;
+		$state->settings['provider_policy'] = json_encode($provider);
+		$scope = json_decode($state->settings['scope_policy'], true);
+		$scope['tools'][] = EngineRunPlan::TOOL;
+		$scope['destinationAudiences'] = ['private'];
+		$scope['movements'] = [['source' => 'standard', 'destination' => 'private']];
+		$state->settings['scope_policy'] = json_encode($scope);
+		$plan = new EngineRunPlan(new EngineAuthority($vault, $broker, $policy), $reads, new Configuration($config), $config);
+		$args = ['connectionId' => 'engine-test', 'reference' => 'u/alice/test', 'argsJson' => '{}'];
+		$this->refused(fn () => $plan->prepare($args, str_repeat('a', 48)), 403);
+		$scope['destinationAudiences'][] = 'unknown';
+		$scope['movements'][] = ['destination' => 'unknown', 'source' => 'standard'];
+		$state->settings['scope_policy'] = json_encode($scope);
+		$this->refused(fn () => $plan->prepare($args, str_repeat('a', 48)), 403);
+		self::assertSame([], $state->trace);
+		$state->settings['engine_run_targets'] = json_encode([['connectionId' => 'engine-test', 'reference' => 'u/alice/test']]);
+		$state->beforeResponse = static function (string $url) use ($state): void {
+			$state->body = str_ends_with($url, '/users/whoami') ? '{"username":"alice"}'
+				: '{"path":"u/alice/test","version_id":7,"archived":false,"is_draft":false,"value":{"modules":[]},"schema":{}}';
+		};
+		$p = $plan->prepare($args, str_repeat('a', 48));
+		self::assertSame('7', $p['payload']['version']);
+		self::assertSame('unknown', $p['destinationAudience']);
+		self::assertStringNotContainsString(self::TOKEN, json_encode($p));
+		$state->settings['engine_run_targets'] = json_encode([['connectionId' => 'engine-test', 'reference' => 'u/bob/test']]);
+		$this->refused(fn () => $plan->prepare([...$args, 'reference' => 'u/bob/test'], str_repeat('a', 48)), 403);
+		foreach (['[]', 'null', '{broken', str_repeat(' ', 32769)] as $json) {
+			$this->refused(fn () => $plan->prepare([...$args, 'argsJson' => $json], str_repeat('a', 48)), 400);
+		}
 	}
 }

@@ -69,6 +69,7 @@ const action = computed(() => {
 	case 'nc_flow_create_draft': return t('fadenstack_agent', 'Create blocked Flow draft')
 	case 'nc_flow_update_rule': return t('fadenstack_agent', 'Change personal Flow rule')
 	case 'nc_windmill_draft': return t('fadenstack_agent', 'Create Windmill draft')
+	case 'nc_windmill_run': return t('fadenstack_agent', 'Run Windmill flow')
 	case 'nc_n8n_draft': return t('fadenstack_agent', 'Create n8n draft')
 	default: return t('fadenstack_agent', 'Replace file')
 	}
@@ -161,7 +162,7 @@ function deny() {
 			<dl v-if="fields?.length" class="fadenstack-file-fields" :class="{ 'fadenstack-content-fields': contentAction }">
 				<div v-for="(field, index) in fields" :key="index" class="fadenstack-field-row">
 					<dt>{{ field.label }}</dt>
-					<dd v-if="engineAction && field.label === 'Final workflow JSON including AI origin'">
+					<dd v-if="engineAction && ['Final workflow JSON including AI origin', 'Approved deployed workflow JSON'].includes(field.label)">
 						<details>
 							<summary>{{ t('fadenstack_agent', 'Review exact workflow JSON') }}</summary>
 							<pre class="fdn-approval-args">{{ workflowText(field.after) }}</pre>

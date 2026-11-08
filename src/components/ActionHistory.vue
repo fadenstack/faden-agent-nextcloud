@@ -29,6 +29,11 @@ function observation(value: string): string {
 	switch (value) {
 	case 'matches_saved_content': return t('fadenstack_agent', 'Current content matches the recorded save.')
 	case 'matches_saved_draft': return t('fadenstack_agent', 'The native draft matches the approved graph and origin record.')
+	case 'job_running': return t('fadenstack_agent', 'Native job dispatch verified; execution is queued or running. External effects are not verified.')
+	case 'job_succeeded': return t('fadenstack_agent', 'The native job reports success. External effects are not independently verified.')
+	case 'job_failed': return t('fadenstack_agent', 'The native job reports failure. Partial external effects may remain; no retry is authorized.')
+	case 'job_cancelled': return t('fadenstack_agent', 'The native job reports cancellation. Earlier effects are not undone.')
+	case 'job_unconfirmed': return t('fadenstack_agent', 'The recorded job could not be confirmed. Do not repeat it.')
 	case 'different_or_ambiguous': return t('fadenstack_agent', 'The saved workflow changed or the draft name is ambiguous.')
 	case 'draft_absent': return t('fadenstack_agent', 'The draft was not found through the current engine connection.')
 	case 'absent': return t('fadenstack_agent', 'The resource is absent and its parent is accessible.')
@@ -43,6 +48,7 @@ function paused(item: HistoryItem): boolean {
 	return !!props.host.history.availability?.writesPaused && ['undo', 'redo'].includes(item.eligible)
 }
 function state(item: HistoryItem): string {
+	if (item.auditOnly && item.operation === 'nc_windmill_run' && item.state === 'applied') return t('fadenstack_agent', 'Dispatched · audit only')
 	if (item.auditOnly) return item.state === 'applied' ? t('fadenstack_agent', 'Saved · audit only') : item.state === 'failed' ? t('fadenstack_agent', 'No change recorded · audit only') : t('fadenstack_agent', 'Inspect native outcome · audit only')
 	if (item.eligible === 'revalidate') return t('fadenstack_agent', 'File revision changed')
 	if (item.eligible === 'none' && ['applied', 'undone'].includes(item.state)) return t('fadenstack_agent', 'Restoration unavailable')

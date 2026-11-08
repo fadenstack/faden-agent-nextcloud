@@ -73,7 +73,7 @@ final class EngineBroker {
 			|| $request->stamp !== $endpoint['stamp'] || $request->connection !== $endpoint['id']) {
 			throw new Problem('The native account or workflow connection changed.', 409);
 		}
-		$headers = ['Accept' => 'application/json', 'Cache-Control' => 'no-cache'];
+		$headers = ['Accept' => $request->jobAck ? 'text/plain' : 'application/json', 'Cache-Control' => 'no-cache'];
 		if ($endpoint['provider'] === 'windmill') {
 			$headers['Authorization'] = 'Bearer ' . $token;
 		} else {
@@ -110,7 +110,8 @@ final class EngineBroker {
 			if ($length !== '' && (!ctype_digit($length) || (float)$length > self::MAX_BYTES)) {
 				throw new Problem('Narrow the workflow engine request.', 413);
 			}
-			if (!preg_match('~^application/(?:[a-z0-9.+-]+\+)?json(?:\s*;|$)~i', $response->getHeader('Content-Type'))) {
+			$contentType = $request->jobAck ? '~^text/plain(?:\s*;|$)~i' : '~^application/(?:[a-z0-9.+-]+\+)?json(?:\s*;|$)~i';
+			if (!preg_match($contentType, $response->getHeader('Content-Type'))) {
 				throw new Problem('The workflow engine did not return JSON.', 503);
 			}
 			$raw = is_resource($body) ? stream_get_contents($body, self::MAX_BYTES + 1) : $body;
@@ -118,7 +119,14 @@ final class EngineBroker {
 				throw new Problem('Narrow the workflow engine request.', 413);
 			}
 			try {
-				$value = json_decode($raw, false, 32, JSON_THROW_ON_ERROR);
+				if ($request->jobAck) {
+					if ($status !== 201 || !preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/D', $raw)) {
+						throw new \UnexpectedValueException();
+					}
+					$value = ['jobId' => $raw];
+				} else {
+					$value = json_decode($raw, false, 32, JSON_THROW_ON_ERROR);
+				}
 				if ($value instanceof \stdClass) {
 					$value = (array)$value;
 				}

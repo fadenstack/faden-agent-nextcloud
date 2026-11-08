@@ -1,7 +1,7 @@
 import { defineTool, type ToolCallContext } from '@fadenstack/agents'
 import type { ReadProviderId } from './client.ts'
 
-export const CONTENT_MUTATIONS = new Set(['nc_collectives_create_page', 'nc_collectives_delete_page', 'nc_forms_create_form', 'nc_forms_submit_response', 'nc_notes_create', 'nc_bookmarks_create', 'nc_whiteboard_create', 'nc_flow_create_draft', 'nc_flow_update_rule', 'nc_windmill_draft', 'nc_n8n_draft'])
+export const CONTENT_MUTATIONS = new Set(['nc_collectives_create_page', 'nc_collectives_delete_page', 'nc_forms_create_form', 'nc_forms_submit_response', 'nc_notes_create', 'nc_bookmarks_create', 'nc_whiteboard_create', 'nc_flow_create_draft', 'nc_flow_update_rule', 'nc_windmill_draft', 'nc_n8n_draft', 'nc_windmill_run'])
 export const CONTENT_PROVIDERS = ['collectives', 'forms', 'notes', 'bookmarks'] as const
 interface ContentHost {
 	readContent(provider: ReadProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown>
@@ -11,15 +11,25 @@ const id = { type: 'integer', minimum: 1 } as const
 const text = { type: 'string', maxLength: 200 } as const
 const approval = ' Invoke this tool to request the real Allow/Deny preview. No effect occurs before Allow. Do not ask for typed approval or imitate an approval card. Audit only; no Undo. Never repeat a timed-out mutation.'
 
-/** Engine writes are deliberately absent until native proposals and receipts exist. */
+/** Saved definitions and separately authorized recorded-job inspection. */
 export function nativeEngineReadTools(host: ContentHost) {
 	return (['windmill', 'n8n'] as const).map(provider => defineTool({
 		name: `nc_${provider}_read`,
 		toolClass: 'read',
-		description: `Read saved ${provider} workflows through your own configured native connection. Call with no arguments to discover your permitted connection IDs. Then supply connectionId to list at most 20 workflows, or also reference to read a saved definition (Windmill path or n8n workflow ID returned by that list). Graphs may contain inline inputs, code and credential references; credential stores are never read. Unsaved editor state, execution and deployment are excluded.`,
-		parameters: { type: 'object', properties: { connectionId: { type: 'string', minLength: 1, maxLength: 32 }, reference: { type: 'string', minLength: 1, maxLength: 255 } }, additionalProperties: false },
+		description: `Read saved ${provider} workflows through your own configured native connection. Call with no arguments to discover your permitted connection IDs. Then supply connectionId to list at most 20 workflows, or also reference to read a saved definition (Windmill path or n8n workflow ID returned by that list). ${provider === 'windmill' ? 'Alternatively supply actionId alone to inspect an authorized recorded run without repeating it; no logs, code, results or credential values are returned.' : ''} Graphs may contain inline inputs, code and credential references; credential stores are never read. Unsaved editor state, execution and deployment are excluded.`,
+		parameters: { type: 'object', properties: { connectionId: { type: 'string', minLength: 1, maxLength: 32 }, reference: { type: 'string', minLength: 1, maxLength: 255 }, ...(provider === 'windmill' ? { actionId: { type: 'string', pattern: '^[a-f0-9]{32}$' } } : {}) }, additionalProperties: false },
 		run: (args, c) => host.readContent(provider, args, c.signal),
 	}))
+}
+
+export function nativeEngineRunTools(host: ContentHost) {
+	return [defineTool({
+		name: 'nc_windmill_run',
+		toolClass: 'destructive',
+		description: 'Run one explicitly configured deployed flow belonging to your connected Windmill user. Read its definition first. Supply connectionId, reference and argsJson (an object, at most 32 KiB). Approval binds the exact deployed version, graph, inputs and unique job ID. Native credentials and external effects may be used; audience is unknown. Job success does not independently verify external effects. No deployment, cancellation, Undo or automatic retry. Inspect a recorded actionId with nc_windmill_read.' + approval,
+		parameters: { type: 'object', properties: { connectionId: { type: 'string', minLength: 1, maxLength: 32 }, reference: { type: 'string', minLength: 1, maxLength: 255 }, argsJson: { type: 'string', minLength: 2, maxLength: 32768 } }, required: ['connectionId', 'reference', 'argsJson'], additionalProperties: false },
+		run: (args, c) => host.commitContentMutation('nc_windmill_run', args, c),
+	})]
 }
 
 export function nativeEngineDraftTools(host: ContentHost) {

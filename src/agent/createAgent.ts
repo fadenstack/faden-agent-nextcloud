@@ -93,7 +93,7 @@ import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
 import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, ContentProposal, ContentProviderId, ProviderInspection, ReadProviderId, StructuredProposal } from '../providers/client.ts'
-import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEngineDraftTools, nativeWorkflowTools } from '../providers/contentTools.ts'
+import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEngineDraftTools, nativeEngineRunTools, nativeWorkflowTools } from '../providers/contentTools.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
@@ -227,6 +227,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(nativeContent ? nativeWorkflowTools(this) : []))
 			.addTools(...(nativeEngines ? nativeEngineReadTools(this) : []))
 			.addTools(...(nativeContent ? nativeEngineDraftTools(this) : []))
+			.addTools(...(nativeContent ? nativeEngineRunTools(this) : []))
 			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeTasksTools(this.#providerReads, this) : []))
 			.addTools(...(this.#providerReads ? nativeContactsTools(this.#providerReads, this) : []))
@@ -2304,11 +2305,18 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					this.#providerCompletion = 'The native API accepted the submission but its stored answers could not be independently verified. Do not submit it again. Inspect Forms and Agent actions; submission has no Undo.'
 					return result
 				}
+				if (name === 'nc_windmill_run') {
+					const job = result.result
+					if (job?.dispatchVerified !== true || job.externalEffectsVerified !== false || job.jobId !== proposal.payload.jobId
+						|| job.version !== proposal.payload.version || !['running', 'succeeded', 'failed', 'cancelled'].includes(String(job.executionState))) throw new Error('Invalid native execution receipt. Inspect the recorded action without repeating it.')
+				}
 				const id = Number(result.result?.id ?? 0)
 				const app = proposal.provider === 'whiteboard' ? 'files' : proposal.provider
 				const collectionId = proposal.provider === 'whiteboard' ? String(result.result?.folderId ?? '') : result.collectionId!
 				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app, collectionId, filename: String(id) } }, call.signal) : undefined
-				this.#providerCompletion = `Nextcloud verified and recorded this action: ${proposal.target}. Audit only; no Undo. Start a new conversation to use fresh native context.`
+				this.#providerCompletion = name === 'nc_windmill_run'
+					? `Windmill verified one job dispatch (${String(result.result?.jobId)}). Native execution state: ${String(result.result?.executionState)}. This does not verify external effects. Audit only; no Undo. Inspect Agent actions without repeating the run.`
+					: `Nextcloud verified and recorded this action: ${proposal.target}. Audit only; no Undo. Start a new conversation to use fresh native context.`
 				return { ...result, ...(activity ? { view: activity.view } : {}) }
 			}
 			throw new Error('The native content recipe exceeded its bounded number of steps.')

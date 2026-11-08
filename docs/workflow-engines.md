@@ -1,4 +1,4 @@
-# Workflow engine connections, reads and drafts
+# Workflow engine connections, reads, drafts and approved runs
 
 This experimental slice reads saved workflows and creates new private drafts in Windmill **1.841.0** and n8n **2.43.8**
 workflows through your own engine account. Your administrator must configure
@@ -58,8 +58,38 @@ create: Stop can arrive after the engine already saved it.
 
 ![Inspect a saved draft after Stop](screenshots/engine-draft-audit.png)
 
-Execution and engine-editor refresh remain pending. The four local runtimes
-are `nc_windmill_read`, `nc_n8n_read`, `nc_windmill_draft` and `nc_n8n_draft`.
+Windmill execution is separately gated. The administrator must explicitly list
+the own-user flow in `engine_run_targets`, grant `nc_windmill_run`, enable native
+writes and allow the configured source class to move to the **unknown** audience.
+For example, the execution-target setting can contain
+`[{"connectionId":"my-windmill","reference":"u/alice/example"}]`.
+An API connection alone grants no run access. The native token still needs
+permission to run that flow; restricted-token capability acceptance remains a
+release gate.
+
+Ask to run the configured deployed flow once. Review its native account,
+version, exact JSON inputs and graph before **Allow**. A changed deployed flow
+invalidates the preview. The assistant never deploys, replaces or activates it.
+Dependencies and native credentials can change independently of that version.
+
+![Review a version-bound run](screenshots/engine-windmill-run.png)
+
+The receipt verifies a unique **job dispatch**, and reports whether the engine
+says it is queued/running, succeeded, failed or cancelled. Native job success
+does not independently verify external effects. Stop does not cancel an
+already-dispatched job, and partial external effects have no Undo.
+
+Use **Agent actions → Inspect outcome**, or ask to inspect the recorded
+`actionId` with `nc_windmill_read`. This reads the known job without another
+run. No code, logs, job results or credential values are returned. A missing
+job or lost acknowledgement stays uncertain; never repeat the run automatically.
+
+![Dispatch receipt](screenshots/engine-windmill-run-receipt.png)
+
+![Inspect the recorded native job](screenshots/engine-windmill-run-audit.png)
+
+n8n execution and engine-editor refresh remain pending. Five local runtimes
+exist; the n8n execution tool is not offered.
 Providers remain experimental and default off. Live server, broader role and
 package lifecycle acceptance are separate gates. Illustrated research lives in the
 [development report](https://github.com/fadenstack/fadenstack-dev/blob/master/nextcloud-agent-engines-2026-11-08/READ_CHECKPOINT.md).

@@ -38,12 +38,15 @@ function dismiss() { props.runtime?.workspace.dismissReceipt() }
 			</button>
 		</div>
 		<div v-else-if="latest" role="status">
-			<strong v-if="latest.outcome === 'committed'">{{ latest.operation === 'nc_mail_send_draft' ? t('fadenstack_agent', 'SMTP accepted: {name}', { name: latest.target }) : latest.operation === 'nc_talk_send_message' ? t('fadenstack_agent', 'Message sent: {name}', { name: latest.target }) : latest.operation === 'create_folder' ? t('fadenstack_agent', 'Folder created: {name}', { name: latest.target }) : latest.operation === 'revalidate' ? t('fadenstack_agent', 'File revision verified: {name}', { name: latest.target }) : latest.operation === 'reconcile' ? t('fadenstack_agent', 'Outcome recorded: {name}', { name: latest.target }) : t('fadenstack_agent', 'Saved: {name}', { name: latest.target }) }}</strong>
+			<strong v-if="latest.outcome === 'committed'">{{ latest.operation === 'nc_windmill_run' ? t('fadenstack_agent', 'Job dispatched: {name}', { name: latest.target }) : latest.operation === 'nc_mail_send_draft' ? t('fadenstack_agent', 'SMTP accepted: {name}', { name: latest.target }) : latest.operation === 'nc_talk_send_message' ? t('fadenstack_agent', 'Message sent: {name}', { name: latest.target }) : latest.operation === 'create_folder' ? t('fadenstack_agent', 'Folder created: {name}', { name: latest.target }) : latest.operation === 'revalidate' ? t('fadenstack_agent', 'File revision verified: {name}', { name: latest.target }) : latest.operation === 'reconcile' ? t('fadenstack_agent', 'Outcome recorded: {name}', { name: latest.target }) : t('fadenstack_agent', 'Saved: {name}', { name: latest.target }) }}</strong>
 			<strong v-else>{{ latest.message }}</strong>
 			<p v-if="latest.outcome === 'committed' && latest.operation === 'nc_mail_send_draft'">
 				{{ t('fadenstack_agent', 'Recipient delivery is not confirmed. Sending has no Undo.') }}
 			</p>
-			<p v-if="latest.outcome === 'committed' && !['reconcile', 'revalidate'].includes(latest.operation) && latest.view !== 'refreshed'">
+			<p v-if="latest.outcome === 'committed' && latest.operation === 'nc_windmill_run'">
+				{{ t('fadenstack_agent', 'Inspect Agent actions for native job status. External effects are not verified and cannot be undone.') }}
+			</p>
+			<p v-if="latest.outcome === 'committed' && !['reconcile', 'revalidate', 'nc_windmill_run'].includes(latest.operation) && latest.view !== 'refreshed'">
 				{{ latest.view === 'not_visible' ? t('fadenstack_agent', 'Saved in Nextcloud. Open the changed resource to see it.') : t('fadenstack_agent', 'Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.') }}
 			</p>
 			<button v-if="!open" type="button" @click="emit('show')">

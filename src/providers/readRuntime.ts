@@ -16,7 +16,7 @@ import type { NativeProvidersApi } from './client.ts'
 import { strongEtagHeader } from '../integrations/nextcloud/adapterGuards.ts'
 
 const IMPLEMENTATIONS = new ProviderRegistry([
-	{ provider: 'windmill', apiVersions: ['windmill-1.841.0-token'], tools: ['nc_windmill_read', 'nc_windmill_draft'] },
+	{ provider: 'windmill', apiVersions: ['windmill-1.841.0-token'], tools: ['nc_windmill_read', 'nc_windmill_draft', 'nc_windmill_run'] },
 	{ provider: 'n8n', apiVersions: ['n8n-2.43.8-token'], tools: ['nc_n8n_read', 'nc_n8n_draft'] },
 	{ provider: 'whiteboard', apiVersions: ['whiteboard-2.1.2-session'], tools: ['nc_whiteboard_read', 'nc_whiteboard_create'] },
 	{ provider: 'flow', apiVersions: ['flow-3.0.0-session'], tools: ['nc_flow_read', 'nc_flow_create_draft', 'nc_flow_update_rule'] },

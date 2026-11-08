@@ -143,7 +143,7 @@ final class ProvidersController extends Controller {
 
 	#[NoAdminRequired]
 	public function engineRead(string $provider, array $args = []): DataResponse {
-		return $this->run(fn () => $this->engines->read($provider, $args));
+		return $this->run(fn () => $provider === 'windmill' && array_key_exists('actionId', $args) ? $this->engineActions->readJob($args) : $this->engines->read($provider, $args));
 	}
 	#[NoAdminRequired]
 	public function enginePropose(string $toolName, array $args, string $requestId): DataResponse {
