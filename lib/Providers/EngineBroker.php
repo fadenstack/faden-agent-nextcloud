@@ -22,6 +22,7 @@ final class EngineBroker {
 		private IUserSession $users,
 		private ISession $session,
 		private IClientService $clients,
+		private EngineWebhookTargets $targets,
 	) {
 	}
 	public function probe(string $id, string $token, ?string $revision = null): array {
@@ -64,6 +65,14 @@ final class EngineBroker {
 		if ($connection['revision'] !== $expectedRevision) {
 			throw new Problem('The workflow credential changed before dispatch.', 409);
 		}
+		if ($request->webhookTarget !== null) {
+			$t = $this->targets->get($request->webhookTarget);
+			$hook = $connection['webhooks'][$t['id']] ?? null;
+			if ($t['connectionId'] !== $request->connection || $t['stamp'] !== $request->webhookStamp || ($hook['stamp'] ?? null) !== $t['stamp']) {
+				throw new Problem('The native webhook target or credential changed.', 409);
+			}
+			return $this->send($request, $connection['endpoint'], $hook['secret'], $connection['revision'], $beforeEffect);
+		}
 		return $this->send($request, $connection['endpoint'], $connection['apiToken'], $connection['revision'], $beforeEffect);
 	}
 	private function send(EngineRequest $request, array $endpoint, string $token, ?string $revision, ?callable $beforeEffect = null): ?array {
@@ -76,6 +85,8 @@ final class EngineBroker {
 		$headers = ['Accept' => $request->jobAck ? 'text/plain' : 'application/json', 'Cache-Control' => 'no-cache'];
 		if ($endpoint['provider'] === 'windmill') {
 			$headers['Authorization'] = 'Bearer ' . $token;
+		} elseif ($request->webhookTarget !== null) {
+			$headers['X-Fadenstack-Workflow-Key'] = $token;
 		} else {
 			$headers['X-N8N-API-KEY'] = $token;
 		}
@@ -143,6 +154,9 @@ final class EngineBroker {
 				|| $this->endpoints->get($endpoint['id'])['stamp'] !== $endpoint['stamp']
 				|| ($revision !== null && $this->vault->resolve($endpoint['id'])['revision'] !== $revision)) {
 				throw new Problem('The native account or workflow connection changed.', 409);
+			}
+			if ($request->webhookTarget !== null && $this->targets->get($request->webhookTarget)['stamp'] !== $request->webhookStamp) {
+				throw new Problem('The native webhook target changed during dispatch.', 409);
 			}
 			return $value;
 		} finally {

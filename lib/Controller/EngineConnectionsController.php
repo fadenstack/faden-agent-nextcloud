@@ -6,6 +6,7 @@ namespace OCA\FadenstackAgent\Controller;
 
 use OCA\FadenstackAgent\Providers\EngineBroker;
 use OCA\FadenstackAgent\Providers\EngineVault;
+use OCA\FadenstackAgent\Providers\EngineWebhookTargets;
 use OCA\FadenstackAgent\Service\FileService;
 use OCA\FadenstackAgent\Service\Problem;
 use OCP\AppFramework\Controller;
@@ -21,6 +22,7 @@ final class EngineConnectionsController extends Controller {
 		private FileService $files,
 		private EngineVault $vault,
 		private EngineBroker $broker,
+		private EngineWebhookTargets $targets,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -60,5 +62,16 @@ final class EngineConnectionsController extends Controller {
 	#[NoAdminRequired]
 	public function disconnect(string $id, string $revision): DataResponse {
 		return $this->run(fn () => $this->vault->replace($id, $revision, null));
+	}
+	#[NoAdminRequired]
+	public function webhooks(): DataResponse {
+		return $this->run(fn () => ['targets' => array_values(array_map(fn ($t) => $this->vault->webhookStatus($t), $this->targets->all()))]);
+	}
+	#[NoAdminRequired]
+	public function webhook(string $targetId, string $revision, ?string $secret = null): DataResponse {
+		return $this->run(function () use ($targetId, $revision, $secret): array {
+			$t = $this->targets->get($targetId);
+			return $this->vault->replaceWebhook($t, $revision, $secret);
+		}, $secret !== null);
 	}
 }

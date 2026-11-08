@@ -13,6 +13,26 @@ export interface EngineConnectionSummary {
 	readonly keyAccess: string
 }
 
+export interface EngineWebhookSummary { readonly id: string; readonly connectionId: string; readonly workflowId: string; readonly path: string; readonly secretStored: boolean }
+export function engineWebhookList(value: unknown): readonly EngineWebhookSummary[] {
+	if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'targets')
+		|| !Array.isArray((value as { targets?: unknown }).targets)) throw new Error('Invalid published webhook targets.')
+	const rows = (value as { targets: unknown[] }).targets
+	if (rows.length > 16) throw new Error('Narrow the published webhook targets.')
+	const ids = new Set<string>()
+	return rows.map(row => {
+		if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('Invalid published webhook target.')
+		const r = row as Record<string, unknown>
+		if (Object.keys(r).length !== 5 || Object.keys(r).some(key => !['id', 'connectionId', 'workflowId', 'path', 'secretStored'].includes(key))
+			|| typeof r.id !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/.test(r.id) || ids.has(r.id)
+			|| typeof r.connectionId !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/.test(r.connectionId)
+			|| typeof r.workflowId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(r.workflowId)
+			|| typeof r.path !== 'string' || !/^[A-Za-z0-9_-]{1,120}$/.test(r.path) || typeof r.secretStored !== 'boolean') throw new Error('Invalid published webhook target.')
+		ids.add(r.id)
+		return Object.freeze({ ...r }) as unknown as EngineWebhookSummary
+	})
+}
+
 export function engineConnectionSummary(value: unknown): EngineConnectionSummary {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid workflow connection metadata.')
 	const item = value as Record<string, unknown>

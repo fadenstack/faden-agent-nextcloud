@@ -6,13 +6,18 @@ import NcButton from '@nextcloud/vue/components/NcButton'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import { AgentAvatar } from '@fadenstack/ui-vue'
 import type { NativeProvidersApi } from '../providers/client.ts'
-import type { EngineConnectionSummary } from '../providers/engineConnections.ts'
+import type { EngineConnectionSummary, EngineWebhookSummary } from '../providers/engineConnections.ts'
 
 const props = defineProps<{ api: NativeProvidersApi }>()
 const emit = defineEmits<{ close: [] }>()
 const open = ref(true)
 const connections = ref<readonly EngineConnectionSummary[]>([])
 const selectedId = ref('')
+const targets = ref<readonly EngineWebhookSummary[]>([])
+const selectedTarget = ref('')
+const webhookSecret = ref('')
+const ownTargets = computed(() => targets.value.filter(target => target.connectionId === selectedId.value))
+const hook = computed(() => ownTargets.value.find(target => target.id === selectedTarget.value))
 const token = ref('')
 const busy = ref(false)
 const error = ref('')
@@ -21,15 +26,18 @@ const selectorId = useId()
 const selected = computed(() => connections.value.find(item => item.id === selectedId.value))
 const abort = new AbortController()
 watch(open, value => { if (!value) emit('close') })
-watch(selectedId, () => { token.value = ''; notice.value = ''; error.value = '' })
-onBeforeUnmount(() => { token.value = ''; abort.abort() })
+watch(selectedId, () => { token.value = ''; webhookSecret.value = ''; selectedTarget.value = ownTargets.value[0]?.id ?? ''; notice.value = ''; error.value = '' })
+watch(selectedTarget, () => { webhookSecret.value = '' })
+onBeforeUnmount(() => { token.value = ''; webhookSecret.value = ''; abort.abort() })
 
 async function load() {
 	busy.value = true
 	error.value = ''
 	try {
 		connections.value = await props.api.engineConnections!(abort.signal)
+		targets.value = await props.api.engineWebhooks?.(abort.signal) ?? []
 		if (!connections.value.some(item => item.id === selectedId.value)) selectedId.value = connections.value[0]?.id ?? ''
+		if (!ownTargets.value.some(target => target.id === selectedTarget.value)) selectedTarget.value = ownTargets.value[0]?.id ?? ''
 	} catch { error.value = t('fadenstack_agent', 'Workflow connections are unavailable. Reload to check their current state.') } finally { busy.value = false }
 }
 onMounted(load)
@@ -47,8 +55,22 @@ async function change(disconnect = false) {
 			? await props.api.engineDisconnect!(current.id, current.revision, abort.signal)
 			: await props.api.engineConnect!(current.id, current.revision, secret, abort.signal)
 		connections.value = connections.value.map(item => item.id === result.id ? result : item)
+		targets.value = await props.api.engineWebhooks?.(abort.signal) ?? []
 		notice.value = disconnect ? t('fadenstack_agent', 'Disconnected. New agent requests cannot use this credential.') : t('fadenstack_agent', 'API access verified and token saved in your Nextcloud account.')
 	} catch { error.value = t('fadenstack_agent', 'The connection could not be confirmed. Reload before changing it again.') } finally { busy.value = false }
+}
+async function changeWebhook(remove = false) {
+	const current = selected.value
+	const target = hook.value
+	if (!current || !target || busy.value) return
+	const secret = webhookSecret.value
+	webhookSecret.value = ''; busy.value = true; error.value = ''; notice.value = ''
+	try {
+		const result = await props.api.engineWebhookChange!(target.id, current.id, current.revision, remove ? null : secret, abort.signal)
+		connections.value = connections.value.map(item => item.id === result.id ? result : item)
+		targets.value = await props.api.engineWebhooks!(abort.signal)
+		notice.value = remove ? t('fadenstack_agent', 'Webhook key removed. New agent dispatch cannot use it.') : t('fadenstack_agent', 'Webhook key stored encrypted. Its validity is checked by n8n only during an approved dispatch; no test execution was sent.')
+	} catch { error.value = t('fadenstack_agent', 'The webhook key change could not be confirmed. Reload before changing it again.') } finally { busy.value = false }
 }
 </script>
 
@@ -98,6 +120,29 @@ async function change(disconnect = false) {
 					<NcButton :disabled="busy" @click="change(true)">
 						{{ t('fadenstack_agent', 'Disconnect') }}
 					</NcButton>
+					<form v-if="selected.connected && selected.provider === 'n8n' && ownTargets.length && api.engineWebhookChange" @submit.prevent="changeWebhook()">
+						<label :for="selectorId + '-webhook'">{{ t('fadenstack_agent', 'Published webhook target') }}</label>
+						<select :id="selectorId + '-webhook'" v-model="selectedTarget" :disabled="busy">
+							<option v-for="target in ownTargets" :key="target.id" :value="target.id">
+								{{ target.id }} · {{ target.workflowId }}
+							</option>
+						</select>
+						<p v-if="hook">
+							{{ hook.secretStored ? t('fadenstack_agent', 'Webhook key stored') : t('fadenstack_agent', 'No webhook key stored') }}
+						</p>
+						<NcTextField v-model="webhookSecret"
+							type="password"
+							autocomplete="new-password"
+							:disabled="busy"
+							:label="t('fadenstack_agent', 'Your dedicated webhook key')" />
+						<p>{{ t('fadenstack_agent', 'Use Header Auth named X-Fadenstack-Workflow-Key on your own personal workflow. n8n execution history may retain this key and request data. API token replacement removes stored webhook keys. Saving this key never sends a test execution.') }}</p>
+						<NcButton type="submit" variant="primary" :disabled="busy || !webhookSecret">
+							{{ t('fadenstack_agent', 'Save webhook key') }}
+						</NcButton>
+						<NcButton :disabled="busy || !hook?.secretStored" @click="changeWebhook(true)">
+							{{ t('fadenstack_agent', 'Remove webhook key') }}
+						</NcButton>
+					</form>
 				</template>
 			</template>
 		</div>

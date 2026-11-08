@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace OCA\FadenstackAgent\Tests\Unit;
 
 use OCA\FadenstackAgent\Controller\EngineConnectionsController;
+use OCA\FadenstackAgent\History\EngineAccessResolver;
+use OCA\FadenstackAgent\History\JournalException;
+use OCA\FadenstackAgent\History\JournalIdentity;
+use OCA\FadenstackAgent\History\JournalResource;
 use OCA\FadenstackAgent\Providers\EngineAuthority;
 use OCA\FadenstackAgent\Providers\EngineBroker;
 use OCA\FadenstackAgent\Providers\EngineDraftPlan;
@@ -13,6 +17,7 @@ use OCA\FadenstackAgent\Providers\EngineReads;
 use OCA\FadenstackAgent\Providers\EngineRequest;
 use OCA\FadenstackAgent\Providers\EngineRunPlan;
 use OCA\FadenstackAgent\Providers\EngineVault;
+use OCA\FadenstackAgent\Providers\EngineWebhookTargets;
 use OCA\FadenstackAgent\Providers\ProviderPolicy;
 use OCA\FadenstackAgent\Service\Configuration;
 use OCA\FadenstackAgent\Service\FileService;
@@ -97,7 +102,7 @@ final class EngineConnectionTest extends TestCase {
 			}
 			return $response;
 		});
-		return [$endpoints, $vault, new EngineBroker($endpoints, $vault, $users, $session, $clients), $state, $config, $users];
+		return [$endpoints, $vault, new EngineBroker($endpoints, $vault, $users, $session, $clients, new EngineWebhookTargets($config)), $state, $config, $users];
 	}
 	private function reads(string $provider): array {
 		[, $vault, $broker, $state, $config, $users] = $this->fixture($provider);
@@ -109,7 +114,7 @@ final class EngineConnectionTest extends TestCase {
 		$scope = new ScopePolicy($config, $this->createMock(IRootFolder::class), $users, $this->createMock(IManager::class));
 		$policy = new ProviderPolicy($config, new Configuration($config), $scope, $users);
 		$this->connected($vault);
-		return [new EngineReads($vault, $broker, $policy), $vault, $state, $policy, $broker, $config];
+		return [new EngineReads($vault, $broker, $policy, new EngineWebhookTargets($config)), $vault, $state, $policy, $broker, $config];
 	}
 	private function connected(EngineVault $vault): array {
 		return $vault->replace('engine-test', $vault->status('engine-test')['revision'], self::TOKEN);
@@ -301,7 +306,7 @@ final class EngineConnectionTest extends TestCase {
 				throw new Problem('The integration is disabled.', 403);
 			}
 		});
-		return new EngineConnectionsController('fadenstack_agent', $request, $files, $vault, $broker);
+		return new EngineConnectionsController('fadenstack_agent', $request, $files, $vault, $broker, new EngineWebhookTargets($this->createMock(IConfig::class)));
 	}
 	public function testHumanConnectionRoutesRejectNativeCsrfAndSessionBypassesBeforeHttp(): void {
 		[, $vault, $broker, $state] = $this->fixture();
@@ -544,6 +549,56 @@ final class EngineConnectionTest extends TestCase {
 		$this->refused(fn () => $plan->prepare([...$args, 'reference' => 'u/bob/test'], str_repeat('a', 48)), 403);
 		foreach (['[]', 'null', '{broken', str_repeat(' ', 32769)] as $json) {
 			$this->refused(fn () => $plan->prepare([...$args, 'argsJson' => $json], str_repeat('a', 48)), 400);
+		}
+	}
+	public function testPerTargetWebhookSecretsStayEncryptedAndCannotBecomeApiAuthentication(): void {
+		[$endpoints, $vault, $broker, $state, $config] = $this->fixture('n8n');
+		$target = ['id' => 'own-hook', 'connectionId' => 'engine-test', 'workflowId' => 'flow1', 'path' => 'own-hook', 'nodeId' => 'node1', 'credentialId' => 'cred1'];
+		$state->settings['engine_webhook_targets'] = json_encode([$target]);
+		$t = (new EngineWebhookTargets($config))->get('own-hook');
+		$connected = $this->connected($vault);
+		$hook = $vault->replaceWebhook($t, $connected['revision'], 'synthetic-webhook-secret');
+		self::assertTrue($vault->webhookStatus($t)['secretStored']);
+		self::assertStringNotContainsString('synthetic-webhook-secret', json_encode($vault->listing()));
+		self::assertStringNotContainsString('synthetic-webhook-secret', json_encode($state->values));
+		$this->refused(fn () => $vault->replaceWebhook($t, $connected['revision'], 'other-synthetic-secret'), 409);
+		$state->body = '{"executionId":"1","correlation":"synthetic"}';
+		$broker->request(EngineRequest::n8nWebhook('alice', $endpoints->get('engine-test'), $t, '{}'), $hook['revision'], static function (): void {
+		});
+		self::assertSame('synthetic-webhook-secret', $state->trace[0]['options']['headers']['X-Fadenstack-Workflow-Key']);
+		self::assertArrayNotHasKey('X-N8N-API-KEY', $state->trace[0]['options']['headers']);
+		self::assertArrayNotHasKey('Cookie', $state->trace[0]['options']['headers']);
+		$state->settings['engine_webhook_targets'] = json_encode([[...$target, 'path' => 'changed']]);
+		$this->refused(fn () => $broker->request(EngineRequest::n8nWebhook('alice', $endpoints->get('engine-test'), $t, '{}'), $hook['revision'], static function (): void {
+		}), 409);
+		self::assertCount(1, $state->trace);
+		$this->connected($vault);
+		self::assertFalse($vault->webhookStatus($t)['secretStored'], 'Replacing the API account removes prior webhook secrets.');
+		$state->actor = 'bob';
+		self::assertFalse($vault->webhookStatus($t)['secretStored']);
+	}
+	public function testExecutionReaderSupportsPriorRecordsAndRefusesUnknownFormatMarkers(): void {
+		[, $vault, $state, $policy, $broker] = $this->reads('n8n');
+		$claims = ['iss' => 'n8n', 'aud' => 'public-api', 'sub' => '11111111-1111-4111-8111-111111111111'];
+		$token = 'synthetic.' . rtrim(strtr(base64_encode(json_encode($claims)), '+/', '-_'), '=') . '.signature';
+		$vault->replace('engine-test', $vault->status('engine-test')['revision'], $token);
+		$user = $this->createMock(IUser::class);
+		$user->method('getUID')->willReturn('alice');
+		$users = $this->createMock(IUserSession::class);
+		$users->method('getUser')->willReturn($user);
+		$resolver = new EngineAccessResolver($users, new EngineAuthority($vault, $broker, $policy));
+		$identity = new JournalIdentity('alice', JournalIdentity::nativeScope(), hash('sha256', 'native-session'));
+		$parts = ['engine-test', $vault->resolve('engine-test')['endpoint']['stamp'], $claims['sub']];
+		foreach ([$parts, [...$parts, 'n8n-execution-v1']] as $binding) {
+			$resolver->assertAccess($identity, new JournalResource('n8n', 'action:' . str_repeat('a', 48), json_encode($binding)), 'inspect');
+			self::assertTrue(true);
+		}
+		$before = count($state->trace);
+		try {
+			$resolver->assertAccess($identity, new JournalResource('n8n', 'action:' . str_repeat('a', 48), json_encode([...$parts, 'future-unreviewed-format'])), 'inspect');
+			self::fail('Unknown readers must refuse rather than reinterpret execution as a draft.');
+		} catch (JournalException) {
+			self::assertCount($before, $state->trace);
 		}
 	}
 }

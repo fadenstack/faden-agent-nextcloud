@@ -18,6 +18,8 @@ final class EngineRequest {
 		public readonly ?string $body = null,
 		public readonly bool $nullable = false,
 		public readonly bool $jobAck = false,
+		public readonly ?string $webhookTarget = null,
+		public readonly ?string $webhookStamp = null,
 	) {
 	}
 	public static function probe(string $actor, array $endpoint): self {
@@ -91,5 +93,25 @@ final class EngineRequest {
 			throw new Problem('Choose a canonical Windmill job ID.', 400);
 		}
 		return new self($actor, $endpoint['id'], 'windmill', $endpoint['stamp'], '/api/w/' . rawurlencode($endpoint['workspace']) . '/jobs_u/get/' . $jobId . '?no_logs=true&no_code=true');
+	}
+	public static function n8nWebhook(string $actor, array $endpoint, array $target, string $body): self {
+		if ($endpoint['provider'] !== 'n8n' || $target['connectionId'] !== $endpoint['id'] || !preg_match('/^[A-Za-z0-9_-]{1,120}$/D', $target['path'])
+			|| !EngineJson::decode($body) instanceof \stdClass) {
+			throw new Problem('Choose one configured native n8n webhook.', 400);
+		}
+		return new self($actor, $endpoint['id'], 'n8n', $endpoint['stamp'], '/webhook/' . $target['path'], 'POST', $body, webhookTarget: $target['id'], webhookStamp: $target['stamp']);
+	}
+	public static function n8nExecutions(string $actor, array $endpoint, string $workflowId): self {
+		self::definition($actor, $endpoint, $workflowId);
+		if ($endpoint['provider'] !== 'n8n') {
+			throw new Problem('Choose an n8n execution collection.', 400);
+		}
+		return new self($actor, $endpoint['id'], 'n8n', $endpoint['stamp'], '/api/v1/executions?workflowId=' . $workflowId . '&limit=21&includeData=false');
+	}
+	public static function n8nExecution(string $actor, array $endpoint, string $id): self {
+		if ($endpoint['provider'] !== 'n8n' || !preg_match('/^[1-9][0-9]{0,18}$/D', $id)) {
+			throw new Problem('Choose a canonical n8n execution identifier.', 400);
+		}
+		return new self($actor, $endpoint['id'], 'n8n', $endpoint['stamp'], '/api/v1/executions/' . $id . '?includeData=true');
 	}
 }

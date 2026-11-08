@@ -13,6 +13,7 @@ final class EngineReads {
 		private EngineVault $vault,
 		private EngineBroker $broker,
 		private ProviderPolicy $policies,
+		private EngineWebhookTargets $targets,
 	) {
 	}
 	private function policy(string $provider): array {
@@ -139,13 +140,16 @@ final class EngineReads {
 			EngineJson::encode((object)$data);
 			$snapshot = ['definition' => (object)$data, 'reference' => $reference];
 		}
+		if ($provider === 'n8n') {
+			$visible = $reference === null ? array_column($snapshot['workflows'], 'reference') : [$reference];
+			$snapshot['executionTargets'] = array_values(array_map(static fn ($target) => array_intersect_key($target, array_flip(['id', 'workflowId', 'path'])),
+				array_filter($this->targets->all(), static fn ($target) => $target['connectionId'] === $args['connectionId'] && in_array($target['workflowId'], $visible, true))));
+		}
 		// Even an engine response echoing the request credential must not turn
 		// this server-only vault value into model input. Compare JSON-escaped
 		// strings so quotes/backslashes in printable tokens cannot bypass it.
 		$encoded = EngineJson::encode($snapshot);
-		if (str_contains($encoded, substr(EngineJson::encode($connection['apiToken']), 1, -1))) {
-			throw new Problem('The workflow response contains the connection credential and cannot be disclosed.', 403);
-		}
+		EngineAuthority::secretGuard($encoded, $connection);
 		return [...$snapshot, 'provider' => $provider, 'connectionId' => $args['connectionId'],
 			'limitation' => 'Saved native workflow data only. Engine permissions apply independently of Nextcloud. Graphs may contain inline inputs or code and stored credential references. Credential stores are never read. No editor state, execution, deployment or automatic refresh is granted by this read.',
 			'resource' => $this->resource($provider, $args['connectionId'], $policy, $args, [$snapshot, $endpoint['stamp'], $connection['revision']])];

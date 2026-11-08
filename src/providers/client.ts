@@ -1,7 +1,7 @@
 import type { ProviderCapability } from './registry.ts'
 import type { ProviderResource } from './scope.ts'
 import type { TableSnapshot, DeckBoardSnapshot } from '../integrations/nextcloud/types.ts'
-import { changedEngineConnection, engineConnectionList, type EngineConnectionSummary } from './engineConnections.ts'
+import { changedEngineConnection, engineConnectionList, engineWebhookList, type EngineConnectionSummary, type EngineWebhookSummary } from './engineConnections.ts'
 
 export interface CommunicationRead extends Record<string, unknown> { resource: ProviderResource }
 export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow' | 'windmill' | 'n8n'
@@ -127,6 +127,8 @@ export interface NativeProvidersApi {
 	engineConnections?(signal: AbortSignal): Promise<readonly EngineConnectionSummary[]>
 	engineConnect?(id: string, revision: string, token: string, signal: AbortSignal): Promise<EngineConnectionSummary>
 	engineDisconnect?(id: string, revision: string, signal: AbortSignal): Promise<EngineConnectionSummary>
+	engineWebhooks?(signal: AbortSignal): Promise<readonly EngineWebhookSummary[]>
+	engineWebhookChange?(targetId: string, connectionId: string, revision: string, secret: string | null, signal: AbortSignal): Promise<EngineConnectionSummary>
 	contentRead?(provider: ReadProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<CommunicationRead>
 	contentPropose?(toolName: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<ContentProposal>
 	contentApprove?(proposal: ContentProposal, signal: AbortSignal): Promise<unknown>
@@ -174,6 +176,8 @@ export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal
 		engineConnections: async signal => engineConnectionList(await post('/engines/connections', {}, signal)),
 		engineConnect: async (id, revision, token, signal) => changedEngineConnection(await post('/engines/connections/connect', { id, revision, token }, signal), id, revision, true),
 		engineDisconnect: async (id, revision, signal) => changedEngineConnection(await post('/engines/connections/disconnect', { id, revision }, signal), id, revision, false),
+		engineWebhooks: async signal => engineWebhookList(await post('/engines/webhooks', {}, signal)),
+		engineWebhookChange: async (targetId, id, revision, secret, signal) => changedEngineConnection(await post('/engines/webhooks/change', { targetId, revision, secret }, signal), id, revision, true),
 		contentRead: (provider, args, signal) => post(`/providers/${family(provider)}/read`, { provider, args }, signal),
 		contentPropose: async (toolName, args, signal) => {
 			const route = family(toolName.split('_')[1]!)
@@ -182,7 +186,7 @@ export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal
 				const value = await (route === 'engines' ? authenticatedPost : post)<ContentProposal>(`/providers/${route}/propose`, { toolName, args, requestId }, signal)
 				if (value.id !== requestId || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName || !['collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'].includes(value.provider) || value.provider !== toolName.split('_')[1]
 					|| value.history !== 'audit-only' || !Array.isArray(value.display) || !value.resource || !value.payload || typeof value.target !== 'string' || typeof value.limitation !== 'string'
-					|| (route === 'engines' && value.destinationAudience !== (toolName === 'nc_windmill_run' ? 'unknown' : 'private'))) throw new Error('Invalid native content preview.')
+					|| (route === 'engines' && value.destinationAudience !== (['nc_windmill_run', 'nc_n8n_execute'].includes(toolName) ? 'unknown' : 'private'))) throw new Error('Invalid native content preview.')
 				signal.throwIfAborted()
 				return value
 			} catch (error) { await post(`/providers/${route}/${requestId}/cancel`, {}, new AbortController().signal).catch(() => {}); throw error }

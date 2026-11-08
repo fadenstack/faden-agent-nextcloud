@@ -48,7 +48,7 @@ function paused(item: HistoryItem): boolean {
 	return !!props.host.history.availability?.writesPaused && ['undo', 'redo'].includes(item.eligible)
 }
 function state(item: HistoryItem): string {
-	if (item.auditOnly && item.operation === 'nc_windmill_run' && item.state === 'applied') return t('fadenstack_agent', 'Dispatched · audit only')
+	if (item.auditOnly && ['nc_windmill_run', 'nc_n8n_execute'].includes(item.operation ?? '') && item.state === 'applied') return t('fadenstack_agent', 'Dispatched · audit only')
 	if (item.auditOnly) return item.state === 'applied' ? t('fadenstack_agent', 'Saved · audit only') : item.state === 'failed' ? t('fadenstack_agent', 'No change recorded · audit only') : t('fadenstack_agent', 'Inspect native outcome · audit only')
 	if (item.eligible === 'revalidate') return t('fadenstack_agent', 'File revision changed')
 	if (item.eligible === 'none' && ['applied', 'undone'].includes(item.state)) return t('fadenstack_agent', 'Restoration unavailable')

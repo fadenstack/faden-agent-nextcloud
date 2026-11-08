@@ -71,6 +71,7 @@ const action = computed(() => {
 	case 'nc_windmill_draft': return t('fadenstack_agent', 'Create Windmill draft')
 	case 'nc_windmill_run': return t('fadenstack_agent', 'Run Windmill flow')
 	case 'nc_n8n_draft': return t('fadenstack_agent', 'Create n8n draft')
+	case 'nc_n8n_execute': return t('fadenstack_agent', 'Run n8n workflow')
 	default: return t('fadenstack_agent', 'Replace file')
 	}
 })

@@ -84,6 +84,17 @@ final class EngineVault {
 				throw new \UnexpectedValueException();
 			}
 			self::token($value['apiToken']);
+			$hooks = $value['webhooks'] ?? [];
+			if (!is_array($hooks) || count($hooks) > 16) {
+				throw new \UnexpectedValueException();
+			}
+			foreach ($hooks as $id => $hook) {
+				EngineEndpoint::id($id);
+				if (!is_array($hook) || !is_string($hook['stamp'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $hook['stamp'])) {
+					throw new \UnexpectedValueException();
+				}
+				self::token($hook['secret'] ?? null);
+			}
 			return $value;
 		} catch (\Throwable) {
 			throw new Problem('Reconnect this workflow connection with your own engine token.', 403);
@@ -101,10 +112,34 @@ final class EngineVault {
 		$endpoint = $this->endpoints->get($id);
 		$raw = $this->raw($actor, $id);
 		$value = $this->open($actor, $endpoint, $raw);
-		return ['actor' => $actor, 'endpoint' => $endpoint, 'apiToken' => $value['apiToken'], 'revision' => hash('sha256', $raw)];
+		return ['actor' => $actor, 'endpoint' => $endpoint, 'apiToken' => $value['apiToken'], 'webhooks' => $value['webhooks'] ?? [], 'revision' => hash('sha256', $raw)];
+	}
+	/** Metadata only; no remote call or effect is used to test a webhook key. */
+	public function webhookStatus(array $target): array {
+		try {
+			$c = $this->resolve($target['connectionId']);
+			$stored = ($c['webhooks'][$target['id']]['stamp'] ?? null) === $target['stamp'];
+		} catch (Problem) {
+			$stored = false;
+		}
+		return ['id' => $target['id'], 'connectionId' => $target['connectionId'], 'workflowId' => $target['workflowId'], 'path' => $target['path'], 'secretStored' => $stored];
+	}
+	/** Human only. The API key remains inside the existing encrypted envelope. */
+	public function replaceWebhook(array $target, string $expectedRevision, ?string $secret): array {
+		$c = $this->resolve($target['connectionId']);
+		if ($c['endpoint']['provider'] !== 'n8n' || $c['revision'] !== $expectedRevision) {
+			throw new Problem('Reload your own n8n connection before changing its webhook key.', 409);
+		}
+		$hooks = $c['webhooks'];
+		if ($secret === null) {
+			unset($hooks[$target['id']]);
+		} else {
+			$hooks[$target['id']] = ['stamp' => $target['stamp'], 'secret' => self::token($secret)];
+		}
+		return $this->replace($target['connectionId'], $expectedRevision, $c['apiToken'], $hooks);
 	}
 	/** Human-only connection setup; remote validity is checked separately before saving. */
-	public function replace(string $id, string $expectedRevision, ?string $apiToken): array {
+	public function replace(string $id, string $expectedRevision, ?string $apiToken, array $webhooks = []): array {
 		$actor = $this->actor();
 		$endpoint = $apiToken === null ? ($this->endpoints->all()[EngineEndpoint::id($id)] ?? null) : $this->endpoints->get($id);
 		if ($endpoint === null && $this->raw($actor, $id) === '') {
@@ -115,6 +150,9 @@ final class EngineVault {
 		}
 		if ($apiToken !== null) {
 			self::token($apiToken);
+		}
+		if (count($webhooks) > 16 || ($webhooks && ($apiToken === null || $endpoint['provider'] !== 'n8n'))) {
+			throw new Problem('Use a bounded own-user n8n webhook connection.', 400);
 		}
 		$key = hash('sha256', 'fadenstack:engine-vault:' . $actor . ':' . $id);
 		$this->locks->acquireLock($key, ILockingProvider::LOCK_EXCLUSIVE);
@@ -127,6 +165,7 @@ final class EngineVault {
 			// never match an absent/recreated credential generation.
 			$sealed = $this->crypto->encrypt(json_encode(['domain' => self::DOMAIN, 'actor' => $actor, 'connection' => $id,
 				'stamp' => $endpoint['stamp'] ?? '', 'nonce' => bin2hex(random_bytes(16)), 'apiToken' => $apiToken,
+				'webhooks' => $webhooks,
 				'expiresAt' => $this->now() + self::MAX_AGE], JSON_THROW_ON_ERROR));
 			$this->config->setUserValue($actor, Application::APP_ID, self::PREFIX . $id, $sealed);
 			return $this->status($id);

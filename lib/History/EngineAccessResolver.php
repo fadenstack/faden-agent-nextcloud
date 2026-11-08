@@ -21,7 +21,8 @@ final class EngineAccessResolver implements AccessResolver {
 		}
 		try {
 			$parts = json_decode($resource->authorityReference, true, 4, JSON_THROW_ON_ERROR);
-			if (!is_array($parts) || !array_is_list($parts) || count($parts) !== 3 || count(array_filter($parts, 'is_string')) !== 3) {
+			if (!is_array($parts) || !array_is_list($parts) || !in_array(count($parts), [3, 4], true) || count(array_filter($parts, 'is_string')) !== count($parts)
+				|| (count($parts) === 4 && ($resource->provider !== 'n8n' || $parts[3] !== 'n8n-execution-v1'))) {
 				throw new \UnexpectedValueException();
 			}
 			$write = in_array($purpose, ['prepare', 'dispatch'], true);

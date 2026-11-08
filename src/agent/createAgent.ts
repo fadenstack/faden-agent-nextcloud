@@ -2305,17 +2305,18 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					this.#providerCompletion = 'The native API accepted the submission but its stored answers could not be independently verified. Do not submit it again. Inspect Forms and Agent actions; submission has no Undo.'
 					return result
 				}
-				if (name === 'nc_windmill_run') {
+				if (['nc_windmill_run', 'nc_n8n_execute'].includes(name)) {
 					const job = result.result
-					if (job?.dispatchVerified !== true || job.externalEffectsVerified !== false || job.jobId !== proposal.payload.jobId
+					if (job?.dispatchVerified !== true || job.externalEffectsVerified !== false
+						|| (name === 'nc_windmill_run' ? job.jobId !== proposal.payload.jobId : !/^[1-9][0-9]{0,18}$/.test(String(job.executionId)))
 						|| job.version !== proposal.payload.version || !['running', 'succeeded', 'failed', 'cancelled'].includes(String(job.executionState))) throw new Error('Invalid native execution receipt. Inspect the recorded action without repeating it.')
 				}
 				const id = Number(result.result?.id ?? 0)
 				const app = proposal.provider === 'whiteboard' ? 'files' : proposal.provider
 				const collectionId = proposal.provider === 'whiteboard' ? String(result.result?.folderId ?? '') : result.collectionId!
 				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app, collectionId, filename: String(id) } }, call.signal) : undefined
-				this.#providerCompletion = name === 'nc_windmill_run'
-					? `Windmill verified one job dispatch (${String(result.result?.jobId)}). Native execution state: ${String(result.result?.executionState)}. This does not verify external effects. Audit only; no Undo. Inspect Agent actions without repeating the run.`
+				this.#providerCompletion = ['nc_windmill_run', 'nc_n8n_execute'].includes(name)
+					? `${proposal.provider === 'windmill' ? 'Windmill' : 'n8n'} verified one execution dispatch (${String(result.result?.jobId ?? result.result?.executionId)}). Native execution state: ${String(result.result?.executionState)}. This does not verify external effects. Audit only; no Undo. Inspect Agent actions without repeating the run.`
 					: `Nextcloud verified and recorded this action: ${proposal.target}. Audit only; no Undo. Start a new conversation to use fresh native context.`
 				return { ...result, ...(activity ? { view: activity.view } : {}) }
 			}

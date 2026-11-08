@@ -88,8 +88,52 @@ job or lost acknowledgement stays uncertain; never repeat the run automatically.
 
 ![Inspect the recorded native job](screenshots/engine-windmill-run-audit.png)
 
-n8n execution and engine-editor refresh remain pending. Five local runtimes
-exist; the n8n execution tool is not offered.
+n8n execution uses a separate **published webhook target** configured by your
+administrator. It must belong to your connected native user's personal workflow.
+The tested subset has one static POST Webhook node (version2), Header Auth,
+an empty options object and a response containing its native execution ID and
+the supplied action correlation. The assistant never inserts a webhook or
+publishes/activates a workflow.
+
+In **Workflow connections**, select n8n and the published target. Save its
+dedicated **X-Fadenstack-Workflow-Key** secret. This is separate from the n8n
+API key. Both stay encrypted under your native Nextcloud account; no SSO is
+required. Saving a webhook key sends no test execution and does not claim
+that the key has been verified. Replacing the API token removes its stored
+webhook keys. Disconnect removes both kinds of credential.
+
+![Store a dedicated n8n webhook key](screenshots/engine-n8n-webhook-key.png)
+
+The tested native Webhook node retains the authentication header in its own
+execution history. Use a dedicated key for this personal workflow. Native
+administrators and authorized execution-history readers may see it. Agent
+status responses exclude headers, inputs, outputs and credentials. The
+newer user-bound OAuth path remains unvalidated and is outside this checkpoint.
+
+Ask to run the configured target once, then review the account, published
+workflow/version, credential reference, exact request and unknown effect
+audience before **Allow**. Native last-write-wins applies: the active version
+can change after our final check. A mismatched native execution readback stays
+unknown, with no automatic resend. Execution has no Undo.
+
+![Approve one n8n execution](screenshots/engine-n8n-execution.png)
+
+The response must contain `{"executionId":"<native-id>","correlation":"<action-id>"}`.
+The request body is `{"_fadenstack":{"actionId":"<action-id>"},"data":{...}}`.
+Native execution readback must match that body and the approved published version.
+This contract is required for verified receipts; an arbitrary webhook response
+is insufficient. Workflows can fail after producing partial external effects.
+
+Use **Agent actions → Inspect outcome**, or `nc_n8n_read` with the recorded
+`actionId`. Read-only recovery checks a complete collection of at most20
+native executions. Busy, pruned, missing or ambiguous history stays unknown;
+it never authorizes another webhook. Stop prevents future dispatch, and cannot
+cancel an already accepted execution.
+
+![Inspect the n8n execution](screenshots/engine-n8n-execution-audit.png)
+
+All six engine tool runtimes now exist locally. Engine-editor refresh,
+user-bound OAuth, broader role/fault tests and release acceptance remain open.
 Providers remain experimental and default off. Live server, broader role and
 package lifecycle acceptance are separate gates. Illustrated research lives in the
-[development report](https://github.com/fadenstack/fadenstack-dev/blob/master/nextcloud-agent-engines-2026-11-08/READ_CHECKPOINT.md).
+[development report](https://github.com/fadenstack/fadenstack-dev/blob/master/nextcloud-agent-engines-2026-11-08/N8N_EXECUTION_CHECKPOINT.md).

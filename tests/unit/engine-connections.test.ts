@@ -1,10 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
-import { changedEngineConnection, engineConnectionList, engineConnectionSummary } from '../../src/providers/engineConnections.ts'
+import { changedEngineConnection, engineConnectionList, engineConnectionSummary, engineWebhookList } from '../../src/providers/engineConnections.ts'
 import { nativeProvidersApi } from '../../src/providers/client.ts'
 
 const original = { id: 'engine-main', provider: 'n8n', label: 'My workflows', baseUrl: 'https://engine.example.test', workspace: '', version: '2.43.8', revision: 'a'.repeat(64), connected: false, setupAllowed: true, expiresAt: null, keyAccess: 'Key covers all resources of this n8n account.' }
 
 describe('human workflow connections', () => {
+	it('rejects secrets, duplicate IDs and generic routes in webhook metadata', () => {
+		const row = { id: 'own-hook', connectionId: 'own', workflowId: 'flow1', path: 'own-hook', secretStored: true }
+		expect(engineWebhookList({ targets: [row] })).toEqual([row])
+		for (const targets of [[{ ...row, secret: 'must-not-return' }], [{ ...row, path: '../escape' }], [row, row]]) expect(() => engineWebhookList({ targets })).toThrow()
+	})
+	it('stores webhook secrets only through a fixed human endpoint with generation binding', async () => {
+		const post = vi.fn(async () => ({ ...original, connected: true, revision: 'b'.repeat(64) }))
+		const api = nativeProvidersApi(post as never), signal = new AbortController().signal
+		const result = await api.engineWebhookChange!('own-hook', original.id, original.revision, 'synthetic-private-hook-key', signal)
+		expect(post).toHaveBeenCalledExactlyOnceWith('/engines/webhooks/change', { targetId: 'own-hook', revision: original.revision, secret: 'synthetic-private-hook-key' }, signal)
+		expect(JSON.stringify(result)).not.toContain('synthetic-private-hook-key')
+	})
 	it('returns bounded metadata without permitting a credential field', () => {
 		expect(engineConnectionSummary(original)).toEqual(original)
 		expect(() => engineConnectionSummary({ ...original, apiToken: 'must-not-be-returned' })).toThrow('Invalid workflow connection metadata.')
