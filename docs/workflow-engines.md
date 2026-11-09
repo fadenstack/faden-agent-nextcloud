@@ -54,7 +54,9 @@ replaced. The engine enforces current creation permissions when called.
 ![Review a Windmill draft](screenshots/engine-windmill-draft.png)
 
 AI origin is written inside the workflow before approval. Windmill uses
-`schema.x-fadenstack-provenance`; n8n uses a metadata comment in the description.
+`schema.x-fadenstack-provenance`; n8n uses a hidden metadata comment in the
+first existing node's notes, preserving user notes and adding no node. New
+n8n drafts need 1–200 native nodes. Older description markers remain readable.
 The signed record is checked against the configured publisher's signing key.
 This marks origin; it does not grant access or certify legal compliance.
 See [AI origin, placement reports and export limits](workflow-provenance.md)

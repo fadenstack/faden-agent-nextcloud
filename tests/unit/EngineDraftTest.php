@@ -38,7 +38,8 @@ final class EngineDraftTest extends TestCase {
 		$source = EngineDraft::source('n8n', $value);
 		$marked = EngineJson::decode(EngineDraft::mark('n8n', $value, ['record' => (object)['id' => 'synthetic-record'], 'signature' => 'unit-only']));
 		self::assertSame($source, EngineDraft::source('n8n', $marked));
-		self::assertStringStartsWith("Original description\n<!-- fadenstack-provenance:", $marked->description);
+		self::assertSame('Original description', $marked->description);
+		self::assertStringStartsWith('<!-- fadenstack-provenance:', $marked->nodes[0]->notes);
 		self::assertSame('native-reference', $marked->nodes[0]->credentials->httpHeaderAuth->id);
 		self::assertInstanceOf(\stdClass::class, $marked->connections);
 	}
@@ -62,7 +63,7 @@ final class EngineDraftTest extends TestCase {
 		}
 	}
 	public function testReadbackChecksEveryApprovedFieldIncludingTheOriginRecord(): void {
-		$value = EngineDraft::parse('n8n', '{"name":"New","nodes":[],"connections":{},"settings":{}}');
+		$value = EngineDraft::parse('n8n', '{"name":"New","nodes":[{"id":"a"}],"connections":{},"settings":{}}');
 		$expected = EngineDraft::mark('n8n', $value, ['record' => (object)['id' => 'synthetic-record'], 'signature' => 'unit-only']);
 		$actual = EngineJson::decode($expected);
 		$actual->id = 'native-id';
@@ -72,6 +73,94 @@ final class EngineDraftTest extends TestCase {
 		$actual = EngineJson::decode($expected);
 		$actual->connections = [];
 		self::assertFalse(EngineDraft::matches($expected, $actual));
+	}
+	public function testWrongArrayShapesAreDistinguishedFromTheNativeNodeLimit(): void {
+		foreach (['windmill', 'n8n'] as $provider) {
+			$base = $provider === 'windmill' ? (object)['summary' => 'New', 'value' => new \stdClass()]
+				: (object)['name' => 'New', 'connections' => new \stdClass(), 'settings' => new \stdClass()];
+			foreach ([null, new \stdClass(), (object)['0' => new \stdClass()]] as $nodes) {
+				if ($provider === 'windmill') {
+					$base->value->modules = $nodes;
+				} else {
+					$base->nodes = $nodes;
+				}
+				try {
+					EngineDraft::parse($provider, EngineJson::encode($base));
+					self::fail('A node map or missing array must not be accepted.');
+				} catch (Problem $error) {
+					self::assertSame(400, $error->status);
+					self::assertStringContainsString($provider === 'windmill' ? 'value.modules' : 'n8n nodes', $error->getMessage());
+				}
+			}
+			foreach ([0, 200, 201] as $count) {
+				$nodes = array_fill(0, $count, new \stdClass());
+				if ($provider === 'windmill') {
+					$base->value->modules = $nodes;
+				} else {
+					$base->nodes = $nodes;
+				}
+				try {
+					EngineDraft::parse($provider, EngineJson::encode($base));
+					self::assertLessThanOrEqual(200, $count);
+					self::assertFalse($provider === 'n8n' && $count === 0);
+				} catch (Problem $error) {
+					if ($provider === 'n8n' && $count === 0) {
+						self::assertSame(400, $error->status);
+						self::assertStringContainsString('empty workflow', $error->getMessage());
+					} else {
+						self::assertSame(201, $count);
+						self::assertSame(413, $error->status);
+					}
+				}
+			}
+		}
+	}
+	public function testNodeNoteCarrierPreservesUserNotesParametersAndVisibilityWithoutAddingNodes(): void {
+		$value = EngineDraft::parse('n8n', '{"name":"New","description":"Keep description","nodes":[{"id":"a","notes":"Grüße 世界","notesInFlow":true,"parameters":{"opaque":{}},"future":{"keep":true}},{"id":"b","notes":""}],"connections":{},"settings":{}}');
+		$source = EngineDraft::source('n8n', $value);
+		$marked = EngineJson::decode(EngineDraft::mark('n8n', $value, ['record' => (object)['id' => 'new-record'], 'signature' => 'unit-only']));
+		self::assertCount(2, $marked->nodes);
+		self::assertTrue($marked->nodes[0]->notesInFlow);
+		self::assertTrue($marked->nodes[0]->future->keep);
+		self::assertInstanceOf(\stdClass::class, $marked->nodes[0]->parameters->opaque);
+		self::assertSame('', $marked->nodes[1]->notes);
+		self::assertSame('Keep description', $marked->description);
+		self::assertStringStartsWith("Grüße 世界\n<!-- fadenstack-provenance:", $marked->nodes[0]->notes);
+		self::assertSame($source, EngineDraft::source('n8n', $marked));
+	}
+	public function testLegacyDescriptionOriginMovesIntoVersionedNodeNotesAndRetainsItsUnverifiedRecord(): void {
+		$old = (object)['contract' => 'fadenstack/n8n-origin/v1', 'signed_record' => (object)['record' => (object)['id' => 'old-record']]];
+		$value = EngineDraft::parse('n8n', EngineJson::encode((object)['name' => 'New', 'description' => "User description\n<!-- fadenstack-provenance:" . base64_encode(EngineJson::encode($old)) . ' -->',
+			'nodes' => [(object)['id' => 'a', 'notes' => null]], 'connections' => new \stdClass(), 'settings' => new \stdClass()]));
+		$source = EngineDraft::source('n8n', $value);
+		$marked = EngineJson::decode(EngineDraft::mark('n8n', $value, ['record' => (object)['id' => 'new-record'], 'signature' => 'unit-only']));
+		preg_match('/fadenstack-provenance:([A-Za-z0-9+\/=]+) -->$/D', $marked->nodes[0]->notes, $matches);
+		$origin = EngineJson::decode(base64_decode($matches[1]));
+		self::assertSame('fadenstack/n8n-origin/v2', $origin->contract);
+		self::assertSame('n8n-draft-source-json/v2', $origin->payload_profile);
+		self::assertSame('old-record', $origin->previous_unverified->signed_record->record->id);
+		self::assertSame('User description', $marked->description);
+		self::assertSame($source, EngineDraft::source('n8n', $marked));
+		self::assertSame(hash('sha256', $source), $origin->payload_sha256);
+	}
+	public function testConflictingOrMalformedOriginNotesAndNonTextAnchorNotesFailClosed(): void {
+		foreach ([['description' => '<!-- fadenstack-provenance:e30= -->', 'notes' => '<!-- fadenstack-provenance:W10= -->'],
+			['description' => '', 'notes' => '<!-- fadenstack-provenance:e30= --> trailing'],
+			['description' => '', 'notes' => new \stdClass()]] as $case) {
+			$this->refused(function () use ($case): void {
+				$value = EngineDraft::parse('n8n', EngineJson::encode((object)['name' => 'New', 'description' => $case['description'],
+					'nodes' => [(object)['id' => 'a', 'notes' => $case['notes']]], 'connections' => new \stdClass(), 'settings' => new \stdClass()]));
+				EngineDraft::source('n8n', $value);
+			});
+		}
+	}
+	public function testLegacyEmptyDraftReadbackDoesNotRequireTheNewWriterShape(): void {
+		$legacy = EngineJson::encode(EngineJson::decode('{"name":"Old empty draft","description":"<!-- fadenstack-provenance:e30= -->","nodes":[],"connections":{},"settings":{}}'));
+		$actual = EngineJson::decode($legacy);
+		$actual->id = 'native-id';
+		self::assertTrue(EngineDraft::matches($legacy, $actual));
+		$actual->description = '';
+		self::assertFalse(EngineDraft::matches($legacy, $actual));
 	}
 	public function testN8nOwnerRequiresOnePersonalProjectForTheVerifiedEnginePrincipal(): void {
 		$owner = ['shared' => [(object)['role' => 'workflow:owner', 'project' => (object)['type' => 'personal', 'creatorId' => 'engine-alice']]]];

@@ -43,16 +43,41 @@ final class EngineDraft {
 			$value->staticData ??= null;
 			$value->nodeGroups ??= [];
 		}
-		if (!is_array($nodes) || !array_is_list($nodes) || count($nodes) > 200) {
+		if (!is_array($nodes) || !array_is_list($nodes)) {
+			throw new Problem($provider === 'windmill'
+				? 'Use Windmill value.modules as an array of native module objects.'
+				: 'Use n8n nodes as an array of native node objects.', 400);
+		}
+		if (count($nodes) > 200) {
 			throw new Problem('Use at most 200 top-level nodes or modules.', 413);
+		}
+		if ($provider === 'n8n' && $nodes === []) {
+			throw new Problem('Include at least one native n8n node. An empty workflow cannot retain AI origin in graphical export; no provenance node is inserted automatically.', 400);
 		}
 		foreach ($nodes as $node) {
 			if (!$node instanceof \stdClass) {
 				throw new Problem('Use native workflow node objects.', 400);
 			}
 		}
+		if ($provider === 'n8n' && isset($nodes[0]->notes) && !is_string($nodes[0]->notes)) {
+			throw new Problem('Use text notes on the first native n8n node for exportable AI origin.', 400);
+		}
 		EngineJson::encode($value);
 		return $value;
+	}
+	/** Both legacy description comments and exportable node-note comments remain readable. */
+	private static function stripComment(string $text): array {
+		if (!str_contains($text, self::COMMENT)) {
+			return [$text, null, false];
+		}
+		if (substr_count($text, self::COMMENT) !== 1 || !preg_match('/\n?<!-- fadenstack-provenance:([A-Za-z0-9+\/=]+) -->$/D', $text, $match)) {
+			throw new Problem('The existing workflow origin carrier cannot be preserved safely.', 400);
+		}
+		$decoded = base64_decode($match[1], true);
+		if (!is_string($decoded)) {
+			throw new Problem('The existing workflow origin carrier is invalid.', 400);
+		}
+		return [substr($text, 0, strlen($text) - strlen($match[0])), EngineJson::decode($decoded), true];
 	}
 	private static function previous(string $provider, \stdClass $value): mixed {
 		if ($provider === 'windmill') {
@@ -60,19 +85,19 @@ final class EngineDraft {
 			unset($value->schema->{self::MARKER});
 			return $old;
 		}
-		$description = $value->description;
-		if (!str_contains($description, self::COMMENT)) {
-			return null;
+		[$value->description, $old, $found] = self::stripComment($value->description ?? '');
+		foreach ($value->nodes ?? [] as $node) {
+			if (!$node instanceof \stdClass || !is_string($node->notes ?? null) || !str_contains($node->notes, self::COMMENT)) {
+				continue;
+			}
+			[$node->notes, $candidate] = self::stripComment($node->notes);
+			if ($found && EngineJson::encode($old) !== EngineJson::encode($candidate)) {
+				throw new Problem('The workflow origin carriers disagree. Review them in the native editor before creating a new draft.', 400);
+			}
+			$old = $candidate;
+			$found = true;
 		}
-		if (substr_count($description, self::COMMENT) !== 1 || !preg_match('/\n?<!-- fadenstack-provenance:([A-Za-z0-9+\/=]+) -->$/D', $description, $match)) {
-			throw new Problem('The existing workflow origin carrier cannot be preserved safely.', 400);
-		}
-		$decoded = base64_decode($match[1], true);
-		if (!is_string($decoded)) {
-			throw new Problem('The existing workflow origin carrier is invalid.', 400);
-		}
-		$value->description = substr($description, 0, strlen($description) - strlen($match[0]));
-		return EngineJson::decode($decoded);
+		return $old;
 	}
 	public static function source(string $provider, \stdClass $value): string {
 		$copy = EngineJson::decode(EngineJson::encode($value));
@@ -80,19 +105,31 @@ final class EngineDraft {
 		if ($provider === 'windmill') {
 			return EngineJson::encode(['summary' => $copy->summary, 'description' => $copy->description, 'value' => $copy->value, 'schema' => $copy->schema]);
 		}
+		// v2 treats absent and empty node notes alike, so a comment-only carrier
+		// can be stripped without adding a new field to the canonical source.
+		foreach ($copy->nodes as $node) {
+			if (property_exists($node, 'notes') && ($node->notes === '' || $node->notes === null)) {
+				unset($node->notes);
+			}
+		}
 		return EngineJson::encode($copy);
 	}
 	public static function mark(string $provider, \stdClass $value, array $signed): string {
 		$source = self::source($provider, $value);
 		$previous = self::previous($provider, $value);
-		$mark = ['contract' => 'fadenstack/' . $provider . '-origin/v1', 'ai_generated' => true, 'mode' => 'ai-assisted',
-			'payload_profile' => $provider === 'windmill' ? 'windmill-flow-source-json/v1' : 'n8n-draft-source-json/v1',
+		$mark = ['contract' => 'fadenstack/' . $provider . '-origin/' . ($provider === 'windmill' ? 'v1' : 'v2'), 'ai_generated' => true, 'mode' => 'ai-assisted',
+			'payload_profile' => $provider === 'windmill' ? 'windmill-flow-source-json/v1' : 'n8n-draft-source-json/v2',
 			'payload_sha256' => hash('sha256', $source), 'signed_record' => $signed,
 			...($previous === null ? [] : ['previous_unverified' => $previous])];
 		if ($provider === 'windmill') {
 			$value->schema->{self::MARKER} = (object)$mark;
 		} else {
-			$value->description .= "\n" . self::COMMENT . base64_encode(EngineJson::encode($mark)) . ' -->';
+			$node = $value->nodes[0] ?? null;
+			if (!$node instanceof \stdClass || (isset($node->notes) && !is_string($node->notes))) {
+				throw new Problem('Use a native n8n node with text notes for exportable AI origin.', 400);
+			}
+			$notes = $node->notes ?? '';
+			$node->notes = $notes . ($notes === '' ? '' : "\n") . self::COMMENT . base64_encode(EngineJson::encode($mark)) . ' -->';
 		}
 		return EngineJson::encode($value);
 	}
