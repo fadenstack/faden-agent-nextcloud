@@ -122,6 +122,78 @@ final class EngineConnectionTest extends TestCase {
 		$oauth = new N8nOAuthConfiguration($config, $endpoints, new EngineWebhookTargets($config), $urls, new Configuration($config));
 		return [$endpoints, $vault, new EngineBroker($endpoints, $vault, $users, $session, $clients, new EngineWebhookTargets($config), $oauth), $state, $config, $users, $session, $oauth, $clients];
 	}
+	private function copyFixture(string $provider, string $kind = 'saved'): array {
+		[$reads, $vault, $s, $policy, $broker, $config] = $this->reads($provider);
+		$config->method('getSystemValueBool')->willReturn(true);
+		$config->method('getSystemValueString')->willReturn('');
+		$s->settings['provider_writes_enabled'] = '1';
+		$s->settings['provider_policy'] = json_encode(['version' => 1, $provider => ['enabled' => true, 'writesEnabled' => true, 'collections' => ['engine-test'], 'sourceClass' => 'standard']]);
+		$s->settings['scope_policy'] = json_encode(['revision' => 'copy-1', 'sources' => [['kind' => 'user-files']], 'tools' => ['nc_' . $provider . '_read', 'nc_' . $provider . '_draft'], 'sourceClasses' => ['standard'], 'destinationAudiences' => ['private'], 'movements' => [['source' => 'standard', 'destination' => 'private']], 'downstreamPolicy' => 'unverified']);
+		if ($provider === 'n8n') {
+			$encode = static fn ($v) => rtrim(strtr(base64_encode(json_encode($v)), '+/', '-_'), '=');
+			$vault->replace('engine-test', $vault->status('engine-test')['revision'], $encode(['alg' => 'HS256']) . '.' . $encode(['iss' => 'n8n', 'aud' => 'public-api', 'sub' => 'cfec15c4-5036-4f30-957c-306f577c19cc']) . '.' . str_repeat('a', 43));
+		}
+		$s->reference = $provider === 'windmill' ? 'u/alice/source' : 'source';
+		$s->source = $provider === 'windmill'
+			? (object)['path' => $s->reference, 'summary' => 'Source', 'description' => 'original', 'value' => (object)['modules' => []], 'schema' => (object)['x-fadenstack-provenance' => (object)['native' => 'prior']]]
+			: (object)['id' => 'source', 'name' => 'Source', 'description' => 'original', 'nodes' => [(object)['id' => 'a', 'parameters' => new \stdClass()]], 'connections' => new \stdClass(), 'settings' => new \stdClass()];
+		$s->beforeResponse = static function ($url) use ($s, $kind): void {
+			$s->status = 200;
+			$s->body = json_encode(match (true) {
+				str_contains($url, '/whoami') => ['username' => 'alice'],
+				str_contains($url, '/drafts/get_own/flow/' . $s->reference) => ['value' => $s->source, 'updated_at' => 'stable'],
+				str_contains($url, '/flows/get/' . $s->reference), str_contains($url, '/api/v1/workflows/source?') => $s->source,
+				str_contains($url, '/drafts/get_own/') => null,
+				default => ['data' => []],
+			});
+			if (str_contains($url, '/flows/get/') && !str_contains($url, '/flows/get/' . $s->reference)) {
+				$s->status = 404;
+				$s->body = '{}';
+			}
+		};
+		$plan = new EngineDraftPlan(new EngineAuthority($vault, $broker, $policy), $reads, new Configuration($config));
+		return [$plan, $reads, $vault, $s];
+	}
+	public function testSourceBoundPlanPreservesNativeOriginAndRefusesStaleOrRevokedSources(): void {
+		foreach ([['windmill', 'saved'], ['windmill', 'own-draft'], ['n8n', 'saved']] as [$provider, $kind]) {
+			[$plan, $reads, $vault, $s] = $this->copyFixture($provider, $kind);
+			$read = $reads->read($provider, ['connectionId' => 'engine-test', 'reference' => $s->reference, 'sourceKind' => $kind]);
+			self::assertSame($kind, $read['copySource']['kind']);
+			$args = ['connectionId' => 'engine-test', 'sourceReference' => $s->reference, 'sourceKind' => $kind, 'sourceRevision' => $read['copySource']['revision'], 'definitionJson' => $provider === 'windmill' ? '{"summary":"Copy"}' : '{"name":"Copy"}'];
+			$p = $plan->prepare('nc_' . $provider . '_draft', $args, str_repeat('a', 48));
+			self::assertSame($read['copySource'], $p['copySource']);
+			self::assertSame($read['resource']['revision'], $p['resource']['revision']);
+			if ($provider === 'windmill') {
+				self::assertSame('prior', $p['sourceOrigin']->native);
+			}
+			$s->source->description = 'changed';
+			$this->refused(fn () => $plan->prepare('nc_' . $provider . '_draft', $args, str_repeat('b', 48)), 409);
+			$vault->replace('engine-test', $vault->status('engine-test')['revision'], null);
+			$this->refused(fn () => $plan->prepare('nc_' . $provider . '_draft', $args, str_repeat('c', 48)), 403);
+			self::assertSame(['GET'], array_values(array_unique(array_column($s->trace, 'method'))));
+		}
+	}
+	public function testCopyBindingRequiresBothReferenceAndDigestAndExplicitSupportedKind(): void {
+		[$plan] = $this->copyFixture('n8n');
+		foreach ([['sourceRevision' => str_repeat('a', 64)], ['sourceReference' => 'source'], ['sourceKind' => 'saved'], ['sourceReference' => 'source', 'sourceRevision' => 'bad'], ['sourceReference' => 'source', 'sourceRevision' => str_repeat('a', 64), 'sourceKind' => 'own-draft']] as $extra) {
+			$this->refused(fn () => $plan->prepare('nc_n8n_draft', ['connectionId' => 'engine-test', 'definitionJson' => '{}', ...$extra], str_repeat('a', 48)), 400);
+		}
+	}
+	public function testOwnDraftSourceBindingDoesNotDuplicateTheBoundedGraph(): void {
+		[, $reads, , $s] = $this->copyFixture('windmill', 'own-draft');
+		$s->source->value->modules = [(object)['id' => 'a', 'value' => (object)['content' => str_repeat('x', 70000)]]];
+		$r = $reads->read('windmill', ['connectionId' => 'engine-test', 'reference' => $s->reference, 'sourceKind' => 'own-draft']);
+		self::assertSame(70000, strlen($r['definition']->value->modules[0]->value->content));
+		self::assertArrayNotHasKey('draftRevision', $r);
+		self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $r['copySource']['revision']);
+	}
+	public function testDecodedInheritedOriginCannotContainTheConnectionCredential(): void {
+		[$plan, $reads, $vault, $s] = $this->copyFixture('n8n');
+		$s->source->nodes[0]->notes = '<!-- fadenstack-provenance:' . base64_encode(json_encode(['echo' => $vault->resolve('engine-test')['apiToken']])) . ' -->';
+		$read = $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'source']);
+		$this->refused(fn () => $plan->prepare('nc_n8n_draft', ['connectionId' => 'engine-test', 'sourceReference' => 'source', 'sourceRevision' => $read['copySource']['revision'], 'definitionJson' => '{}'], str_repeat('a', 48)), 403);
+		self::assertSame(['GET'], array_values(array_unique(array_column($s->trace, 'method'))));
+	}
 	private function oauthFixture(): array {
 		[$endpoints, $vault, $broker, $s, $config, $users, $session, $oauth, $clients] = $this->fixture('n8n');
 		$owner = 'cfec15c4-5036-4f30-957c-306f577c19cc';

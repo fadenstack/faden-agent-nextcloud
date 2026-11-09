@@ -49,8 +49,13 @@ Keep the marked node's notes when copying a workflow. Removing that node or
 replacing its notes can remove the marker. Model-mediated copying can also
 omit previous metadata: review the final JSON. The native adapter retains
 received prior markers as **unverified history**, and signs the new source;
-it cannot restore metadata omitted before the proposal. Source-bound copying
-and automatic re-signing of native edits remain outside this tested path.
+it cannot restore metadata omitted before a fresh-draft proposal. For an
+existing workflow, use **source-bound copying**: the extension reads and binds
+the native source revision, retains its origin independently of the model and
+signs the new copy before approval. The approval displays that source and the
+complete final JSON. Native edits are not automatically re-signed in place.
+
+![Review a source-bound n8n copy](screenshots/engine-n8n-source-copy.png)
 
 ![n8n imported workflow remains inactive](screenshots/engine-n8n-native-import.png)
 

@@ -20,7 +20,9 @@ const identity: Identity = {
 }
 
 async function run(provider: 'windmill' | 'n8n', mode = '') {
-	const toolName = `nc_${provider}_draft`; const args = { connectionId: 'own', definitionJson: provider === 'windmill' ? '{"summary":"New","value":{"modules":[]}}' : '{"name":"New","nodes":[{"id":"a","parameters":{}}],"connections":{},"settings":{}}' }
+	const toolName = `nc_${provider}_draft`; const args = mode === 'copy'
+		? { connectionId: 'own', definitionJson: provider === 'windmill' ? '{"summary":"Copy"}' : '{"name":"Copy"}', sourceReference: provider === 'windmill' ? 'u/alice/source' : 'native-source', sourceRevision: 'd'.repeat(64), sourceKind: 'saved' }
+		: { connectionId: 'own', definitionJson: provider === 'windmill' ? '{"summary":"New","value":{"modules":[]}}' : '{"name":"New","nodes":[{"id":"a","parameters":{}}],"connections":{},"settings":{}}' }
 	let round = 0
 	const reports: unknown[] = []
 	const origin = {
@@ -86,6 +88,16 @@ async function pending(host: NextcloudAgent) {
 	return part!
 }
 describe('Engine drafts through published SDK approval', () => {
+	it.each(['windmill', 'n8n'] as const)('passes the native %s source binding and minimal replacements through individual approval once', async provider => {
+		const test = await run(provider, 'copy')
+		try {
+			const approval = await pending(test.host)
+			expect(test.native.contentPropose).toHaveBeenCalledWith(`nc_${provider}_draft`, expect.objectContaining({ sourceReference: provider === 'windmill' ? 'u/alice/source' : 'native-source', sourceRevision: 'd'.repeat(64), sourceKind: 'saved', definitionJson: provider === 'windmill' ? '{"summary":"Copy"}' : '{"name":"Copy"}' }), expect.any(AbortSignal))
+			expect(test.native.contentCommit).not.toHaveBeenCalled()
+			await test.host.approve(approval); await test.send
+			expect(test.native.contentCommit).toHaveBeenCalledTimes(1)
+		} finally { test.host.stop(); await test.host.dispose() }
+	})
 	it('reports the new n8n note carrier through composed individual approval and the published client', async () => {
 		const test = await run('n8n', 'placement-v2')
 		try {

@@ -53,6 +53,28 @@ replaced. The engine enforces current creation permissions when called.
 
 ![Review a Windmill draft](screenshots/engine-windmill-draft.png)
 
+To copy an existing workflow, ask for a **new private inactive copy** and the
+changes you want. The assistant reads the saved source first. For a known
+Windmill private draft, it selects that own-user draft explicitly; it does not
+silently substitute the deployed flow.
+
+Review **Copy source / kind**, **Copy source revision** and the final workflow
+JSON before **Allow**. The extension copies supported draft fields directly
+from the native source, retains prior origin as unverified history and signs
+the new content. It preserves fields the assistant did not replace, including
+graph details and credential references. A requested top-level object or node
+array replaces that whole field; it is not a nested merge. Runtime IDs,
+ownership, sharing, tags and execution samples are not copied. Unrecognized
+source root fields are refused for native review.
+
+Changes or lost access observed before approval or dispatch require a fresh
+read and preview. Native editors are not locked: the new copy always uses the
+approved snapshot, and the original workflow is never written. Copying grants
+no credential access, deployment or execution. Stop and audit-only history
+work as for other draft creates.
+
+![Review the native source before copying](screenshots/engine-windmill-source-copy.png)
+
 AI origin is written inside the workflow before approval. Windmill uses
 `schema.x-fadenstack-provenance`; n8n uses a hidden metadata comment in the
 first existing node's notes, preserving user notes and adding no node. New

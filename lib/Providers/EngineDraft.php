@@ -10,12 +10,40 @@ use OCA\FadenstackAgent\Service\Problem;
 final class EngineDraft {
 	public const MARKER = 'x-fadenstack-provenance';
 	private const COMMENT = '<!-- fadenstack-provenance:';
+	private static function fields(string $provider): array {
+		return $provider === 'windmill' ? ['summary', 'description', 'value', 'schema'] : ['name', 'description', 'nodes', 'connections', 'settings', 'staticData', 'nodeGroups'];
+	}
+	/** Native source plus explicit top-level replacements; never a lossy model reconstruction. */
+	public static function copy(string $provider, \stdClass $source, string $replacementJson): array {
+		$fields = self::fields($provider);
+		$metadata = $provider === 'windmill'
+			? ['path', 'workspace_id', 'edited_by', 'edited_at', 'archived', 'extra_perms', 'dependency_job', 'versions', 'is_draft', 'draft_saved_at', 'no_deployed']
+			: ['id', 'active', 'activeVersionId', 'createdAt', 'updatedAt', 'isArchived', 'versionId', 'versionCounter', 'sourceWorkflowId', 'triggerCount', 'pinData', 'meta', 'tags', 'shared', 'activeVersion'];
+		if (array_diff(array_keys(get_object_vars($source)), [...$fields, ...$metadata])) {
+			throw new Problem('The native source contains unsupported root fields. Review it in the native editor; no fields were silently dropped.', 400);
+		}
+		$base = EngineJson::decode(EngineJson::encode((object)array_intersect_key(get_object_vars($source), array_flip($fields))));
+		$previous = self::previous($provider, $base);
+		$patch = EngineJson::decode($replacementJson);
+		if (!$patch instanceof \stdClass || array_diff(array_keys(get_object_vars($patch)), $fields)) {
+			throw new Problem('Use only documented draft fields as explicit top-level replacements.', 400);
+		}
+		// A replacement cannot supply or erase the authoritative source origin.
+		$encoded = EngineJson::encode($patch);
+		if (str_contains($encoded, self::COMMENT) || ($provider === 'windmill' && ($patch->schema ?? null) instanceof \stdClass && property_exists($patch->schema, self::MARKER))) {
+			throw new Problem('Do not include origin metadata in copy replacements. The native source supplies it.', 400);
+		}
+		foreach (get_object_vars($patch) as $key => $value) {
+			$base->{$key} = $value;
+		}
+		return ['value' => self::parse($provider, EngineJson::encode($base)), 'origin' => $previous];
+	}
 	public static function parse(string $provider, string $json): \stdClass {
 		$value = EngineJson::decode($json);
 		if (!$value instanceof \stdClass) {
 			throw new Problem('Use one workflow definition object.', 400);
 		}
-		$allowed = $provider === 'windmill' ? ['summary', 'description', 'value', 'schema'] : ['name', 'description', 'nodes', 'connections', 'settings', 'staticData', 'nodeGroups'];
+		$allowed = self::fields($provider);
 		if (!in_array($provider, ['windmill', 'n8n'], true) || array_diff(array_keys(get_object_vars($value)), $allowed)) {
 			throw new Problem('Unsupported workflow fields cannot be silently dropped. Use the documented new-draft fields.', 400);
 		}
@@ -114,9 +142,12 @@ final class EngineDraft {
 		}
 		return EngineJson::encode($copy);
 	}
-	public static function mark(string $provider, \stdClass $value, array $signed): string {
+	public static function mark(string $provider, \stdClass $value, array $signed, ?array $nativeOrigin = null): string {
 		$source = self::source($provider, $value);
 		$previous = self::previous($provider, $value);
+		if ($nativeOrigin !== null) {
+			$previous = $nativeOrigin['origin'];
+		}
 		$mark = ['contract' => 'fadenstack/' . $provider . '-origin/' . ($provider === 'windmill' ? 'v1' : 'v2'), 'ai_generated' => true, 'mode' => 'ai-assisted',
 			'payload_profile' => $provider === 'windmill' ? 'windmill-flow-source-json/v1' : 'n8n-draft-source-json/v2',
 			'payload_sha256' => hash('sha256', $source), 'signed_record' => $signed,

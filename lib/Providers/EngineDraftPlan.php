@@ -22,8 +22,11 @@ final class EngineDraftPlan {
 	}
 	public function prepare(string $name, array $args, string $requestId): array {
 		$provider = array_search($name, self::TOOLS, true);
-		if ($provider === false || array_diff(array_keys($args), ['connectionId', 'definitionJson'])
+		if ($provider === false || array_diff(array_keys($args), ['connectionId', 'definitionJson', 'sourceReference', 'sourceRevision', 'sourceKind'])
 			|| !is_string($args['connectionId'] ?? null) || !is_string($args['definitionJson'] ?? null)
+			|| (array_key_exists('sourceReference', $args) && (!is_string($args['sourceReference']) || !is_string($args['sourceRevision'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $args['sourceRevision'])))
+			|| (array_key_exists('sourceRevision', $args) && !isset($args['sourceReference']))
+			|| (array_key_exists('sourceKind', $args) && (!isset($args['sourceReference']) || !in_array($args['sourceKind'], ['saved', 'own-draft'], true)))
 			|| !preg_match('/^[a-f0-9]{48}$/D', $requestId)) {
 			throw new Problem('Choose a configured connection and one bounded new-draft JSON definition.', 400);
 		}
@@ -37,7 +40,17 @@ final class EngineDraftPlan {
 		if (!in_array($name, $connection['policy']['processing']['tools'], true)) {
 			throw new Problem('The administrator has not granted this draft tool.', 403);
 		}
-		$value = EngineDraft::parse($provider, $args['definitionJson']);
+		$copy = null;
+		if (isset($args['sourceReference'])) {
+			$copy = $this->reads->read($provider, ['connectionId' => $args['connectionId'], 'reference' => $args['sourceReference'], 'sourceKind' => $args['sourceKind'] ?? 'saved']);
+			if (!hash_equals($copy['resource']['revision'], $args['sourceRevision'])) {
+				throw new Problem('The native copy source changed. Read it again and review a new proposal.', 409);
+			}
+			$inherited = EngineDraft::copy($provider, $copy['definition'], $args['definitionJson']);
+			$value = $inherited['value'];
+		} else {
+			$value = EngineDraft::parse($provider, $args['definitionJson']);
+		}
 		$principal = $this->native->principal($connection);
 		if ($provider === 'windmill') {
 			$target = 'u/' . $principal . '/fadenstack_' . substr($requestId, 0, 16);
@@ -48,11 +61,15 @@ final class EngineDraftPlan {
 		}
 		$definition = EngineJson::encode($value);
 		EngineAuthority::secretGuard($definition, $connection);
+		if ($copy !== null) {
+			EngineAuthority::secretGuard(EngineJson::encode($inherited['origin']), $connection);
+		}
 		$this->native->absent($connection, $target);
-		$resource = $this->reads->read($provider, ['connectionId' => $args['connectionId']])['resource'];
+		$resource = $copy['resource'] ?? $this->reads->read($provider, ['connectionId' => $args['connectionId']])['resource'];
 		return ['toolName' => $name, 'provider' => $provider, 'args' => $args, 'target' => $target, 'before' => null,
 			'unsignedJson' => $definition, 'connectionId' => $args['connectionId'], 'connectionRevision' => $connection['revision'],
 			'endpointStamp' => $connection['endpoint']['stamp'], 'enginePrincipal' => $principal,
+			...($copy === null ? [] : ['copySource' => $copy['copySource'], 'sourceOrigin' => $inherited['origin']]),
 			'resource' => $resource, 'destinationAudience' => 'private', 'history' => 'audit-only', 'limitation' => self::LIMITATION
 			. ($provider === 'windmill' ? ' An existing own draft is refused; no force save.' : ' Saved drafts can still be run manually in n8n. Subworkflow callers and MCP access are disabled. A unique name identifies this create if its acknowledgement is lost.')];
 	}

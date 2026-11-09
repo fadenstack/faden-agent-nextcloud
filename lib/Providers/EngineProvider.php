@@ -124,10 +124,15 @@ final class EngineProvider {
 			if (!$run) {
 				$value = EngineJson::decode($p['unsignedJson']);
 				$signed = $this->provenance->sign($p['provider'], EngineDraft::source($p['provider'], $value), $cloudToken);
-				$p['payload'] = ['definitionJson' => EngineDraft::mark($p['provider'], $value, $signed)];
+				$p['payload'] = ['definitionJson' => EngineDraft::mark($p['provider'], $value, $signed, isset($p['copySource']) ? ['origin' => $p['sourceOrigin']] : null)];
 			}
 			$p['display'] = [['label' => 'Nextcloud account', 'before' => null, 'after' => $identity->userId],
 				['label' => 'Engine account / connection', 'before' => null, 'after' => $p['enginePrincipal'] . ' / ' . $p['connectionId']]];
+			if (isset($p['copySource'])) {
+				$p['display'][] = ['label' => 'Copy source / kind', 'before' => null, 'after' => $p['copySource']['reference'] . ' / ' . $p['copySource']['kind']];
+				$p['display'][] = ['label' => 'Copy source revision', 'before' => null, 'after' => $p['copySource']['revision']];
+				$p['display'][] = ['label' => 'Copy behavior', 'before' => null, 'after' => 'New inactive copy. Unspecified draft fields and native prior origin retained. Top-level replacements are explicit; nested fields are not merged. Current native source is rechecked before dispatch; native editors are not locked. Prior origin is unverified history.'];
+			}
 			if ($toolName === N8nExecutePlan::TOOL) {
 				$p['display'][] = ['label' => 'Workflow', 'before' => null, 'after' => $p['targetLabel'] . ' (' . $p['target'] . ')'];
 				$p['display'][] = ['label' => 'Published webhook target', 'before' => null, 'after' => $p['webhook']['id'] . ' /webhook/' . $p['webhook']['path']];

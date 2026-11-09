@@ -170,6 +170,38 @@ final class EngineDraftTest extends TestCase {
 		$owner['shared'][0]->project->type = 'team';
 		$this->refused(fn () => EngineAuthority::assertN8nOwner($owner, 'engine-alice'));
 	}
+	public function testNativeCopiesPreserveUnspecifiedOpaqueFieldsAndOriginAcrossTopLevelReplacements(): void {
+		foreach (['windmill', 'n8n'] as $provider) {
+			$source = $provider === 'windmill'
+				? '{"path":"u/alice/source","summary":"Source","description":"User description","value":{"modules":[{"id":"a","opaque":{"keep":true}}]},"schema":{"x-fadenstack-provenance":{"native":"prior"},"x-opaque":{}},"is_draft":true}'
+				: '{"id":"source","name":"Source","description":"User description","nodes":[{"id":"a","notes":"User notes\\n<!-- fadenstack-provenance:eyJuYXRpdmUiOiJwcmlvciJ9 -->","credentials":{"ref":{"id":"keep"}},"parameters":{},"opaque":{}}],"connections":{},"settings":{"timezone":"Europe/Berlin"},"pinData":{"omit":"sample"},"shared":[]}';
+			$patch = $provider === 'windmill' ? '{"summary":"Copy","schema":{"x-replacement":true}}' : '{"name":"Copy"}';
+			$copy = EngineDraft::copy($provider, EngineJson::decode($source), $patch);
+			self::assertSame('prior', $copy['origin']->native);
+			self::assertObjectNotHasProperty($provider === 'windmill' ? 'path' : 'id', $copy['value']);
+			$marked = EngineJson::decode(EngineDraft::mark($provider, $copy['value'], ['record' => (object)['id' => 'new']], ['origin' => $copy['origin']]));
+			if ($provider === 'windmill') {
+				self::assertSame('prior', $marked->schema->{EngineDraft::MARKER}->previous_unverified->native);
+				self::assertTrue($marked->schema->{'x-replacement'});
+				self::assertObjectNotHasProperty('x-opaque', $marked->schema, 'Top-level replacements do not pretend to deep merge.');
+				self::assertTrue($marked->value->modules[0]->opaque->keep);
+			} else {
+				self::assertSame('keep', $marked->nodes[0]->credentials->ref->id);
+				self::assertStringStartsWith("User notes\n", $marked->nodes[0]->notes);
+				self::assertSame('Europe/Berlin', $marked->settings->timezone);
+				self::assertObjectNotHasProperty('pinData', $marked);
+				self::assertObjectNotHasProperty('shared', $marked);
+			}
+		}
+	}
+	public function testNativeCopyRejectsUnsupportedRootsAndModelSuppliedOrigins(): void {
+		$source = EngineJson::decode('{"name":"Source","nodes":[{"id":"a"}],"connections":{},"settings":{}}');
+		foreach (['[]', '{"id":"other"}', '{"active":true}', '{"nodes":[{"notes":"<!-- fadenstack-provenance:e30= -->"}]}'] as $patch) {
+			$this->refused(fn () => EngineDraft::copy('n8n', $source, $patch));
+		}
+		$source->futureRoot = 'not silently dropped';
+		$this->refused(fn () => EngineDraft::copy('n8n', $source, '{}'));
+	}
 	private static function b64(string $value): string {
 		return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
 	}
