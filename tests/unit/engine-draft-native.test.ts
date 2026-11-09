@@ -14,6 +14,11 @@ const identity: Identity = { userId: 'alice', binding: 'native-session', enabled
 async function run(provider: 'windmill' | 'n8n', mode = '') {
 	const toolName = `nc_${provider}_draft`, args = { connectionId: 'own', definitionJson: provider === 'windmill' ? '{"summary":"New","value":{"modules":[]}}' : '{"name":"New","nodes":[],"connections":{},"settings":{}}' }
 	let round = 0
+	const reports: unknown[] = []
+	const origin = { contract: `fadenstack/${provider}-origin/v1`, ai_generated: true, signed_record: { record: { contract: 'provenance/v1',
+		id: '12345678-1234-4234-8234-123456789abc', media_type: provider === 'windmill' ? 'application/vnd.windmill.flow+json' : 'application/vnd.n8n.workflow+json', edit_kind: 'generated' } } }
+	const markedJson = JSON.stringify(provider === 'windmill' ? { schema: { 'x-fadenstack-provenance': origin } }
+		: { description: '<!-- fadenstack-provenance:' + btoa(JSON.stringify(origin)) + ' -->' })
 	const resource: ProviderResource = { provider, collectionId: 'own', resourceId: `nextcloud:${provider}:b3du`, revision: 'revision-1', policyVersion: 'native-policy', sourceClass: 'standard', audience: 'private', filename: '{"connectionId":"own"}' }
 	const native: NativeProvidersApi = {
 		calendarCollections: vi.fn(async () => []), calendarEvents: vi.fn(async () => []),
@@ -25,9 +30,19 @@ async function run(provider: 'windmill' | 'n8n', mode = '') {
 	}
 	const files: FileApi = { identity: async () => identity, assertIdentity: async () => {}, scopeResource: vi.fn(), select: vi.fn(), read: vi.fn(), list: vi.fn(), pdf: vi.fn(), propose: vi.fn(), approve: vi.fn(), commit: vi.fn(), nativeProviders: native }
 	const gateway = new FakeGateway({ agents: [{ slug: identity.agent, version: 1, contract: identity.scopePolicy!.tools.map(name => ({ name, risk: name.endsWith('_read') ? 'read' : 'destructive' })) }], users: [{ email: 'alice', password: 'test', agents: [identity.agent] }], model: () => ++round === 1 ? { toolCalls: [{ id: 'discover', name: `nc_${provider}_read`, arguments: {} }] } : round === 2 ? { toolCalls: [{ id: 'new-draft', name: toolName, arguments: args }] } : { text: 'Finished.' } })
-	const host = new NextcloudAgent(identity, files, gateway.fetch)
+	if (mode.startsWith('placement')) vi.mocked(native.contentPropose!).mockImplementation(async () => ({ id: 'a'.repeat(48), digest: 'b'.repeat(64), toolName, provider,
+		target: 'New private inactive draft', before: null, payload: { definitionJson: markedJson }, resource, history: 'audit-only', limitation: 'Audit only', expires: Date.now() / 1000 + 600 }))
+	const fetch: typeof gateway.fetch = async (input, init) => {
+		if (new URL(String(input)).pathname.endsWith('/provenance/placements')) {
+			expect(native.contentCommit).toHaveBeenCalledTimes(1)
+			reports.push(JSON.parse(String(init?.body)))
+			return new Response(JSON.stringify(mode === 'placement-failure' ? { error: 'unavailable' } : { stored: true }), { status: mode === 'placement-failure' ? 503 : 202, headers: { 'Content-Type': 'application/json' } })
+		}
+		return gateway.fetch(input, init)
+	}
+	const host = new NextcloudAgent(identity, files, fetch)
 	await host.signIn('alice', 'test')
-	return { host, native, send: host.send('Create a new private draft in my own engine connection.', false) }
+	return { host, native, reports, send: host.send('Create a new private draft in my own engine connection.', false) }
 }
 async function pending(host: NextcloudAgent) {
 	let part: ApprovalPart | undefined
@@ -35,6 +50,30 @@ async function pending(host: NextcloudAgent) {
 	return part!
 }
 describe('Engine drafts through published SDK approval', () => {
+	it.each(['windmill', 'n8n'] as const)('reports %s placement once through the published client after verified native commitment', async provider => {
+		const test = await run(provider, 'placement')
+		try {
+			const approval = await pending(test.host)
+			expect(test.reports).toEqual([])
+			await test.host.approve(approval); await test.send
+			expect(test.reports).toHaveLength(1)
+			expect(test.reports[0]).toMatchObject({ tool: `nc_${provider}_draft`, written: true, layers: [{ applied: true, verified: true }] })
+			expect(test.native.contentCommit).toHaveBeenCalledTimes(1)
+		} finally { test.host.stop(); await test.host.dispose() }
+	})
+	it('does not report denied origin as written', async () => {
+		const test = await run('windmill', 'placement')
+		try { await test.host.deny(await pending(test.host)); await test.send; expect(test.reports).toEqual([]); expect(test.native.contentCommit).not.toHaveBeenCalled() }
+		finally { test.host.stop(); await test.host.dispose() }
+	})
+	it('retains one native commitment when the placement service fails', async () => {
+		const test = await run('n8n', 'placement-failure')
+		try {
+			await test.host.approve(await pending(test.host)); await test.send
+			expect(test.native.contentCommit).toHaveBeenCalledTimes(1); expect(test.reports).toHaveLength(1)
+			expect(test.host.chat.turns.flatMap(turn => turn.parts).filter(part => 'text' in part).map(part => part.text).join(' ')).toContain('placement report is unconfirmed')
+		} finally { test.host.stop(); await test.host.dispose() }
+	})
 	it.each(['windmill', 'n8n'] as const)('renders %s as a draft with inspectable final JSON', async provider => {
 		vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
 		const test = await run(provider), root = document.createElement('div'); document.body.append(root)

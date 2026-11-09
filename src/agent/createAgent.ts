@@ -95,6 +95,7 @@ import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeC
 import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, ContentProposal, ContentProviderId, ProviderInspection, ReadProviderId, StructuredProposal } from '../providers/client.ts'
 import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEngineDraftTools, nativeEngineRunTools, nativeAgentfileTools, nativeWorkflowTools } from '../providers/contentTools.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
+import { reportEnginePlacement, type PlacementReporter } from '../providers/enginePlacement.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
 
@@ -142,6 +143,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #fetch: FetchLike
 	readonly #developmentHttp: boolean
 	readonly #providerReads?: ProviderReadRuntime
+	readonly #reportPlacement: PlacementReporter
 
 	constructor(readonly config: Identity, readonly files: FileApi, fetchImpl: FetchLike = globalThis.fetch.bind(globalThis), readonly workspace?: WorkspaceCoordinator) {
 		const url = new URL(config.serverUrl)
@@ -173,6 +175,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		}
 		this.tokens = new AgentTokenProvider({ apiUrl: config.serverUrl, agent: config.agent, store: new MemoryTokenStore(), fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
+		this.#reportPlacement = (report, signal) => client.agent!.provenance.reportPlacement(report, signal)
 		const experimental = experimentalAdaptersAllowed(config)
 		if (config.development && config.providerReadsEnabled === true && config.scopePolicy && files.nativeProviders) this.#providerReads = new ProviderReadRuntime(files.nativeProviders)
 		const filesReadsActive = config.filesReadsEnabled === true && !!config.scopePolicy && !!files.organizeRead && !!files.sharesRead
@@ -2313,13 +2316,15 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						|| job.version !== proposal.payload.version || !['running', 'succeeded', 'failed', 'cancelled'].includes(String(job.executionState))) throw new Error('Invalid native execution receipt. Inspect the recorded action without repeating it.')
 				}
 				const id = Number(result.result?.id ?? 0)
+				const placement = await reportEnginePlacement(proposal, result, this.#reportPlacement, call.signal)
 				const app = proposal.provider === 'whiteboard' ? 'files' : proposal.provider
 				const collectionId = proposal.provider === 'whiteboard' ? String(result.result?.folderId ?? '') : result.collectionId!
 				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app, collectionId, filename: String(id) } }, call.signal) : undefined
 				this.#providerCompletion = ['nc_windmill_run', 'nc_n8n_execute'].includes(name)
 					? `${proposal.provider === 'windmill' ? 'Windmill' : 'n8n'} verified one execution dispatch (${String(result.result?.jobId ?? result.result?.executionId)}). Native execution state: ${String(result.result?.executionState)}. This does not verify external effects. Audit only; no Undo. Inspect Agent actions without repeating the run.`
 					: `Nextcloud verified and recorded this action: ${proposal.target}. Audit only; no Undo. Start a new conversation to use fresh native context.`
-				return { ...result, ...(activity ? { view: activity.view } : {}) }
+				if (placement === 'unconfirmed') this.#providerCompletion += ' The workflow retains its AI origin metadata, but the cloud placement report is unconfirmed. Do not create the workflow again.'
+				return { ...result, ...(activity ? { view: activity.view } : {}), ...(placement !== 'not-applicable' ? { provenancePlacement: placement } : {}) }
 			}
 			throw new Error('The native content recipe exceeded its bounded number of steps.')
 		} catch (error) {

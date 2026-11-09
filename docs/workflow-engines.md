@@ -54,6 +54,8 @@ AI origin is written inside the workflow before approval. Windmill uses
 `schema.x-fadenstack-provenance`; n8n uses a metadata comment in the description.
 The signed record is checked against the configured publisher's signing key.
 This marks origin; it does not grant access or certify legal compliance.
+See [AI origin, placement reports and export limits](workflow-provenance.md)
+for the embedded carriers, readback checks and behavior after native edits.
 
 ![Review an inactive n8n draft](screenshots/engine-n8n-draft.png)
 
