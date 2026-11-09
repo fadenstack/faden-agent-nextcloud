@@ -1,5 +1,8 @@
 # Workflow engine connections, reads, drafts and approved runs
 
+For step-by-step approval, Stop and read-only recovery, see
+[Run a workflow and inspect its outcome](workflow-execution.md).
+
 For a configured editor on the left with chat on the right, see the
 [native workflow workspace](engine-workspace.md). Its explicit pause handoff
 retains an opaque editor; child-only reload is user requested. Native framing
@@ -146,6 +149,9 @@ cancel an already accepted execution.
 All six engine tool runtimes and the bounded own-user OAuth connection/dispatch
 path exist locally. Automatic authenticated-editor refresh, broader role/fault
 tests, production OAuth/TLS and release acceptance remain open.
-Providers remain experimental and default off. Live server, broader role and
-package lifecycle acceptance are separate gates. Illustrated research lives in the
+Providers remain experimental and default off. Live read/draft and bounded
+Windmill/Header Auth execution evidence is available in the
+[execution acceptance report](https://github.com/fadenstack/fadenstack-dev/blob/master/nextcloud-engine-live-execution-2026-11-09/README.md).
+Broader roles, production OAuth/TLS, authenticated editor refresh and package
+lifecycle acceptance are separate gates. Earlier illustrated research lives in the
 [development report](https://github.com/fadenstack/fadenstack-dev/blob/master/nextcloud-agent-engines-2026-11-08/N8N_EXECUTION_CHECKPOINT.md).
