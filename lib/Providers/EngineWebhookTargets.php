@@ -25,11 +25,12 @@ final class EngineWebhookTargets {
 			}
 			$result = [];
 			foreach ($rows as $row) {
-				if (!is_array($row) || count($row) !== 6 || array_diff(array_keys($row), ['id', 'connectionId', 'workflowId', 'path', 'nodeId', 'credentialId'])
+				$oauth = is_array($row) && ($row['authentication'] ?? null) === 'oauth2';
+				if (!is_array($row) || count($row) !== 6 || array_diff(array_keys($row), ['id', 'connectionId', 'workflowId', 'path', 'nodeId', $oauth ? 'authentication' : 'credentialId'])
 					|| count(array_filter($row, 'is_string')) !== 6 || !preg_match('/^[a-z][a-z0-9_-]{0,31}$/D', $row['id'])
 					|| !preg_match('/^[a-z][a-z0-9_-]{0,31}$/D', $row['connectionId']) || !preg_match('/^[A-Za-z0-9_-]{1,64}$/D', $row['workflowId'])
 					|| !preg_match('/^[A-Za-z0-9_-]{1,120}$/D', $row['path']) || !preg_match('/^[A-Za-z0-9_-]{1,64}$/D', $row['nodeId'])
-					|| !preg_match('/^[A-Za-z0-9_-]{1,64}$/D', $row['credentialId']) || isset($result[$row['id']])) {
+					|| (!$oauth && !preg_match('/^[A-Za-z0-9_-]{1,64}$/D', $row['credentialId'])) || isset($result[$row['id']])) {
 					throw new \UnexpectedValueException();
 				}
 				$result[$row['id']] = [...$row, 'stamp' => StructuredProvider::digest($row)];

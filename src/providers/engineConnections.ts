@@ -1,4 +1,45 @@
 /** Human settings metadata only. No credential getter or agent-tool registration. */
+export interface EngineOAuthSummary {
+	readonly id: string; readonly connectionId: string; readonly workflowId: string; readonly issuer: string
+	readonly state: 'disconnected' | 'pending' | 'connected' | 'expired' | 'reconnect'; readonly expiresAt: number | null
+}
+export function engineOAuthList(value: unknown): readonly EngineOAuthSummary[] {
+	if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 1 || !Array.isArray((value as { targets?: unknown }).targets)) throw new Error('Invalid OAuth metadata.')
+	const rows = (value as { targets: unknown[] }).targets
+	const ids = new Set<string>()
+	if (rows.length > 16) throw new Error('Too many OAuth connections.')
+	return rows.map(item => {
+		if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Invalid OAuth target.')
+		const v = item as Record<string, unknown>
+		if (Object.keys(v).length !== 6 || Object.keys(v).some(k => !['id', 'connectionId', 'workflowId', 'issuer', 'state', 'expiresAt'].includes(k))
+			|| typeof v.id !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/.test(v.id) || ids.has(v.id)
+			|| typeof v.connectionId !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/.test(v.connectionId)
+			|| typeof v.workflowId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(v.workflowId) || typeof v.issuer !== 'string'
+			|| !['disconnected', 'pending', 'connected', 'expired', 'reconnect'].includes(v.state as string)
+			|| (v.expiresAt !== null && (!Number.isSafeInteger(v.expiresAt) || (v.expiresAt as number) < 1))) throw new Error('Invalid OAuth target.')
+		const u = new URL(v.issuer)
+		if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password || u.search || u.hash || u.hostname === location.hostname || u.href.replace(/\/$/, '') !== v.issuer) throw new Error('Invalid OAuth issuer.')
+		ids.add(v.id)
+		return Object.freeze({ ...v }) as unknown as EngineOAuthSummary
+	})
+}
+export function engineOAuthAuthorization(value: unknown, target: EngineOAuthSummary): string {
+	if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 1 || typeof (value as { authorizationUrl?: unknown }).authorizationUrl !== 'string') throw new Error('Invalid native authorization.')
+	const u = new URL((value as { authorizationUrl: string }).authorizationUrl)
+	const expected = new URL(target.issuer + '/mcp-oauth/authorize')
+	const keys = ['client_id', 'response_type', 'redirect_uri', 'code_challenge', 'code_challenge_method', 'state', 'resource']
+	if (u.origin !== expected.origin || u.pathname !== expected.pathname || u.username || u.password || u.hash
+		|| [...u.searchParams].length !== keys.length || keys.some(k => u.searchParams.getAll(k).length !== 1)
+		|| u.searchParams.get('response_type') !== 'code' || u.searchParams.get('code_challenge_method') !== 'S256'
+		|| !/^[A-Za-z0-9_-]{1,255}$/.test(u.searchParams.get('client_id') ?? '') || !/^[a-f0-9]{64}$/.test(u.searchParams.get('state') ?? '')
+		|| !/^[A-Za-z0-9_-]{43}$/.test(u.searchParams.get('code_challenge') ?? '')) throw new Error('Invalid native authorization.')
+	const callback = new URL(u.searchParams.get('redirect_uri')!)
+	const resource = u.searchParams.get('resource')!
+	if (callback.origin !== location.origin || callback.username || callback.password || callback.search || callback.hash
+		|| !callback.pathname.endsWith('/apps/fadenstack_agent/engines/oauth/callback/' + target.connectionId)
+		|| !resource.startsWith(target.issuer + '/webhook/') || !/^[A-Za-z0-9_-]{1,120}\?method=POST$/.test(resource.slice((target.issuer + '/webhook/').length))) throw new Error('Invalid OAuth callback or resource.')
+	return u.href
+}
 export interface EngineWorkspaceLink { readonly connectionId: string; readonly href: string }
 export function engineWorkspaceLinks(value: unknown): readonly EngineWorkspaceLink[] {
 	if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => k !== 'workspaces')

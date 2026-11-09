@@ -23,6 +23,7 @@ final class EngineBroker {
 		private ISession $session,
 		private IClientService $clients,
 		private EngineWebhookTargets $targets,
+		private N8nOAuthConfiguration $oauth,
 	) {
 	}
 	public function probe(string $id, string $token, ?string $revision = null): array {
@@ -67,6 +68,14 @@ final class EngineBroker {
 		}
 		if ($request->webhookTarget !== null) {
 			$t = $this->targets->get($request->webhookTarget);
+			if (($t['authentication'] ?? null) === 'oauth2') {
+				$e = $this->oauth->get($t['id']);
+				if ($t['connectionId'] !== $request->connection || $t['stamp'] !== $request->webhookStamp || $request->oauthSubject === null) {
+					throw new Problem('The approved OAuth webhook target changed.', 409);
+				}
+				$g = N8nOAuthConfiguration::grant($connection, $e, $request->oauthSubject);
+				return $this->send($request, $connection['endpoint'], $g['accessToken'], $connection['revision'], $beforeEffect, true);
+			}
 			$hook = $connection['webhooks'][$t['id']] ?? null;
 			if ($t['connectionId'] !== $request->connection || $t['stamp'] !== $request->webhookStamp || ($hook['stamp'] ?? null) !== $t['stamp']) {
 				throw new Problem('The native webhook target or credential changed.', 409);
@@ -75,7 +84,7 @@ final class EngineBroker {
 		}
 		return $this->send($request, $connection['endpoint'], $connection['apiToken'], $connection['revision'], $beforeEffect);
 	}
-	private function send(EngineRequest $request, array $endpoint, string $token, ?string $revision, ?callable $beforeEffect = null): ?array {
+	private function send(EngineRequest $request, array $endpoint, string $token, ?string $revision, ?callable $beforeEffect = null, bool $oauth = false): ?array {
 		$actor = $this->users->getUser()?->getUID();
 		$session = $this->session->getId();
 		if ($actor === null || $actor !== $request->actor || $session === '' || $request->provider !== $endpoint['provider']
@@ -83,7 +92,7 @@ final class EngineBroker {
 			throw new Problem('The native account or workflow connection changed.', 409);
 		}
 		$headers = ['Accept' => $request->jobAck ? 'text/plain' : 'application/json', 'Cache-Control' => 'no-cache'];
-		if ($endpoint['provider'] === 'windmill') {
+		if ($endpoint['provider'] === 'windmill' || $oauth) {
 			$headers['Authorization'] = 'Bearer ' . $token;
 		} elseif ($request->webhookTarget !== null) {
 			$headers['X-Fadenstack-Workflow-Key'] = $token;
@@ -97,6 +106,13 @@ final class EngineBroker {
 		$client = $this->clients->newClient();
 		if ($request->method !== 'GET') {
 			$beforeEffect();
+			if ($oauth) {
+				$current = $this->vault->resolve($request->connection);
+				$g = N8nOAuthConfiguration::grant($current, $this->oauth->get($request->webhookTarget), $request->oauthSubject);
+				if ($current['revision'] !== $revision || !hash_equals($token, $g['accessToken'])) {
+					throw new Problem('The native OAuth grant changed before dispatch.', 409);
+				}
+			}
 			$this->effectAttempted = true;
 		}
 		try {
@@ -157,6 +173,9 @@ final class EngineBroker {
 			}
 			if ($request->webhookTarget !== null && $this->targets->get($request->webhookTarget)['stamp'] !== $request->webhookStamp) {
 				throw new Problem('The native webhook target changed during dispatch.', 409);
+			}
+			if ($oauth) {
+				N8nOAuthConfiguration::grant($this->vault->resolve($request->connection), $this->oauth->get($request->webhookTarget), $request->oauthSubject);
 			}
 			return $value;
 		} finally {

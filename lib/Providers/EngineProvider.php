@@ -131,7 +131,8 @@ final class EngineProvider {
 			if ($toolName === N8nExecutePlan::TOOL) {
 				$p['display'][] = ['label' => 'Workflow', 'before' => null, 'after' => $p['targetLabel'] . ' (' . $p['target'] . ')'];
 				$p['display'][] = ['label' => 'Published webhook target', 'before' => null, 'after' => $p['webhook']['id'] . ' /webhook/' . $p['webhook']['path']];
-				$p['display'][] = ['label' => 'Native credential reference', 'before' => null, 'after' => $p['webhook']['credentialId']];
+				$p['display'][] = ['label' => 'Native authentication', 'before' => null, 'after' => ($p['webhook']['authentication'] ?? null) === 'oauth2'
+					? 'User-bound OAuth; native execution history may retain the bearer token.' : 'Header Auth / ' . $p['webhook']['credentialId']];
 			}
 			$p['display'] = [...$p['display'], ...($run ? [
 				['label' => 'Deployed flow version', 'before' => null, 'after' => $p['payload']['version']],
@@ -281,7 +282,7 @@ final class EngineProvider {
 			$run = self::execution($p);
 			$request = match ($p['toolName']) {
 				EngineRunPlan::TOOL => EngineRequest::windmillRun($connection['actor'], $connection['endpoint'], $p['payload']['version'], $p['payload']['jobId'], $p['payload']['argsJson']),
-				N8nExecutePlan::TOOL => EngineRequest::n8nWebhook($connection['actor'], $connection['endpoint'], $p['webhook'], $p['payload']['bodyJson']),
+				N8nExecutePlan::TOOL => EngineRequest::n8nWebhook($connection['actor'], $connection['endpoint'], $p['webhook'], $p['payload']['bodyJson'], $p['enginePrincipal']),
 				default => $p['provider'] === 'windmill' ? EngineRequest::saveOwnDraft($connection['actor'], $connection['endpoint'], $p['target'], $p['payload']['definitionJson'])
 					: EngineRequest::createN8nDraft($connection['actor'], $connection['endpoint'], $p['payload']['definitionJson']),
 			};

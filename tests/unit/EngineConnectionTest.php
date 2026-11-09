@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\FadenstackAgent\Tests\Unit;
 
 use OCA\FadenstackAgent\Controller\EngineConnectionsController;
+use OCA\FadenstackAgent\Controller\EngineOauthController;
 use OCA\FadenstackAgent\History\EngineAccessResolver;
 use OCA\FadenstackAgent\History\JournalException;
 use OCA\FadenstackAgent\History\JournalIdentity;
@@ -19,6 +20,9 @@ use OCA\FadenstackAgent\Providers\EngineRunPlan;
 use OCA\FadenstackAgent\Providers\EngineVault;
 use OCA\FadenstackAgent\Providers\EngineWebhookTargets;
 use OCA\FadenstackAgent\Providers\EngineWorkspace;
+use OCA\FadenstackAgent\Providers\N8nOAuthClient;
+use OCA\FadenstackAgent\Providers\N8nOAuthConfiguration;
+use OCA\FadenstackAgent\Providers\N8nOAuthService;
 use OCA\FadenstackAgent\Providers\ProviderPolicy;
 use OCA\FadenstackAgent\Service\Configuration;
 use OCA\FadenstackAgent\Service\FileService;
@@ -54,6 +58,15 @@ final class EngineConnectionTest extends TestCase {
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(static fn ($app, $key, $default = '') => $state->settings[$key] ?? $default);
 		$config->method('getUserValue')->willReturnCallback(static fn ($actor, $app, $key, $default = '') => $state->values[$actor][$key] ?? $default);
+		$config->method('getUserValueForUsers')->willReturnCallback(static function ($app, $key, $actors) use ($state): array {
+			$result = [];
+			foreach ($actors as $actor) {
+				if (isset($state->values[$actor][$key])) {
+					$result[$actor] = $state->values[$actor][$key];
+				}
+			}
+			return $result;
+		});
 		$config->method('getUserKeys')->willReturnCallback(static fn ($actor) => array_keys($state->values[$actor] ?? []));
 		$config->method('setUserValue')->willReturnCallback(static function ($actor, $app, $key, $value) use ($state): void {
 			$state->values[$actor][$key] = $value;
@@ -104,7 +117,160 @@ final class EngineConnectionTest extends TestCase {
 			}
 			return $response;
 		});
-		return [$endpoints, $vault, new EngineBroker($endpoints, $vault, $users, $session, $clients, new EngineWebhookTargets($config)), $state, $config, $users];
+		$urls = $this->createMock(IURLGenerator::class);
+		$urls->method('linkToRouteAbsolute')->willReturn('https://cloud.example.test/index.php/apps/fadenstack_agent/engines/oauth/callback/engine-test');
+		$oauth = new N8nOAuthConfiguration($config, $endpoints, new EngineWebhookTargets($config), $urls, new Configuration($config));
+		return [$endpoints, $vault, new EngineBroker($endpoints, $vault, $users, $session, $clients, new EngineWebhookTargets($config), $oauth), $state, $config, $users, $session, $oauth, $clients];
+	}
+	private function oauthFixture(): array {
+		[$endpoints, $vault, $broker, $s, $config, $users, $session, $oauth, $clients] = $this->fixture('n8n');
+		$owner = 'cfec15c4-5036-4f30-957c-306f577c19cc';
+		$encode = static fn ($v) => rtrim(strtr(base64_encode(json_encode($v)), '+/', '-_'), '=');
+		$token = $encode(['alg' => 'HS256']) . '.' . $encode(['iss' => 'n8n', 'aud' => 'public-api', 'sub' => $owner]) . '.' . str_repeat('a', 43);
+		$s->settings += ['integration_enabled' => '1', 'server_url' => 'https://faden.example.test', 'agent' => 'engine-test',
+			'development' => '1', 'provider_reads_enabled' => '1', 'provider_writes_enabled' => '1',
+			'provider_policy' => json_encode(['version' => 1, 'n8n' => ['enabled' => true, 'writesEnabled' => true, 'collections' => ['engine-test'], 'sourceClass' => 'standard']]),
+			'scope_policy' => json_encode(['revision' => 'oauth-test', 'sources' => [['kind' => 'user-files']], 'tools' => ['nc_n8n_read', 'nc_n8n_execute'],
+				'sourceClasses' => ['standard'], 'destinationAudiences' => ['unknown'], 'movements' => [['source' => 'standard', 'destination' => 'unknown']], 'downstreamPolicy' => 'unverified'])];
+		$t = ['id' => 'own-oauth', 'connectionId' => 'engine-test', 'workflowId' => 'flow1', 'path' => 'own-oauth', 'nodeId' => 'node1', 'authentication' => 'oauth2'];
+		$s->settings['engine_webhook_targets'] = json_encode([$t]);
+		$s->settings['engine_oauth'] = json_encode(['version' => 1, 'clients' => [['targetId' => 'own-oauth', 'issuer' => 'https://editor.example.test', 'clientId' => 'own-client']]]);
+		$vault->replace('engine-test', $vault->status('engine-test')['revision'], $token);
+		$node = ['id' => 'node1', 'name' => 'Webhook', 'type' => 'n8n-nodes-base.webhook', 'typeVersion' => 2.2,
+			'parameters' => ['httpMethod' => 'POST', 'path' => 'own-oauth', 'authentication' => 'n8nOAuth2', 'responseMode' => 'lastNode', 'requireExecuteAccess' => true, 'options' => ['oauthClient' => 'bearer']]];
+		$version = 'cde5ac9c-0f51-4d0e-b1b5-9ee4d1ac7078';
+		$s->flow = ['id' => 'flow1', 'name' => 'Owned OAuth workflow', 'active' => true, 'isArchived' => false, 'versionId' => $version, 'activeVersionId' => $version,
+			'nodes' => [$node], 'connections' => new \stdClass(), 'activeVersion' => ['versionId' => $version, 'workflowId' => 'flow1', 'nodes' => [$node], 'connections' => new \stdClass()],
+			'shared' => [['role' => 'workflow:owner', 'project' => ['type' => 'personal', 'creatorId' => $owner]]]];
+		$s->beforeResponse = static function ($url) use ($s, $owner, $encode): void {
+			$value = match (true) {
+				str_contains($url, 'workflows?limit=1') => ['data' => []],
+				str_contains($url, '/api/v1/workflows/flow1') => $s->flow,
+				str_contains($url, 'oauth-authorization-server') => ['issuer' => 'https://editor.example.test', 'authorization_response_iss_parameter_supported' => true,
+					'authorization_endpoint' => 'https://editor.example.test/mcp-oauth/authorize', 'token_endpoint' => 'https://editor.example.test/mcp-oauth/token', 'revocation_endpoint' => 'https://editor.example.test/mcp-oauth/revoke',
+					'code_challenge_methods_supported' => ['S256'], 'grant_types_supported' => ['authorization_code', 'refresh_token'], 'token_endpoint_auth_methods_supported' => ['none'], 'response_types_supported' => ['code']],
+				str_contains($url, 'oauth-protected-resource') => ['resource' => 'https://editor.example.test/webhook/own-oauth?method=POST', 'authorization_servers' => ['https://editor.example.test'], 'bearer_methods_supported' => ['header']],
+				str_contains($url, '/mcp-oauth/token') => ['access_token' => $encode(['alg' => 'HS256', 'typ' => 'at+jwt']) . '.' . $encode(['iss' => 'https://editor.example.test', 'aud' => 'https://editor.example.test/webhook/own-oauth?method=POST',
+					'sub' => $s->tokenSubject ?? $owner, 'client_id' => 'own-client', 'iat' => time(), 'exp' => time() + 3600, 'scope' => '', 'meta' => ['isOAuth' => true], 'jti' => bin2hex(random_bytes(8))]) . '.' . str_repeat('a', 43),
+					'refresh_token' => 'synthetic-refresh-token-' . bin2hex(random_bytes(8)), 'token_type' => 'Bearer', 'expires_in' => 3600, 'scope' => ''],
+				str_contains($url, '/webhook/') => ['executionId' => '1', 'correlation' => 'synthetic'],
+				default => ['data' => []],
+			};
+			if (str_contains($url, '/mcp-oauth/token') && ($s->failToken ?? false)) {
+				throw new \RuntimeException('Synthetic lost response');
+			}
+			$s->body = json_encode($value);
+		};
+		$scope = new ScopePolicy($config, $this->createMock(IRootFolder::class), $users, $this->createMock(IManager::class));
+		$policies = new ProviderPolicy($config, new Configuration($config), $scope, $users);
+		$authority = new EngineAuthority($vault, $broker, $policies);
+		$service = new N8nOAuthService($oauth, new N8nOAuthClient($endpoints, $users, $session, $clients), $vault, $authority, $session);
+		return [$service, $vault, $s, $oauth, $broker, $endpoints, $t, $owner, $authority, $config, $policies];
+	}
+	private function oauthComplete(N8nOAuthService $service, EngineVault $vault): void {
+		$p = $vault->resolve('engine-test')['oauthPending'];
+		$service->complete('engine-test', $p['state'], 'https://editor.example.test', 'synthetic-code', null);
+	}
+	public function testOAuthConsentIsOneUseEncryptedAndBoundToTheCurrentSession(): void {
+		[$service, $vault, $s] = $this->oauthFixture();
+		$before = $vault->status('engine-test')['revision'];
+		$url = $service->start('own-oauth', $before)['authorizationUrl'];
+		$c = $vault->resolve('engine-test');
+		self::assertNotSame($before, $c['revision']);
+		self::assertStringNotContainsString($c['oauthPending']['verifier'], $url);
+		self::assertSame('pending', $service->listing()[0]['state']);
+		$this->refused(fn () => $service->complete('engine-test', str_repeat('0', 64), 'https://editor.example.test', 'code', null), 410);
+		$this->refused(fn () => $service->complete('engine-test', $c['oauthPending']['state'], 'https://evil.example.test', 'code', null), 409);
+		self::assertSame([], array_filter($s->trace, static fn ($r) => $r['method'] === 'POST'));
+		$this->oauthComplete($service, $vault);
+		self::assertSame('connected', $service->listing()[0]['state']);
+		self::assertNull($vault->resolve('engine-test')['oauthPending']);
+		$this->refused(fn () => $service->complete('engine-test', $c['oauthPending']['state'], 'https://editor.example.test', 'code', null), 410);
+		self::assertCount(1, array_filter($s->trace, static fn ($r) => $r['method'] === 'POST'));
+		self::assertStringNotContainsString($vault->resolve('engine-test')['oauth']['own-oauth']['refreshToken'], json_encode($service->listing()));
+	}
+	public function testOAuthLostExchangeAndRefreshAreConsumedAndNeverRetried(): void {
+		foreach (['exchange', 'refresh'] as $phase) {
+			[$service, $vault, $s] = $this->oauthFixture();
+			$service->start('own-oauth', $vault->status('engine-test')['revision']);
+			if ($phase === 'refresh') {
+				$this->oauthComplete($service, $vault);
+			}
+			$s->failToken = true;
+			$revision = $vault->status('engine-test')['revision'];
+			$call = fn () => $phase === 'exchange' ? $this->oauthComplete($service, $vault) : $service->refresh('own-oauth', $revision);
+			$this->refused($call, 503);
+			self::assertSame('reconnect', $service->listing()[0]['state']);
+			$count = count($s->trace);
+			$this->refused($call, $phase === 'exchange' ? 410 : 409);
+			self::assertSame(count(array_filter(array_slice($s->trace, $count), static fn ($r) => $r['method'] === 'POST')), 0);
+			$s->settings['provider_writes_enabled'] = '0';
+			$service->remove('engine-test', 'own-oauth', $vault->status('engine-test')['revision']);
+			self::assertSame('disconnected', $service->listing()[0]['state']);
+		}
+	}
+	public function testOAuthRefreshInvalidatesPriorApprovalsAndBrokerSendsBearerOnly(): void {
+		[$service, $vault, $s, $oauth, $broker, $endpoints, $target, $owner] = $this->oauthFixture();
+		$service->start('own-oauth', $vault->status('engine-test')['revision']);
+		$this->oauthComplete($service, $vault);
+		$old = $vault->resolve('engine-test');
+		$service->refresh('own-oauth', $old['revision']);
+		$c = $vault->resolve('engine-test');
+		self::assertNotSame($old['revision'], $c['revision']);
+		$t = $oauth->get('own-oauth')['target'];
+		$r = EngineRequest::n8nWebhook('alice', $endpoints->get('engine-test'), $t, '{}', $owner);
+		$this->refused(fn () => $broker->request($r, $old['revision'], static function (): void {
+		}), 409);
+		$broker->request($r, $c['revision'], static function (): void {
+		});
+		$last = end($s->trace);
+		self::assertSame('Bearer ' . $c['oauth']['own-oauth']['accessToken'], $last['options']['headers']['Authorization']);
+		self::assertArrayNotHasKey('X-N8N-API-KEY', $last['options']['headers']);
+		self::assertArrayNotHasKey('Cookie', $last['options']['headers']);
+		self::assertArrayNotHasKey('X-Fadenstack-Workflow-Key', $last['options']['headers']);
+		$service->remove('engine-test', 'own-oauth', $c['revision']);
+		$this->refused(fn () => $broker->request($r, $c['revision'], static function (): void {
+		}), 409);
+	}
+	public function testOAuthWrongOwnerAndExpiredOrDeniedConsentNeverStoreAGrant(): void {
+		[$service, $vault, $s] = $this->oauthFixture();
+		$service->start('own-oauth', $vault->status('engine-test')['revision']);
+		$p = $vault->resolve('engine-test')['oauthPending'];
+		$this->refused(fn () => $service->complete('engine-test', $p['state'], 'https://editor.example.test', null, 'access_denied'), 403);
+		self::assertNull($vault->resolve('engine-test')['oauthPending']);
+		$service->start('own-oauth', $vault->status('engine-test')['revision']);
+		$c = $vault->resolve('engine-test');
+		$p = $c['oauthPending'];
+		$p['expiresAt'] = time() - 1;
+		$vault->changeOAuth('engine-test', $c['revision'], [], $p);
+		$this->refused(fn () => $this->oauthComplete($service, $vault), 410);
+		$service->start('own-oauth', $vault->status('engine-test')['revision']);
+		$s->tokenSubject = 'ba1c56a0-d843-4386-a9e8-0d6cc9c0d5e8';
+		$this->refused(fn () => $this->oauthComplete($service, $vault), 503);
+		self::assertSame([], $vault->resolve('engine-test')['oauth']);
+	}
+	public function testOAuthControllerIsRoutableAndRejectsCsrfAndSessionBypasses(): void {
+		[$service, $vault, $s] = $this->oauthFixture();
+		foreach ([[false, '', 'native-binding', 403], [true, 'true', 'native-binding', 403], [true, '', 'wrong-binding', 401]] as [$csrf, $ocs, $binding, $status]) {
+			$request = $this->createMock(IRequest::class);
+			$request->method('passesCSRFCheck')->willReturn($csrf);
+			$request->method('getHeader')->willReturnCallback(static fn ($name) => match ($name) {
+				'OCS-APIRequest' => $ocs, 'X-Fadenstack-Session' => $binding, default => '',
+			});
+			$files = $this->createMock(FileService::class);
+			$check = static function ($actual): void {
+				if ($actual !== 'native-binding') {
+					throw new Problem('Wrong native session.', 401);
+				}
+			};
+			$files->method('check')->willReturnCallback($check);
+			$files->method('checkSession')->willReturnCallback($check);
+			$controller = new EngineOauthController('fadenstack_agent', $request, $service, $files, $this->createMock(ISession::class), $this->createMock(IURLGenerator::class));
+			self::assertSame($status, $controller->start('own-oauth', $vault->status('engine-test')['revision'])->getStatus());
+			self::assertSame($status, $controller->remove('engine-test', 'own-oauth', $vault->status('engine-test')['revision'])->getStatus());
+		}
+		self::assertSame([], $s->trace);
+		self::assertNull($vault->resolve('engine-test')['oauthPending']);
 	}
 	private function reads(string $provider): array {
 		[, $vault, $broker, $state, $config, $users] = $this->fixture($provider);

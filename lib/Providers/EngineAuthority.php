@@ -104,7 +104,8 @@ final class EngineAuthority {
 		}
 	}
 	public static function secretGuard(string $json, array $connection): void {
-		foreach ([$connection['apiToken'], ...array_column($connection['webhooks'] ?? [], 'secret')] as $secret) {
+		foreach ([$connection['apiToken'], ...array_column($connection['webhooks'] ?? [], 'secret'),
+			...array_column($connection['oauth'] ?? [], 'accessToken'), ...array_column($connection['oauth'] ?? [], 'refreshToken')] as $secret) {
 			if (str_contains($json, substr(EngineJson::encode($secret), 1, -1))) {
 				throw new Problem('The connection credential cannot be included in workflow content.', 403);
 			}

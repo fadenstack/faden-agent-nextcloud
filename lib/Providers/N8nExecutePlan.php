@@ -17,6 +17,7 @@ final class N8nExecutePlan {
 		private EngineBroker $broker,
 		private EngineWebhookTargets $targets,
 		private Configuration $configuration,
+		private N8nOAuthConfiguration $oauth,
 	) {
 	}
 	public function targetRows(): array {
@@ -33,11 +34,15 @@ final class N8nExecutePlan {
 		}
 		$t = $this->targets->get($args['targetId']);
 		$c = $this->native->connection('n8n', $t['connectionId'], true);
+		$isOAuth = ($t['authentication'] ?? null) === 'oauth2';
 		if (!EngineRunPlan::canMove($c['policy']) || !in_array(self::TOOL, $c['policy']['processing']['tools'], true)
-			|| ($c['webhooks'][$t['id']]['stamp'] ?? null) !== $t['stamp']) {
+			|| (!$isOAuth && ($c['webhooks'][$t['id']]['stamp'] ?? null) !== $t['stamp'])) {
 			throw new Problem('This webhook, credential, tool or unknown-audience movement is outside the current scope.', 403);
 		}
 		$principal = $this->native->principal($c);
+		if ($isOAuth) {
+			N8nOAuthConfiguration::grant($c, $this->oauth->get($t['id']), $principal);
+		}
 		$read = $this->reads->read('n8n', ['connectionId' => $t['connectionId'], 'reference' => $t['workflowId']]);
 		$flow = (array)$read['definition'];
 		EngineAuthority::assertN8nOwner($flow, $principal);
@@ -67,13 +72,16 @@ final class N8nExecutePlan {
 		}
 		$hooks = array_values(array_filter($active->nodes, static fn ($node) => $node instanceof \stdClass && ($node->type ?? null) === 'n8n-nodes-base.webhook'));
 		$hook = $hooks[0] ?? null;
+		$oauth = ($target['authentication'] ?? null) === 'oauth2';
 		if (count($hooks) !== 1 || ($hook->id ?? null) !== $target['nodeId'] || !is_string($hook->name ?? null) || strlen($hook->name) > 80
-			|| ($hook->typeVersion ?? null) !== 2 || ($hook->disabled ?? false) !== false || !($hook->parameters ?? null) instanceof \stdClass
+			|| ($hook->typeVersion ?? null) !== ($oauth ? 2.2 : 2) || ($hook->disabled ?? false) !== false || !($hook->parameters ?? null) instanceof \stdClass
 			|| ($hook->parameters->path ?? null) !== $target['path'] || ($hook->parameters->httpMethod ?? null) !== 'POST'
-			|| ($hook->parameters->authentication ?? null) !== 'headerAuth' || ($hook->parameters->responseMode ?? null) !== 'lastNode'
-			|| !($hook->parameters->options ?? null) instanceof \stdClass || count(get_object_vars($hook->parameters->options)) !== 0
-			|| ($hook->credentials->httpHeaderAuth->id ?? null) !== $target['credentialId']) {
-			throw new Problem('Use the configured static POST/Header Auth webhook with its reviewed credential reference and receipt response.', 403);
+			|| ($hook->parameters->authentication ?? null) !== ($oauth ? 'n8nOAuth2' : 'headerAuth') || ($hook->parameters->responseMode ?? null) !== 'lastNode'
+			|| !($hook->parameters->options ?? null) instanceof \stdClass
+			|| ($oauth ? (get_object_vars($hook->parameters->options) !== ['oauthClient' => 'bearer'] || ($hook->parameters->requireExecuteAccess ?? null) !== true
+				|| (isset($hook->credentials) && (!$hook->credentials instanceof \stdClass || count(get_object_vars($hook->credentials)) !== 0)))
+				: (count(get_object_vars($hook->parameters->options)) !== 0 || ($hook->credentials->httpHeaderAuth->id ?? null) !== $target['credentialId']))) {
+			throw new Problem('Use the configured static POST webhook with its reviewed native authentication and receipt response.', 403);
 		}
 		return $hook;
 	}

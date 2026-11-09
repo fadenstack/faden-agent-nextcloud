@@ -65,7 +65,8 @@ final class EngineConnectionsController extends Controller {
 	}
 	#[NoAdminRequired]
 	public function webhooks(): DataResponse {
-		return $this->run(fn () => ['targets' => array_values(array_map(fn ($t) => $this->vault->webhookStatus($t), $this->targets->all()))]);
+		return $this->run(fn () => ['targets' => array_values(array_map(fn ($t) => $this->vault->webhookStatus($t),
+			array_filter($this->targets->all(), static fn ($t) => ($t['authentication'] ?? 'headerAuth') === 'headerAuth')))]);
 	}
 	#[NoAdminRequired]
 	public function webhook(string $targetId, string $revision, ?string $secret = null): DataResponse {

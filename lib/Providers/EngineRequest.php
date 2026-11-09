@@ -20,6 +20,7 @@ final class EngineRequest {
 		public readonly bool $jobAck = false,
 		public readonly ?string $webhookTarget = null,
 		public readonly ?string $webhookStamp = null,
+		public readonly ?string $oauthSubject = null,
 	) {
 	}
 	public static function probe(string $actor, array $endpoint): self {
@@ -94,12 +95,13 @@ final class EngineRequest {
 		}
 		return new self($actor, $endpoint['id'], 'windmill', $endpoint['stamp'], '/api/w/' . rawurlencode($endpoint['workspace']) . '/jobs_u/get/' . $jobId . '?no_logs=true&no_code=true');
 	}
-	public static function n8nWebhook(string $actor, array $endpoint, array $target, string $body): self {
+	public static function n8nWebhook(string $actor, array $endpoint, array $target, string $body, ?string $principal = null): self {
 		if ($endpoint['provider'] !== 'n8n' || $target['connectionId'] !== $endpoint['id'] || !preg_match('/^[A-Za-z0-9_-]{1,120}$/D', $target['path'])
 			|| !EngineJson::decode($body) instanceof \stdClass) {
 			throw new Problem('Choose one configured native n8n webhook.', 400);
 		}
-		return new self($actor, $endpoint['id'], 'n8n', $endpoint['stamp'], '/webhook/' . $target['path'], 'POST', $body, webhookTarget: $target['id'], webhookStamp: $target['stamp']);
+		return new self($actor, $endpoint['id'], 'n8n', $endpoint['stamp'], '/webhook/' . $target['path'], 'POST', $body, webhookTarget: $target['id'], webhookStamp: $target['stamp'],
+			oauthSubject: ($target['authentication'] ?? null) === 'oauth2' ? ($principal ?? throw new Problem('Verify the native OAuth subject before dispatch.', 403)) : null);
 	}
 	public static function n8nExecutions(string $actor, array $endpoint, string $workflowId): self {
 		self::definition($actor, $endpoint, $workflowId);

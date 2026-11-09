@@ -113,8 +113,11 @@ webhook keys. Disconnect removes both kinds of credential.
 The tested native Webhook node retains the authentication header in its own
 execution history. Use a dedicated key for this personal workflow. Native
 administrators and authorized execution-history readers may see it. Agent
-status responses exclude headers, inputs, outputs and credentials. The
-newer user-bound OAuth path remains unvalidated and is outside this checkpoint.
+status responses exclude headers, inputs, outputs and credentials.
+Alternatively, the configured version-2.2 **user-bound OAuth** webhook uses
+native consent, an encrypted own-user grant and the same individual execution
+approval. See [OAuth connection and removal](n8n-oauth.md). The Header Auth
+path remains supported; OAuth never silently falls back to it.
 
 Ask to run the configured target once, then review the account, published
 workflow/version, credential reference, exact request and unknown effect
@@ -138,8 +141,9 @@ cancel an already accepted execution.
 
 ![Inspect the n8n execution](screenshots/engine-n8n-execution-audit.png)
 
-All six engine tool runtimes now exist locally. Automatic authenticated-editor refresh,
-user-bound OAuth, broader role/fault tests and release acceptance remain open.
+All six engine tool runtimes and the bounded own-user OAuth connection/dispatch
+path exist locally. Automatic authenticated-editor refresh, broader role/fault
+tests, production OAuth/TLS and release acceptance remain open.
 Providers remain experimental and default off. Live server, broader role and
 package lifecycle acceptance are separate gates. Illustrated research lives in the
 [development report](https://github.com/fadenstack/fadenstack-dev/blob/master/nextcloud-agent-engines-2026-11-08/N8N_EXECUTION_CHECKPOINT.md).

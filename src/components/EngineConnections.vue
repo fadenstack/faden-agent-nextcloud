@@ -6,13 +6,16 @@ import NcButton from '@nextcloud/vue/components/NcButton'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import { AgentAvatar } from '@fadenstack/ui-vue'
 import type { NativeProvidersApi } from '../providers/client.ts'
-import type { EngineConnectionSummary, EngineWebhookSummary, EngineWorkspaceLink } from '../providers/engineConnections.ts'
+import type { EngineConnectionSummary, EngineWebhookSummary, EngineWorkspaceLink, EngineOAuthSummary } from '../providers/engineConnections.ts'
 
 const props = defineProps<{ api: NativeProvidersApi }>()
 const emit = defineEmits<{ close: [] }>()
 const open = ref(true)
 const connections = ref<readonly EngineConnectionSummary[]>([])
 const workspaces = ref<readonly EngineWorkspaceLink[]>([])
+const oauthTargets = ref<readonly EngineOAuthSummary[]>([])
+const ownOAuth = computed(() => oauthTargets.value.filter(row => row.connectionId === selectedId.value))
+const authorization = ref<{ targetId: string; href: string } | null>(null)
 const workspace = computed(() => workspaces.value.find(item => item.connectionId === selectedId.value))
 const selectedId = ref('')
 const targets = ref<readonly EngineWebhookSummary[]>([])
@@ -28,8 +31,9 @@ const selectorId = useId()
 const selected = computed(() => connections.value.find(item => item.id === selectedId.value))
 const abort = new AbortController()
 let workspaceEpoch = 0
+let oauthEpoch = 0
 watch(open, value => { if (!value) emit('close') })
-watch(selectedId, () => { token.value = ''; webhookSecret.value = ''; selectedTarget.value = ownTargets.value[0]?.id ?? ''; notice.value = ''; error.value = '' })
+watch(selectedId, () => { token.value = ''; webhookSecret.value = ''; authorization.value = null; selectedTarget.value = ownTargets.value[0]?.id ?? ''; notice.value = ''; error.value = '' })
 watch(selectedTarget, () => { webhookSecret.value = '' })
 onBeforeUnmount(() => { token.value = ''; webhookSecret.value = ''; abort.abort() })
 
@@ -42,6 +46,17 @@ async function loadWorkspaces() {
 		if (!abort.signal.aborted && epoch === workspaceEpoch) workspaces.value = values
 	} catch { /* API credentials remain manageable when editor navigation is unavailable. */ }
 }
+async function loadOAuth() {
+	const epoch = ++oauthEpoch
+	oauthTargets.value = []
+	try {
+		const rows = await props.api.engineOAuth?.(abort.signal) ?? []
+		if (!abort.signal.aborted && epoch === oauthEpoch) {
+			oauthTargets.value = rows
+			if (authorization.value && !rows.some(row => row.id === authorization.value!.targetId && row.state === 'pending')) authorization.value = null
+		}
+	} catch { /* Optional OAuth setup never blocks local credential removal. */ }
+}
 
 async function load() {
 	busy.value = true
@@ -53,6 +68,7 @@ async function load() {
 		if (!ownTargets.value.some(target => target.id === selectedTarget.value)) selectedTarget.value = ownTargets.value[0]?.id ?? ''
 	} catch { error.value = t('fadenstack_agent', 'Workflow connections are unavailable. Reload to check their current state.') } finally { busy.value = false }
 	void loadWorkspaces()
+	void loadOAuth()
 }
 onMounted(load)
 
@@ -70,9 +86,27 @@ async function change(disconnect = false) {
 			: await props.api.engineConnect!(current.id, current.revision, secret, abort.signal)
 		connections.value = connections.value.map(item => item.id === result.id ? result : item)
 		targets.value = await props.api.engineWebhooks?.(abort.signal) ?? []
-		notice.value = disconnect ? t('fadenstack_agent', 'Disconnected. New agent requests cannot use this credential.') : t('fadenstack_agent', 'API access verified and token saved in your Nextcloud account.')
+		authorization.value = null
+		notice.value = disconnect ? t('fadenstack_agent', 'Local access removed. New agent requests cannot use this credential. Revoke previously issued OAuth grants in n8n to invalidate them remotely.') : t('fadenstack_agent', 'API access verified and token saved in your Nextcloud account.')
 	} catch { error.value = t('fadenstack_agent', 'The connection could not be confirmed. Reload before changing it again.') } finally { busy.value = false }
 	void loadWorkspaces()
+	void loadOAuth()
+}
+async function changeOAuth(target: EngineOAuthSummary, operation: 'start' | 'refresh' | 'remove') {
+	const current = selected.value
+	if (!current || busy.value) return
+	busy.value = true; error.value = ''; notice.value = ''; authorization.value = null
+	try {
+		if (operation === 'start') {
+			authorization.value = { targetId: target.id, href: await props.api.engineOAuthStart!(target, current.revision, abort.signal) }
+			notice.value = t('fadenstack_agent', 'Continue to n8n in a new tab. After consent, return here and reload connections. No workflow is run by connecting.')
+		} else {
+			await (operation === 'refresh' ? props.api.engineOAuthRefresh! : props.api.engineOAuthRemove!)(target.id, current.id, current.revision, abort.signal)
+			notice.value = operation === 'refresh' ? t('fadenstack_agent', 'OAuth grant refreshed. Earlier execution previews need new approval.') : t('fadenstack_agent', 'Local OAuth access and pending consent removed. Revoke the grant in n8n to invalidate tokens already issued.')
+		}
+		connections.value = await props.api.engineConnections!(abort.signal)
+	} catch { error.value = t('fadenstack_agent', 'OAuth is unconfirmed. Reload connections. An uncertain exchange or refresh is not retried; cancel local access and reconnect if required.') } finally { busy.value = false }
+	void loadOAuth()
 }
 async function changeWebhook(remove = false) {
 	const current = selected.value
@@ -141,6 +175,32 @@ async function changeWebhook(remove = false) {
 					<NcButton :disabled="busy" @click="change(true)">
 						{{ t('fadenstack_agent', 'Disconnect') }}
 					</NcButton>
+					<section v-for="target in selected.connected ? ownOAuth : []" :key="target.id" class="fadenstack-engine-oauth">
+						<p><strong>{{ t('fadenstack_agent', 'User-bound webhook OAuth') }}</strong> · {{ target.workflowId }}</p>
+						<p>{{ target.issuer }} · {{ target.state }}</p>
+						<p>{{ t('fadenstack_agent', 'OAuth authorizes this published webhook. Your API key still handles reads and drafts. n8n execution history may retain the bearer token and inputs. Native sign-in is separate; SSO is not required.') }}</p>
+						<NcButton v-if="target.state === 'disconnected'" :disabled="busy" @click="changeOAuth(target, 'start')">
+							{{ t('fadenstack_agent', 'Connect webhook OAuth') }}
+						</NcButton>
+						<a v-if="authorization?.targetId === target.id && target.state === 'pending'"
+							:href="authorization.href"
+							target="_blank"
+							rel="noopener noreferrer">
+							{{ t('fadenstack_agent', 'Continue to n8n') }}
+						</a>
+						<p v-if="target.state === 'pending'">
+							{{ t('fadenstack_agent', 'Waiting for native consent. If you denied or closed the native tab, cancel local access before starting again. Pending consent expires after ten minutes.') }}
+						</p>
+						<p v-if="target.state === 'reconnect'">
+							{{ t('fadenstack_agent', 'This grant is unconfirmed or its configuration changed. Remove local OAuth access, then connect again. The earlier exchange will not be repeated.') }}
+						</p>
+						<NcButton v-if="['connected', 'expired'].includes(target.state)" :disabled="busy" @click="changeOAuth(target, 'refresh')">
+							{{ t('fadenstack_agent', 'Refresh OAuth grant') }}
+						</NcButton>
+						<NcButton v-if="target.state !== 'disconnected'" :disabled="busy" @click="changeOAuth(target, 'remove')">
+							{{ t('fadenstack_agent', 'Remove local OAuth access') }}
+						</NcButton>
+					</section>
 					<form v-if="selected.connected && selected.provider === 'n8n' && ownTargets.length && api.engineWebhookChange" @submit.prevent="changeWebhook()">
 						<label :for="selectorId + '-webhook'">{{ t('fadenstack_agent', 'Published webhook target') }}</label>
 						<select :id="selectorId + '-webhook'" v-model="selectedTarget" :disabled="busy">
@@ -211,6 +271,14 @@ async function changeWebhook(remove = false) {
 .fadenstack-engine-connections form {
 	display: grid;
 	gap: 12px;
+}
+
+.fadenstack-engine-oauth {
+	display: grid;
+	gap: 12px;
+	padding-block: 12px;
+	border-block: 1px solid var(--color-border);
+	overflow-wrap: anywhere;
 }
 
 .fadenstack-engine-connections select {

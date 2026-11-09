@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { changedEngineConnection, engineConnectionList, engineConnectionSummary, engineWebhookList } from '../../src/providers/engineConnections.ts'
+import { changedEngineConnection, engineConnectionList, engineConnectionSummary, engineWebhookList, engineOAuthList, engineOAuthAuthorization, type EngineOAuthSummary } from '../../src/providers/engineConnections.ts'
 import { nativeProvidersApi } from '../../src/providers/client.ts'
 import { createApp, markRaw } from 'vue'
 import EngineConnections from '../../src/components/EngineConnections.vue'
@@ -12,6 +12,57 @@ vi.mock('@nextcloud/vue/components/NcDialog', () => ({ default: { template: '<di
 const original = { id: 'engine-main', provider: 'n8n', label: 'My workflows', baseUrl: 'https://engine.example.test', workspace: '', version: '2.43.8', revision: 'a'.repeat(64), connected: false, setupAllowed: true, expiresAt: null, keyAccess: 'Key covers all resources of this n8n account.' }
 
 describe('human workflow connections', () => {
+	it('removes the one-use authorization link when a reloaded grant becomes connected', async () => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+		let state: EngineOAuthSummary['state'] = 'disconnected'
+		const target = { id: 'own-oauth', connectionId: original.id, workflowId: 'flow1', issuer: 'https://editor.example.test', expiresAt: null }
+		const api = markRaw({ engineConnections: async () => [{ ...original, connected: true }], engineWebhooks: async () => [],
+			engineOAuth: async () => [{ ...target, state }], engineOAuthStart: async () => { state = 'pending'; return 'https://editor.example.test/mcp-oauth/authorize' } })
+		const root = document.createElement('div'); document.body.append(root)
+		const app = createApp(EngineConnections, { api: api as never })
+		try {
+			app.mount(root)
+			const button = (name: string) => [...root.querySelectorAll('button')].find(b => b.textContent?.trim() === name)
+			await vi.waitFor(() => expect(button('Connect webhook OAuth')).toBeDefined())
+			button('Connect webhook OAuth')!.click()
+			await vi.waitFor(() => expect(root.textContent).toContain('Continue to n8n'))
+			state = 'connected'; button('Reload connections')!.click()
+			await vi.waitFor(() => expect(button('Refresh OAuth grant')).toBeDefined())
+			expect([...root.querySelectorAll('a')].some(a => a.textContent?.trim() === 'Continue to n8n')).toBe(false)
+		} finally { app.unmount(); root.remove(); vi.unstubAllGlobals() }
+	})
+	it.each(['failed', 'pending'])('keeps Disconnect available when optional OAuth metadata is %s', async mode => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+		const disconnect = vi.fn(async () => ({ ...original, connected: false, revision: 'b'.repeat(64) }))
+		const api = markRaw({ engineConnections: async () => [{ ...original, connected: true }], engineWebhooks: async () => [], engineDisconnect: disconnect,
+			engineOAuth: () => mode === 'failed' ? Promise.reject(new Error('OAuth unavailable')) : new Promise(() => {}) })
+		const root = document.createElement('div'); document.body.append(root)
+		const app = createApp(EngineConnections, { api: api as never })
+		try {
+			app.mount(root)
+			let button: HTMLButtonElement | undefined
+			await vi.waitFor(() => { button = [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === 'Disconnect'); expect(button?.disabled).toBe(false) })
+			button!.click()
+			await vi.waitFor(() => expect(disconnect).toHaveBeenCalledExactlyOnceWith(original.id, original.revision, expect.any(AbortSignal)))
+		} finally { app.unmount(); root.remove(); vi.unstubAllGlobals() }
+	})
+	it('accepts bounded OAuth metadata and refuses returned tokens or duplicate targets', () => {
+		const row: EngineOAuthSummary = { id: 'own-oauth', connectionId: 'engine-main', workflowId: 'flow1', issuer: 'https://editor.example.test', state: 'connected', expiresAt: 1234 }
+		expect(engineOAuthList({ targets: [row] })).toEqual([row])
+		for (const targets of [[{ ...row, accessToken: 'never-return' }], [row, row], [{ ...row, state: 'verified-delivery' }], [{ ...row, issuer: 'javascript:alert(1)' }]]) expect(() => engineOAuthList({ targets })).toThrow()
+	})
+	it('checks exact native authorization route, one state, PKCE and local callback without exposing the verifier', () => {
+		const row: EngineOAuthSummary = { id: 'own-oauth', connectionId: 'engine-main', workflowId: 'flow1', issuer: 'https://editor.example.test', state: 'pending', expiresAt: null }
+		const url = new URL(row.issuer + '/mcp-oauth/authorize')
+		for (const [key, value] of Object.entries({ client_id: 'own-client', response_type: 'code', redirect_uri: location.origin + '/index.php/apps/fadenstack_agent/engines/oauth/callback/engine-main', code_challenge: 'a'.repeat(43), code_challenge_method: 'S256', state: 'b'.repeat(64), resource: row.issuer + '/webhook/own-hook?method=POST' })) url.searchParams.set(key, value)
+		expect(engineOAuthAuthorization({ authorizationUrl: url.href }, row)).toBe(url.href)
+		for (const [key, value] of [['redirect_uri', 'https://elsewhere.test/callback'], ['code_challenge_method', 'plain'], ['resource', 'https://elsewhere.test/webhook/hook?method=POST'], ['state', 'short'], ['code_verifier', 'never-return']]) {
+			const bad = new URL(url); bad.searchParams.set(key!, value!)
+			expect(() => engineOAuthAuthorization({ authorizationUrl: bad.href }, row)).toThrow()
+		}
+		const duplicate = new URL(url); duplicate.searchParams.append('state', 'b'.repeat(64))
+		expect(() => engineOAuthAuthorization({ authorizationUrl: duplicate.href }, row)).toThrow()
+	})
 	it.each(['failed', 'pending'])('keeps Disconnect available when optional native workspace navigation is %s', async mode => {
 		vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
 		const disconnect = vi.fn(async () => ({ ...original, connected: false, revision: 'b'.repeat(64) }))

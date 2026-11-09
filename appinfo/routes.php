@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 return ['routes' => [
+	['name' => 'engine_oauth#listing', 'url' => '/engines/oauth', 'verb' => 'POST'],
+	['name' => 'engine_oauth#start', 'url' => '/engines/oauth/start', 'verb' => 'POST'],
+	['name' => 'engine_oauth#refresh', 'url' => '/engines/oauth/refresh', 'verb' => 'POST'],
+	['name' => 'engine_oauth#remove', 'url' => '/engines/oauth/remove', 'verb' => 'POST'],
+	['name' => 'engine_oauth#callback', 'url' => '/engines/oauth/callback/{id}', 'verb' => 'GET'],
+	['name' => 'engine_oauth#result', 'url' => '/engines/oauth/result', 'verb' => 'GET'],
 	['name' => 'engine_workspace#listing', 'url' => '/engines/workspaces', 'verb' => 'POST'],
 	['name' => 'engine_workspace#page', 'url' => '/engines/workspace/{id}', 'verb' => 'GET'],
 	['name' => 'engine_connections#listing', 'url' => '/engines/connections', 'verb' => 'POST'],

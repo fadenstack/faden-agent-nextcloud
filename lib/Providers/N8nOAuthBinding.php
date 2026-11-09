@@ -50,7 +50,7 @@ final class N8nOAuthBinding {
 		$origin = $development && $allowLocal && $loopback && $p['scheme'] === 'http' ? 'http://' . $authority
 			: Configuration::origin($p['scheme'] . '://' . $authority, false);
 		$path = rtrim($p['path'] ?? '', '/');
-		if (strlen($path) > 255 || ($path !== '' && !preg_match('~^(/[a-zA-Z0-9_-]+)+$~D', $path)) || $url !== $origin . $path) {
+		if (strlen($path) > 255 || ($path !== '' && !preg_match('~^(?:/[a-zA-Z0-9_-]+|/index\.php)+$~D', $path)) || $url !== $origin . $path) {
 			throw new \UnexpectedValueException();
 		}
 		return $url;
