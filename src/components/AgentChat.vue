@@ -18,6 +18,7 @@ import { CONTENT_MUTATIONS } from '../providers/contentTools.ts'
 import SearchResultsCard from './SearchResultsCard.vue'
 import FolderResultsCard from './FolderResultsCard.vue'
 import SharesResultsCard from './SharesResultsCard.vue'
+import AgentfileResultsCard from './AgentfileResultsCard.vue'
 import AssistantDetails from './AssistantDetails.vue'
 import ActionHistory from './ActionHistory.vue'
 import EngineConnections from './EngineConnections.vue'
@@ -88,6 +89,9 @@ const renderers: PartRenderer[] = [
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
 			const result = props.host.toolResult(part)
 			if (result) {
+				if (result.kind === 'nextcloud-agentfile-result') {
+					return [h(AgentfileResultsCard, { result }), h(ToolCallView, { part, strings })]
+				}
 				if (result.kind === 'nextcloud-folder-overview') {
 					return [h(FolderResultsCard, { result, host: props.host }), h(ToolCallView, { part, strings })]
 				}

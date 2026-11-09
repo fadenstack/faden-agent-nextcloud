@@ -235,7 +235,15 @@ export interface ShareOverviewResults {
 	coverage: string
 }
 
-export type ToolViewResults = SearchViewResults | FolderOverviewResults | ShareOverviewResults
+export interface AgentfileViewResults {
+	kind: 'nextcloud-agentfile-result'
+	name: string
+	description?: string
+	resourceId?: string
+	instructions?: string
+	sources: readonly { name: string; available: boolean; resourceId?: string }[]
+}
+export type ToolViewResults = SearchViewResults | FolderOverviewResults | ShareOverviewResults | AgentfileViewResults
 
 export interface DavFolderCreatePlan {
 	kind: 'dav-create-folder'

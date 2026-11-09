@@ -31,7 +31,12 @@ other native actions have an audit trail. See [Mail and Talk](mail-talk.md) and
 Experimental [workflow engine connections and reads](workflow-engines.md) use
 your own Windmill or n8n API token stored encrypted in Nextcloud. This slice
 reads saved workflows and creates new private drafts after individual approval.
-Engine execution remains pending.
+Bounded execution requires separate approval; OAuth, embedded editor behavior
+and full release acceptance remain gated. See the engine guide for the bounds.
+
+Experimental [agent-definition reads](agent-files.md) import an approved saved
+`.agent` definition as data. Its native knowledge files need separate access;
+imported instructions do not activate an agent or grant tools.
 
 Ask naturally: “Find the latest supplier contract”, “Find all PDFs inside
 Engineering”, or “Show my ten most recently modified documents”. Discovery

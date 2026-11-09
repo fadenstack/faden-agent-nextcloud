@@ -93,7 +93,7 @@ import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
 import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, ContentProposal, ContentProviderId, ProviderInspection, ReadProviderId, StructuredProposal } from '../providers/client.ts'
-import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEngineDraftTools, nativeEngineRunTools, nativeWorkflowTools } from '../providers/contentTools.ts'
+import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEngineDraftTools, nativeEngineRunTools, nativeAgentfileTools, nativeWorkflowTools } from '../providers/contentTools.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
@@ -195,7 +195,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const flowEnabled = !nativeContent && experimental && config.flowEnabled === true && !!files.flow
 		const windmillEnabled = !this.#providerReads && experimental && config.windmillEnabled === true && !!files.windmill
 		const n8nEnabled = !this.#providerReads && experimental && config.n8nEnabled === true && !!files.n8n
-		const agentfileEnabled = experimental && config.agentfileEnabled === true && !!files.agentfile
+		const agentfileEnabled = !this.#providerReads && experimental && config.agentfileEnabled === true && !!files.agentfile
 		const notesEnabled = !nativeContent && experimental && config.notesEnabled === true && !!files.notes
 		const bookmarksEnabled = !nativeContent && experimental && config.bookmarksEnabled === true && !!files.bookmarks
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
@@ -226,6 +226,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.addTools(...(nativeContent ? nativeContentTools(this) : []))
 			.addTools(...(nativeContent ? nativeWorkflowTools(this) : []))
 			.addTools(...(nativeEngines ? nativeEngineReadTools(this) : []))
+			.addTools(...(nativeEngines ? nativeAgentfileTools(this) : []))
 			.addTools(...(nativeContent ? nativeEngineDraftTools(this) : []))
 			.addTools(...(nativeContent ? nativeEngineRunTools(this) : []))
 			.addTools(...(this.#providerReads ? nativeCalendarReadTools(this.#providerReads, this) : []))
@@ -243,7 +244,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addChatStage(StageOrder.custom, inner => ({
 				stream: (messages, options = {}) => {
-					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
+					const available = this.#scope ? [...this.#scope.offeredTools.filter(name => !this.#providerReads || !['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n', 'agentfile'].includes(fileCapability(name)?.subsystem ?? '')), ...(this.#providerReads?.offeredTools ?? [])] : undefined
 					return inner.stream(messages, available
 						? {
 							...options,
@@ -255,7 +256,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			}))
 			.addToolStage(StageOrder.custom, {
 				invoke: async (invocation, next) => {
-					if (this.#providerReads && ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
+					if (this.#providerReads && ['calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n', 'agentfile'].includes(fileCapability(invocation.tool.name)?.subsystem ?? '')) this.#providerReads.begin(invocation.tool.name)
 					else this.#scope?.beginTool(invocation.tool.name)
 					await files.assertIdentity(invocation.context.signal)
 					if (this.#providerReads?.hasSources && fileCapability(invocation.tool.name)?.subsystem === 'files' && fileCapability(invocation.tool.name)?.risk !== 'read') throw new Error('Writing from provider sources is not enabled in this development read slice.')
@@ -720,7 +721,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	recordResult(callId: string, value: unknown, context: ToolCallContext): void {
 		context.signal.throwIfAborted()
 		if (!context.sessionId || !context.turnId || context.callId !== callId || context.sessionId !== this.chat.currentSessionId) return
-		if (!value || typeof value !== 'object' || !('kind' in value) || !['nextcloud-search-results', 'nextcloud-document-search', 'nextcloud-folder-overview', 'nextcloud-share-overview'].includes(String((value as Record<string, unknown>).kind))) return
+		if (!value || typeof value !== 'object' || !('kind' in value) || !['nextcloud-search-results', 'nextcloud-document-search', 'nextcloud-folder-overview', 'nextcloud-share-overview', 'nextcloud-agentfile-result'].includes(String((value as Record<string, unknown>).kind))) return
 		this.#toolResults.set(this.resultKey(context), value as ToolViewResults)
 		while (this.#toolResults.size > 100) this.#toolResults.delete(this.#toolResults.keys().next().value!)
 	}
@@ -2617,7 +2618,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const selected = this.context()
 		try {
 			let result: unknown
-			if (!selected.file.folder && selected.file.name.toLowerCase().endsWith('.whiteboard')) {
+			if (!selected.file.folder && selected.file.name.toLowerCase().endsWith('.agent')) {
+				if (!this.#providerReads?.offeredTools.includes('nc_agentfile_read')) throw new Error('This agent definition has no available approved reader. Ask your administrator to enable its exact native binding.')
+				this.#providerReads.begin('nc_agentfile_read')
+				result = await this.readContent('agentfile', { resourceId: `nextcloud:files:${selected.file.id}` }, signal)
+			} else if (!selected.file.folder && selected.file.name.toLowerCase().endsWith('.whiteboard')) {
 				if (!this.#providerReads?.offeredTools.includes('nc_whiteboard_read')) throw new Error('Saved Whiteboard reads are not enabled for this agent. Open the board in the native app or ask your administrator to enable the provider.')
 				this.#providerReads.begin('nc_whiteboard_read')
 				result = await this.readContent('whiteboard', { path: `nextcloud:files:${selected.file.id}` }, signal)

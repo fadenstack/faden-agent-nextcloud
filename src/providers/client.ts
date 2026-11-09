@@ -5,7 +5,7 @@ import { changedEngineConnection, engineConnectionList, engineWebhookList, type 
 
 export interface CommunicationRead extends Record<string, unknown> { resource: ProviderResource }
 export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow' | 'windmill' | 'n8n'
-export type ReadProviderId = ContentProviderId
+export type ReadProviderId = ContentProviderId | 'agentfile'
 export interface CommunicationOutcome {
 	readonly outcome: 'verified' | 'running' | 'partial'
 	readonly continue: boolean
@@ -171,7 +171,7 @@ export interface NativeProvidersApi {
 
 /** Only our fixed native endpoints; credentials/URLs never appear in tool arguments. */
 export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>, authenticatedPost = post): NativeProvidersApi {
-	const family = (provider: string) => ['windmill', 'n8n'].includes(provider) ? 'engines' : ['whiteboard', 'flow'].includes(provider) ? 'workflow' : 'content'
+	const family = (provider: string) => provider === 'agentfile' ? 'agentfile' : ['windmill', 'n8n'].includes(provider) ? 'engines' : ['whiteboard', 'flow'].includes(provider) ? 'workflow' : 'content'
 	return {
 		engineConnections: async signal => engineConnectionList(await post('/engines/connections', {}, signal)),
 		engineConnect: async (id, revision, token, signal) => changedEngineConnection(await post('/engines/connections/connect', { id, revision, token }, signal), id, revision, true),

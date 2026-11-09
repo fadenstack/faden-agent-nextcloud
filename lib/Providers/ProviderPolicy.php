@@ -41,7 +41,7 @@ final class ProviderPolicy {
 				throw new \InvalidArgumentException();
 			}
 			$value = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
-			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'])) {
+			if (!is_array($value) || ($value['version'] ?? null) !== 1 || array_diff(array_keys($value), ['version', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'talk', 'collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n', 'agentfile'])) {
 				throw new \InvalidArgumentException();
 			}
 			if (!array_key_exists($section, $value)) {
@@ -86,6 +86,15 @@ final class ProviderPolicy {
 
 	public function calendar(): array {
 		return $this->parsePolicy('calendar');
+	}
+	public function agentfile(): array {
+		$policy = $this->parsePolicy('agentfile');
+		foreach ($policy['collections'] as $id) {
+			if (!preg_match('/^[1-9][0-9]{0,14}$/D', $id)) {
+				throw new Problem('Use numeric native definition file IDs.', 503);
+			}
+		}
+		return $policy;
 	}
 
 	public function tasks(): array {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\FadenstackAgent\Controller;
 
+use OCA\FadenstackAgent\AgentFiles\AgentfileProvider;
 use OCA\FadenstackAgent\Providers\CalendarProvider;
 use OCA\FadenstackAgent\Providers\CommunicationProvider;
 use OCA\FadenstackAgent\Providers\ContactsProvider;
@@ -39,6 +40,7 @@ final class ProvidersController extends Controller {
 		private EngineReads $engines,
 		private EngineProvider $engineActions,
 		private LoggerInterface $logger,
+		private AgentfileProvider $agentfiles,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -137,10 +139,14 @@ final class ProvidersController extends Controller {
 				$calendar = [[...$tasks[0], 'provider' => 'calendar', 'tools' => ['nc_calendar_list'],
 					'conflict' => 'read-only', 'history' => 'not-applicable', 'canWrite' => false, 'discoveryOnly' => true]];
 			}
-			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities(), $this->communications->capabilities(), $this->content->capabilities(), $this->workflows->capabilities(), $this->engineActions->capabilities())];
+			return ['providers' => array_merge($calendar, $tasks, $this->contacts->capabilities(), $this->structured->capabilities(), $this->communications->capabilities(), $this->content->capabilities(), $this->workflows->capabilities(), $this->engineActions->capabilities(), $this->agentfiles->capabilities())];
 		});
 	}
 
+	#[NoAdminRequired]
+	public function agentfileRead(array $args = []): DataResponse {
+		return $this->run(fn () => $this->agentfiles->read($args));
+	}
 	#[NoAdminRequired]
 	public function engineRead(string $provider, array $args = []): DataResponse {
 		return $this->run(fn () => in_array($provider, ['windmill', 'n8n'], true) && array_key_exists('actionId', $args) ? $this->engineActions->readJob($provider, $args) : $this->engines->read($provider, $args));

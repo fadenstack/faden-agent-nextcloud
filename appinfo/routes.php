@@ -17,6 +17,7 @@ return ['routes' => [
 	['name' => 'providers#actions', 'url' => '/providers/actions', 'verb' => 'POST'],
 	['name' => 'providers#inspectAction', 'url' => '/providers/actions/{id}/inspect', 'verb' => 'POST'],
 	['name' => 'providers#capabilities', 'url' => '/providers/capabilities', 'verb' => 'POST'],
+	['name' => 'providers#agentfileRead', 'url' => '/providers/agentfile/read', 'verb' => 'POST'],
 	['name' => 'providers#engineRead', 'url' => '/providers/engines/read', 'verb' => 'POST'],
 	['name' => 'providers#enginePropose', 'url' => '/providers/engines/propose', 'verb' => 'POST'],
 	['name' => 'providers#engineApprove', 'url' => '/providers/engines/{id}/approve', 'verb' => 'POST'],
