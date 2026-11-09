@@ -1,4 +1,24 @@
 /** Human settings metadata only. No credential getter or agent-tool registration. */
+export interface EngineWorkspaceLink { readonly connectionId: string; readonly href: string }
+export function engineWorkspaceLinks(value: unknown): readonly EngineWorkspaceLink[] {
+	if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => k !== 'workspaces')
+		|| !Array.isArray((value as { workspaces?: unknown }).workspaces)) throw new Error('Invalid native workflow workspaces.')
+	const rows = (value as { workspaces: unknown[] }).workspaces
+	if (rows.length > 8) throw new Error('Too many native workflow workspaces.')
+	const ids = new Set<string>()
+	return rows.map(row => {
+		if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('Invalid native workflow workspace.')
+		const v = row as Record<string, unknown>
+		if (Object.keys(v).length !== 2 || typeof v.connectionId !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/.test(v.connectionId)
+			|| ids.has(v.connectionId) || typeof v.href !== 'string') throw new Error('Invalid native workflow workspace.')
+		const url = new URL(v.href, location.href)
+		if (url.origin !== location.origin || url.username || url.password || url.search || url.hash
+			|| !url.pathname.endsWith('/apps/fadenstack_agent/engines/workspace/' + v.connectionId)) throw new Error('Invalid native workflow workspace link.')
+		ids.add(v.connectionId)
+		return Object.freeze({ connectionId: v.connectionId, href: url.href })
+	})
+}
+
 export interface EngineConnectionSummary {
 	readonly id: string
 	readonly provider: 'windmill' | 'n8n' | 'unavailable'

@@ -1,5 +1,11 @@
 # Workflow engine connections, reads, drafts and approved runs
 
+For a configured editor on the left with chat on the right, see the
+[native workflow workspace](engine-workspace.md). Its explicit pause handoff
+retains an opaque editor; child-only reload is user requested. Native framing
+and browser sign-in restrictions still apply, including n8n's separate-tab
+fallback. This does not enable automatic clean-editor refresh.
+
 This experimental slice reads saved workflows and creates new private drafts in Windmill **1.841.0** and n8n **2.43.8**
 workflows through your own engine account. Your administrator must configure
 the endpoint, opt in to provider reads and publish the matching agent tools.
@@ -132,7 +138,7 @@ cancel an already accepted execution.
 
 ![Inspect the n8n execution](screenshots/engine-n8n-execution-audit.png)
 
-All six engine tool runtimes now exist locally. Engine-editor refresh,
+All six engine tool runtimes now exist locally. Automatic authenticated-editor refresh,
 user-bound OAuth, broader role/fault tests and release acceptance remain open.
 Providers remain experimental and default off. Live server, broader role and
 package lifecycle acceptance are separate gates. Illustrated research lives in the

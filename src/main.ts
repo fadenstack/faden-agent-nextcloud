@@ -12,6 +12,8 @@ import AssistantActivity from './components/AssistantActivity.vue'
 import mascot from '../img/app.svg?raw'
 import { installViewerIntegration, type ViewedDocument } from './integrations/nextcloud/viewer.ts'
 import { currentFileSelection, observeFileSelection } from './workspace/fileSelection.ts'
+import { installEngineSurface } from './workspace/engineSurface.ts'
+import EngineWorkspacePane from './components/EngineWorkspacePane.vue'
 
 const state = shallowReactive({ open: false, loading: false, error: '', runtime: undefined as Runtime | undefined, fileId: undefined as number | undefined, documentName: undefined as string | undefined, selectionEpoch: 0 })
 const icon = mascot.replaceAll('#FFFFFF', 'currentColor')
@@ -75,6 +77,10 @@ function mount() {
 		return
 	}
 	if (document.getElementById('fadenstack-agent-drawer')) return
+	try {
+		const surface = installEngineSurface(document)
+		if (surface) createApp(EngineWorkspacePane, { surface: markRaw(surface) }).mount(document.getElementById('fadenstack-engine-surface')!)
+	} catch { state.error = 'The native workflow workspace is unavailable. Reload before continuing.' }
 	const root = document.createElement('div')
 	root.id = 'fadenstack-agent-drawer'
 	document.body.appendChild(root)

@@ -18,6 +18,7 @@ use OCA\FadenstackAgent\Providers\EngineRequest;
 use OCA\FadenstackAgent\Providers\EngineRunPlan;
 use OCA\FadenstackAgent\Providers\EngineVault;
 use OCA\FadenstackAgent\Providers\EngineWebhookTargets;
+use OCA\FadenstackAgent\Providers\EngineWorkspace;
 use OCA\FadenstackAgent\Providers\ProviderPolicy;
 use OCA\FadenstackAgent\Service\Configuration;
 use OCA\FadenstackAgent\Service\FileService;
@@ -31,6 +32,7 @@ use OCP\Http\Client\IResponse;
 use OCP\IConfig;
 use OCP\IRequest;
 use OCP\ISession;
+use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserSession;
 use OCP\Lock\ILockingProvider;
@@ -127,6 +129,84 @@ final class EngineConnectionTest extends TestCase {
 			self::assertSame($status, $error->status);
 			self::assertStringNotContainsString(self::TOKEN, $error->getMessage());
 		}
+	}
+	private function workspace(string $provider = 'windmill'): array {
+		[, $vault, $state, $policy, $broker, $config] = $this->reads($provider);
+		$state->settings['engine_workspaces'] = json_encode(['version' => 1, 'workspaces' => [['connectionId' => 'engine-test', 'browserUrl' => 'https://editor.example.test/native']]]);
+		$urls = $this->createMock(IURLGenerator::class);
+		$urls->method('getAbsoluteURL')->willReturn('https://cloud.example.test/');
+		$urls->method('linkToRoute')->willReturn('/apps/fadenstack_agent/engines/workspace/engine-test');
+		return [new EngineWorkspace($config, new Configuration($config), new EngineEndpoint($config), $vault, $broker, $policy, $urls), $state, $vault];
+	}
+	public function testWorkspaceUsesOnlyApprovedBrowserDestinationAndNoTokenHandoff(): void {
+		[$workspace, $state] = $this->workspace();
+		$value = $workspace->resolve('engine-test');
+		self::assertSame('https://editor.example.test/native?workspace=sandbox', $value['url']);
+		self::assertSame('https://editor.example.test', $value['origin']);
+		self::assertStringNotContainsString(self::TOKEN, json_encode($value));
+		self::assertSame([['connectionId' => 'engine-test', 'href' => '/apps/fadenstack_agent/engines/workspace/engine-test']], $workspace->listing());
+		self::assertSame(['GET', 'GET'], array_column($state->trace, 'method'));
+		unset($state->settings['engine_workspaces']);
+		self::assertSame([], $workspace->listing());
+		$this->refused(fn () => $workspace->resolve('engine-test'), 403);
+	}
+	public function testWorkspaceRefusesUnknownConfigurationAndUnsafeBrowserUrls(): void {
+		[$workspace, $state] = $this->workspace();
+		foreach (['http://editor.example.test', 'javascript:alert(1)', 'https://user:secret@editor.test', 'https://editor.test/?token=secret', 'https://editor.test/#frag', 'https://editor.test/a/../b', 'https://editor.test/%2fadmin', 'http://[::1]:8080'] as $url) {
+			$state->settings['engine_workspaces'] = json_encode(['version' => 1, 'workspaces' => [['connectionId' => 'engine-test', 'browserUrl' => $url]]]);
+			$this->refused(fn () => $workspace->configured(), 503);
+		}
+		$state->settings['engine_workspaces'] = '{"version":1,"workspaces":[{"connectionId":"outside","browserUrl":"https://editor.test"}]}';
+		$this->refused(fn () => $workspace->configured(), 503);
+		self::assertSame([], $state->trace);
+	}
+	public function testWorkspaceLoopbackBrowserAddressRequiresDevelopmentMode(): void {
+		[$workspace, $state] = $this->workspace();
+		$state->settings['engine_workspaces'] = '{"version":1,"workspaces":[{"connectionId":"engine-test","browserUrl":"http://127.0.0.2:18422"}]}';
+		self::assertSame('http://127.0.0.2:18422', $workspace->configured()['engine-test']['origin']);
+		$state->settings['development'] = '0';
+		$this->refused(fn () => $workspace->configured(), 503);
+	}
+	public function testWorkspaceRequiresOwnCurrentCredentialAndScopeAndKeepsN8nBrowserAuthSeparate(): void {
+		[$workspace, $state] = $this->workspace('n8n');
+		self::assertSame('https://editor.example.test/native', $workspace->resolve('engine-test')['url']);
+		$state->status = 401;
+		$this->refused(fn () => $workspace->resolve('engine-test'), 401);
+		self::assertSame([], $workspace->listing());
+		$state->status = 200;
+		$state->actor = 'bob';
+		$this->refused(fn () => $workspace->resolve('engine-test'), 403);
+		$state->actor = 'alice';
+		$state->settings['provider_reads_enabled'] = '0';
+		$this->refused(fn () => $workspace->resolve('engine-test'), 403);
+	}
+	public function testWorkspaceDestinationChangedDuringProbeIsRefused(): void {
+		[$workspace, $state] = $this->workspace();
+		$state->afterRequest = static function () use ($state): void {
+			$state->settings['engine_workspaces'] = '{"version":1,"workspaces":[]}';
+		};
+		$this->refused(fn () => $workspace->resolve('engine-test'), 409);
+	}
+	public function testWorkspaceDoesNotTreatPortsAsCookieIsolation(): void {
+		[$workspace, $state] = $this->workspace();
+		foreach (['https://cloud.example.test:8443/', 'https://cloud.example.test/native'] as $url) {
+			$state->settings['engine_workspaces'] = json_encode(['version' => 1, 'workspaces' => [['connectionId' => 'engine-test', 'browserUrl' => $url]]]);
+			$this->refused(fn () => $workspace->resolve('engine-test'), 403);
+		}
+		self::assertSame([], $state->trace);
+	}
+	public function testDifferentEngineProvidersCannotShareBrowserCookieHost(): void {
+		[$workspace, $state] = $this->workspace();
+		$connections = json_decode($state->settings['engine_connections'], true);
+		$connections['connections'][] = ['id' => 'other-engine', 'provider' => 'n8n', 'baseUrl' => 'https://n8n-api.example.test', 'version' => EngineEndpoint::VERSIONS['n8n']];
+		$state->settings['engine_connections'] = json_encode($connections);
+		$entries = [['connectionId' => 'engine-test', 'browserUrl' => 'https://editor.example.test'], ['connectionId' => 'other-engine', 'browserUrl' => 'https://editor.example.test:8443']];
+		$state->settings['engine_workspaces'] = json_encode(['version' => 1, 'workspaces' => $entries]);
+		$this->refused(fn () => $workspace->configured(), 503);
+		$entries[1]['browserUrl'] = 'https://n8n-editor.example.test';
+		$state->settings['engine_workspaces'] = json_encode(['version' => 1, 'workspaces' => $entries]);
+		self::assertCount(2, $workspace->configured());
+		self::assertSame([], $state->trace);
 	}
 	public function testMissingConfigurationAdvertisesNoEndpoint(): void {
 		[$endpoints, , , $state] = $this->fixture();

@@ -47,7 +47,7 @@ function dismiss() { props.runtime?.workspace.dismissReceipt() }
 				{{ t('fadenstack_agent', 'Inspect Agent actions for native job status. External effects are not verified and cannot be undone.') }}
 			</p>
 			<p v-if="latest.outcome === 'committed' && !['reconcile', 'revalidate', 'nc_windmill_run', 'nc_n8n_execute'].includes(latest.operation) && latest.view !== 'refreshed'">
-				{{ latest.view === 'not_visible' ? t('fadenstack_agent', 'Saved in Nextcloud. Open the changed resource to see it.') : t('fadenstack_agent', 'Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.') }}
+				{{ ['nc_windmill_draft', 'nc_n8n_draft'].includes(latest.operation) ? t('fadenstack_agent', 'Saved in the workflow engine. Your editor has not been reloaded. Save or cancel native edits before refreshing it.') : latest.view === 'not_visible' ? t('fadenstack_agent', 'Saved in Nextcloud. Open the changed resource to see it.') : t('fadenstack_agent', 'Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.') }}
 			</p>
 			<button v-if="!open" type="button" @click="emit('show')">
 				{{ t('fadenstack_agent', 'Show chat') }}
@@ -74,6 +74,8 @@ function dismiss() { props.runtime?.workspace.dismissReceipt() }
 
 @media (width >= 1024px) {
 	.fadenstack-activity--chat-open { inset-inline-end: 444px; }
+
+	body.fadenstack-engine-workspace-page .fadenstack-activity { inset-block-start: auto; inset-block-end: 24px; }
 }
 
 @media (width < 1024px) {

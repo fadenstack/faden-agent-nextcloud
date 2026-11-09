@@ -2,6 +2,7 @@ import { generateUrl } from '@nextcloud/router'
 import { NativeViewGuard, type NativeView } from './nativeView.ts'
 import type { WriteResult } from '../integrations/nextcloud/types.ts'
 import type { ViewOutcome } from './coordinator.ts'
+import { currentEngineSurface } from './engineSurface.ts'
 
 const APPS = ['files', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed', 'collectives', 'forms', 'notes', 'bookmarks', 'flow'] as const
 type NativeApp = typeof APPS[number]
@@ -20,6 +21,9 @@ export class NativeWorkspace {
 	constructor(readonly page: Document = document) { this.main = new NativeViewGuard(page) }
 
 	snapshot(): NativeView {
+		const engine = currentEngineSurface(this.page)
+		if (engine) return engine.snapshot()
+		if (/\/apps\/fadenstack_agent\/engines\/workspace\//.test(this.page.location.pathname)) return { app: 'engine-workspace', key: this.page.location.pathname, epoch: 0, editState: 'unknown', reason: 'The native workflow workspace is unavailable. Reload before continuing.' }
 		if (!this.#frame) return this.main.snapshot()
 		try {
 			if (this.#app === 'mail' && this.main.snapshot().editState !== 'clean') return this.unknown()

@@ -6,6 +6,7 @@ import type { Identity } from '../integrations/nextcloud/types.ts'
 import { NativeWorkspace } from '../workspace/nativeWorkspace.ts'
 import { WorkspaceCoordinator } from '../workspace/coordinator.ts'
 import { refreshFiles } from '../workspace/filesRefresh.ts'
+import { currentEngineSurface } from '../workspace/engineSurface.ts'
 
 /** One runtime per authenticated page, retained when Files unmounts a tab. */
 export function createRuntime(config: Identity) {
@@ -13,8 +14,15 @@ export function createRuntime(config: Identity) {
 	const workspace = new WorkspaceCoordinator({ guard: native, prepareProvider: app => native.prepare(app), refresh: (result, signal) => result.provider ? native.refresh(result, signal) : refreshFiles(result, signal) })
 	const files = new NextcloudFiles(config)
 	const state = shallowReactive({ host: undefined as NextcloudAgent | undefined, signedIn: false, checking: false, error: '' })
-	const ensure = () => (state.host ??= markRaw(new NextcloudAgent({ ...config, locale: getLanguage().replaceAll('_', '-') }, files, undefined, workspace)))
+	const ensure = () => {
+		if (!state.host) {
+			state.host = markRaw(new NextcloudAgent({ ...config, locale: getLanguage().replaceAll('_', '-') }, files, undefined, workspace))
+			currentEngineSurface(document)?.bind(state.host.chat)
+		}
+		return state.host
+	}
 	const clear = (reason = '') => {
+		currentEngineSurface(document)?.unbind()
 		const host = state.host
 		state.host = undefined
 		state.signedIn = false

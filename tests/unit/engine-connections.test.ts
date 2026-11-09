@@ -1,10 +1,32 @@
 import { describe, expect, it, vi } from 'vitest'
 import { changedEngineConnection, engineConnectionList, engineConnectionSummary, engineWebhookList } from '../../src/providers/engineConnections.ts'
 import { nativeProvidersApi } from '../../src/providers/client.ts'
+import { createApp, markRaw } from 'vue'
+import EngineConnections from '../../src/components/EngineConnections.vue'
+
+// Native modal focus/transition behavior is exercised in the real browser.
+// Keep this regression about credential controls independent of Happy DOM's
+// delayed focus-trap transition after a fixture is unmounted.
+vi.mock('@nextcloud/vue/components/NcDialog', () => ({ default: { template: '<div role="dialog"><slot /><slot name="actions" /></div>' } }))
 
 const original = { id: 'engine-main', provider: 'n8n', label: 'My workflows', baseUrl: 'https://engine.example.test', workspace: '', version: '2.43.8', revision: 'a'.repeat(64), connected: false, setupAllowed: true, expiresAt: null, keyAccess: 'Key covers all resources of this n8n account.' }
 
 describe('human workflow connections', () => {
+	it.each(['failed', 'pending'])('keeps Disconnect available when optional native workspace navigation is %s', async mode => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+		const disconnect = vi.fn(async () => ({ ...original, connected: false, revision: 'b'.repeat(64) }))
+		const api = markRaw({ engineConnections: async () => [{ ...original, connected: true }], engineWebhooks: async () => [], engineDisconnect: disconnect,
+			engineWorkspaces: () => mode === 'failed' ? Promise.reject(new Error('Native view unavailable')) : new Promise(() => {}) })
+		const root = document.createElement('div'); document.body.append(root)
+		const app = createApp(EngineConnections, { api: api as never })
+		try {
+			app.mount(root)
+			let button: HTMLButtonElement | undefined
+			await vi.waitFor(() => { button = [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === 'Disconnect'); expect(button?.disabled).toBe(false) })
+			button!.click()
+			await vi.waitFor(() => expect(disconnect).toHaveBeenCalledExactlyOnceWith(original.id, original.revision, expect.any(AbortSignal)))
+		} finally { app.unmount(); root.remove(); vi.unstubAllGlobals() }
+	})
 	it('rejects secrets, duplicate IDs and generic routes in webhook metadata', () => {
 		const row = { id: 'own-hook', connectionId: 'own', workflowId: 'flow1', path: 'own-hook', secretStored: true }
 		expect(engineWebhookList({ targets: [row] })).toEqual([row])

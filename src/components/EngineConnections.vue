@@ -6,12 +6,14 @@ import NcButton from '@nextcloud/vue/components/NcButton'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import { AgentAvatar } from '@fadenstack/ui-vue'
 import type { NativeProvidersApi } from '../providers/client.ts'
-import type { EngineConnectionSummary, EngineWebhookSummary } from '../providers/engineConnections.ts'
+import type { EngineConnectionSummary, EngineWebhookSummary, EngineWorkspaceLink } from '../providers/engineConnections.ts'
 
 const props = defineProps<{ api: NativeProvidersApi }>()
 const emit = defineEmits<{ close: [] }>()
 const open = ref(true)
 const connections = ref<readonly EngineConnectionSummary[]>([])
+const workspaces = ref<readonly EngineWorkspaceLink[]>([])
+const workspace = computed(() => workspaces.value.find(item => item.connectionId === selectedId.value))
 const selectedId = ref('')
 const targets = ref<readonly EngineWebhookSummary[]>([])
 const selectedTarget = ref('')
@@ -25,10 +27,21 @@ const notice = ref('')
 const selectorId = useId()
 const selected = computed(() => connections.value.find(item => item.id === selectedId.value))
 const abort = new AbortController()
+let workspaceEpoch = 0
 watch(open, value => { if (!value) emit('close') })
 watch(selectedId, () => { token.value = ''; webhookSecret.value = ''; selectedTarget.value = ownTargets.value[0]?.id ?? ''; notice.value = ''; error.value = '' })
 watch(selectedTarget, () => { webhookSecret.value = '' })
 onBeforeUnmount(() => { token.value = ''; webhookSecret.value = ''; abort.abort() })
+
+/** Optional navigation must never delay or prevent native credential revocation. */
+async function loadWorkspaces() {
+	const epoch = ++workspaceEpoch
+	workspaces.value = []
+	try {
+		const values = await props.api.engineWorkspaces?.(abort.signal) ?? []
+		if (!abort.signal.aborted && epoch === workspaceEpoch) workspaces.value = values
+	} catch { /* API credentials remain manageable when editor navigation is unavailable. */ }
+}
 
 async function load() {
 	busy.value = true
@@ -39,6 +52,7 @@ async function load() {
 		if (!connections.value.some(item => item.id === selectedId.value)) selectedId.value = connections.value[0]?.id ?? ''
 		if (!ownTargets.value.some(target => target.id === selectedTarget.value)) selectedTarget.value = ownTargets.value[0]?.id ?? ''
 	} catch { error.value = t('fadenstack_agent', 'Workflow connections are unavailable. Reload to check their current state.') } finally { busy.value = false }
+	void loadWorkspaces()
 }
 onMounted(load)
 
@@ -58,6 +72,7 @@ async function change(disconnect = false) {
 		targets.value = await props.api.engineWebhooks?.(abort.signal) ?? []
 		notice.value = disconnect ? t('fadenstack_agent', 'Disconnected. New agent requests cannot use this credential.') : t('fadenstack_agent', 'API access verified and token saved in your Nextcloud account.')
 	} catch { error.value = t('fadenstack_agent', 'The connection could not be confirmed. Reload before changing it again.') } finally { busy.value = false }
+	void loadWorkspaces()
 }
 async function changeWebhook(remove = false) {
 	const current = selected.value
@@ -106,6 +121,12 @@ async function changeWebhook(remove = false) {
 					</p>
 					<p>{{ selected.connected ? t('fadenstack_agent', 'Connected') : t('fadenstack_agent', 'Not connected') }}</p>
 					<p>{{ selected.keyAccess }}</p>
+					<a v-if="selected.connected && workspace"
+						:href="workspace.href"
+						target="_blank"
+						rel="noopener noreferrer">
+						{{ t('fadenstack_agent', 'Open native workflow workspace with chat') }}
+					</a>
 					<form v-if="selected.setupAllowed" @submit.prevent="change()">
 						<NcTextField v-model="token"
 							type="password"

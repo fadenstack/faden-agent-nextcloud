@@ -30,7 +30,7 @@ export class WorkspaceCoordinator {
 
 	prepare(app: string): MutationBinding {
 		const view = this.dependencies.guard.snapshot()
-		if (view.app === app && view.editState !== 'clean') throw new Error(view.reason)
+		if (!allowsDispatch(view, app)) throw new Error(view.reason)
 		return Object.freeze({ app, view: Object.freeze({ ...view }) })
 	}
 
@@ -43,7 +43,7 @@ export class WorkspaceCoordinator {
 		if (this.#owner) throw new Error('Another change is still being reconciled.')
 		const view = this.dependencies.guard.snapshot()
 		if (view.key !== binding.view.key || view.epoch !== binding.view.epoch) throw new Error('The native view changed. Review a new proposal before saving.')
-		if (view.app === binding.app && view.editState !== 'clean') throw new Error(view.reason)
+		if (!allowsDispatch(view, binding.app)) throw new Error(view.reason)
 		this.#owner = id
 		this.state.phase = 'dispatching'
 		this.state.locked = view.app === binding.app
@@ -74,7 +74,7 @@ export class WorkspaceCoordinator {
 	assertContinuation(id: string, generation: number, binding: MutationBinding): void {
 		const view = this.dependencies.guard.snapshot()
 		if (this.#owner !== id || generation !== this.#sequence || view.key !== binding.view.key || view.epoch !== binding.view.epoch
-			|| (view.app === binding.app && view.editState !== 'clean')) throw new Error('The native view changed. Further dispatch is stopped; inspect the partial action.')
+			|| !allowsDispatch(view, binding.app)) throw new Error('The native view changed. Further dispatch is stopped; inspect the partial action.')
 	}
 
 	notDispatched(id: string, generation: number, target: string, message: string, operation: string): void {
@@ -103,6 +103,11 @@ export class WorkspaceCoordinator {
 
 	dispose(): void { this.#sequence++; this.#owner = undefined; this.state.locked = false; this.state.phase = 'idle'; this.dependencies.guard.dispose() }
 
+}
+
+function allowsDispatch(view: NativeView, app: string): boolean {
+	if (['windmill', 'n8n'].includes(app) && view.app === 'engine-workspace') return false
+	return view.app !== app || view.editState === 'clean' || (['windmill', 'n8n'].includes(app) && view.handoff === 'paused-engine-editor')
 }
 
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {

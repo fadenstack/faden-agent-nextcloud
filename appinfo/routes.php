@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 return ['routes' => [
+	['name' => 'engine_workspace#listing', 'url' => '/engines/workspaces', 'verb' => 'POST'],
+	['name' => 'engine_workspace#page', 'url' => '/engines/workspace/{id}', 'verb' => 'GET'],
 	['name' => 'engine_connections#listing', 'url' => '/engines/connections', 'verb' => 'POST'],
 	['name' => 'engine_connections#connect', 'url' => '/engines/connections/connect', 'verb' => 'POST'],
 	['name' => 'engine_connections#disconnect', 'url' => '/engines/connections/disconnect', 'verb' => 'POST'],

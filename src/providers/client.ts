@@ -1,7 +1,7 @@
 import type { ProviderCapability } from './registry.ts'
 import type { ProviderResource } from './scope.ts'
 import type { TableSnapshot, DeckBoardSnapshot } from '../integrations/nextcloud/types.ts'
-import { changedEngineConnection, engineConnectionList, engineWebhookList, type EngineConnectionSummary, type EngineWebhookSummary } from './engineConnections.ts'
+import { changedEngineConnection, engineConnectionList, engineWebhookList, engineWorkspaceLinks, type EngineConnectionSummary, type EngineWebhookSummary, type EngineWorkspaceLink } from './engineConnections.ts'
 
 export interface CommunicationRead extends Record<string, unknown> { resource: ProviderResource }
 export type ContentProviderId = 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'whiteboard' | 'flow' | 'windmill' | 'n8n'
@@ -123,6 +123,7 @@ export interface ProviderInspection {
 }
 
 export interface NativeProvidersApi {
+	engineWorkspaces?(signal: AbortSignal): Promise<readonly EngineWorkspaceLink[]>
 	/** Native human settings only; these methods are never exposed as agent tools. */
 	engineConnections?(signal: AbortSignal): Promise<readonly EngineConnectionSummary[]>
 	engineConnect?(id: string, revision: string, token: string, signal: AbortSignal): Promise<EngineConnectionSummary>
@@ -173,6 +174,7 @@ export interface NativeProvidersApi {
 export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>, authenticatedPost = post): NativeProvidersApi {
 	const family = (provider: string) => provider === 'agentfile' ? 'agentfile' : ['windmill', 'n8n'].includes(provider) ? 'engines' : ['whiteboard', 'flow'].includes(provider) ? 'workflow' : 'content'
 	return {
+		engineWorkspaces: async signal => engineWorkspaceLinks(await post('/engines/workspaces', {}, signal)),
 		engineConnections: async signal => engineConnectionList(await post('/engines/connections', {}, signal)),
 		engineConnect: async (id, revision, token, signal) => changedEngineConnection(await post('/engines/connections/connect', { id, revision, token }, signal), id, revision, true),
 		engineDisconnect: async (id, revision, signal) => changedEngineConnection(await post('/engines/connections/disconnect', { id, revision }, signal), id, revision, false),
