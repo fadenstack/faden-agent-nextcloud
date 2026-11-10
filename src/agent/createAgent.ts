@@ -96,6 +96,7 @@ import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, C
 import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEngineDraftTools, nativeEngineRunTools, nativeAgentfileTools, nativeWorkflowTools } from '../providers/contentTools.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
 import { reportEnginePlacement, type PlacementReporter } from '../providers/enginePlacement.ts'
+import { currentEngineSurface } from '../workspace/engineSurface.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
 
@@ -2319,7 +2320,20 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				const placement = await reportEnginePlacement(proposal, result, this.#reportPlacement, call.signal)
 				const app = proposal.provider === 'whiteboard' ? 'files' : proposal.provider
 				const collectionId = proposal.provider === 'whiteboard' ? String(result.result?.folderId ?? '') : result.collectionId!
-				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app, collectionId, filename: String(id) } }, call.signal) : undefined
+				const ref = String(result.result?.reference ?? id)
+				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app, collectionId, filename: ref } }, call.signal) : undefined
+				const engineSurface = typeof document !== 'undefined' ? currentEngineSurface(document) : undefined
+				if (engineSurface && ['nc_windmill_draft', 'nc_n8n_draft'].includes(name)) {
+					const copySource = (proposal as { copySource?: { reference?: string; kind?: string } }).copySource
+					engineSurface.recordResult({
+						operation: name,
+						sourceReference: copySource?.reference ?? (proposal.payload.sourceReference as string | undefined),
+						sourceKind: copySource?.kind ?? (proposal.payload.sourceKind as string | undefined),
+						createdReference: String(result.result?.reference ?? proposal.target),
+						createdName: proposal.target,
+						provider: proposal.provider as 'windmill' | 'n8n',
+					})
+				}
 				this.#providerCompletion = ['nc_windmill_run', 'nc_n8n_execute'].includes(name)
 					? `${proposal.provider === 'windmill' ? 'Windmill' : 'n8n'} verified one execution dispatch (${String(result.result?.jobId ?? result.result?.executionId)}). Native execution state: ${String(result.result?.executionState)}. This does not verify external effects. Audit only; no Undo. Inspect Agent actions without repeating the run.`
 					: `Nextcloud verified and recorded this action: ${proposal.target}. Audit only; no Undo. Start a new conversation to use fresh native context.`

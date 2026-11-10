@@ -17,7 +17,7 @@ export function createRuntime(config: Identity) {
 	const ensure = () => {
 		if (!state.host) {
 			state.host = markRaw(new NextcloudAgent({ ...config, locale: getLanguage().replaceAll('_', '-') }, files, undefined, workspace))
-			currentEngineSurface(document)?.bind(state.host.chat)
+			currentEngineSurface(document)?.bind(state.host.chat, files.nativeProviders)
 		}
 		return state.host
 	}

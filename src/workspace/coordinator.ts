@@ -59,7 +59,7 @@ export class WorkspaceCoordinator {
 			const view = this.dependencies.guard.snapshot()
 			if (view.app !== binding.app || view.key !== binding.view.key || view.epoch !== binding.view.epoch) receipt.view = 'not_visible'
 			else if (result.operation === 'revalidate') receipt.view = 'unchanged'
-			else if (view.editState !== 'clean' || signal.aborted) receipt.view = 'refresh_required'
+			else if ((view.editState !== 'clean' && !view.refreshAuthorized) || signal.aborted) receipt.view = 'refresh_required'
 			else {
 				this.state.phase = 'refreshing'
 				const refreshing = AbortSignal.any([signal, AbortSignal.timeout(15000)])

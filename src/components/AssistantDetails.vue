@@ -5,6 +5,7 @@ import NcDialog from '@nextcloud/vue/components/NcDialog'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import { AgentAvatar, Icon } from '@fadenstack/ui-vue'
 import type { FileContext } from '../integrations/nextcloud/types.ts'
+import type { WorkflowTarget } from '../workspace/engineSurface.ts'
 
 const props = defineProps<{
 	title: string
@@ -12,6 +13,8 @@ const props = defineProps<{
 	agent: string
 	context?: FileContext
 	documentContext?: boolean
+	engineTarget?: WorkflowTarget
+	engineWorkspace?: boolean
 }>()
 const emit = defineEmits<{ close: [] }>()
 const open = ref(true)
@@ -85,6 +88,31 @@ const nativeLink = computed(() => {
 						{{ t('fadenstack_agent', 'Open in Nextcloud') }}
 					</NcButton>
 				</template>
+				<template v-else-if="engineTarget">
+					<p class="fadenstack-assistant-details__selection">
+						<Icon name="page" :size="20" />
+						<strong>{{ engineTarget.name }}</strong>
+					</p>
+					<p class="fadenstack-assistant-details__path">
+						<code>{{ engineTarget.reference }}</code>
+					</p>
+					<dl class="fadenstack-engine-details-list">
+						<dt>{{ t('fadenstack_agent', 'Target source kind') }}</dt>
+						<dd>{{ engineTarget.sourceKind === 'own-draft' ? t('fadenstack_agent', 'Known own-user private draft') : t('fadenstack_agent', 'Saved native workflow') }}</dd>
+						<dt>{{ t('fadenstack_agent', 'Configured connection') }}</dt>
+						<dd>{{ engineTarget.connectionId }} ({{ engineTarget.provider }})</dd>
+						<dt>{{ t('fadenstack_agent', 'API execution account') }}</dt>
+						<dd>{{ engineTarget.apiPrincipal || t('fadenstack_agent', 'API key (account unverifiable)') }}</dd>
+						<dt>{{ t('fadenstack_agent', 'Native editor sign-in') }}</dt>
+						<dd>{{ t('fadenstack_agent', 'Separate from API; unverifiable across origins') }}</dd>
+						<dt>{{ t('fadenstack_agent', 'Live editor selection') }}</dt>
+						<dd>{{ t('fadenstack_agent', 'Unobservable across origins') }}</dd>
+					</dl>
+					<p>{{ t('fadenstack_agent', 'Operations use the explicitly selected target. A launch URL or connection alone does not prove what is open in the native editor.') }}</p>
+				</template>
+				<p v-else-if="engineWorkspace">
+					{{ t('fadenstack_agent', 'Native workflow workspace active. No workflow target is selected yet. Choose a workflow in the workspace toolbar.') }}
+				</p>
 				<p v-else>
 					{{ t('fadenstack_agent', 'No file or folder context is attached.') }}
 				</p>
@@ -135,6 +163,10 @@ const nativeLink = computed(() => {
 .fadenstack-assistant-details dt:not(:first-child) { margin-block-start: calc(3 * var(--default-grid-baseline, 4px)); }
 
 .fadenstack-assistant-details dd { margin: 0; }
+
+.fadenstack-engine-details-list { margin: 4px 0 !important; font-size: var(--font-size-small, 13px); }
+.fadenstack-engine-details-list dt { font-weight: 600; color: var(--color-text-maxcontrast); margin-block-start: 4px; }
+.fadenstack-engine-details-list dd { margin-inline-start: 0; color: var(--color-main-text); }
 
 .fadenstack-assistant-details section {
 	display: flex;

@@ -3,21 +3,33 @@
 This experimental page keeps the native engine on the left and Fadenstack chat
 on the right. It uses the ordinary engine UI, without changing either the
 engine or the official Nextcloud integration apps. It provides a conservative
-handoff for an editor whose unsaved state Nextcloud cannot inspect.
+copilot workspace for an editor whose unsaved state Nextcloud cannot inspect.
 
 1. Open **Settings → Workflow connections** in chat. Connect your own API
    account, then choose **Open native workflow workspace with chat**. The link
    opens a new Nextcloud tab; the original conversation stays on its page.
 2. Sign in to Fadenstack in the new page and to the native editor separately
    if needed. An API connection does not log you into the editor; SSO is not
-   required for the API tools.
-3. Before requesting an engine change, choose **Pause editor for agent
+   required for the API tools. The API execution account (e.g. `admin@windmill.local`)
+   is displayed in the toolbar badge.
+3. Select an explicit workflow target:
+   - For Windmill: Choose an authorized workflow or enter a private user draft path (e.g. `u/admin/draft_flow`).
+   - For n8n: Choose an authorized workflow by reference.
+   - The selected target is bound to the connection, canonical reference, source kind,
+     and current native authorization. Changing the target invalidates stale approvals.
+4. Before requesting an engine change, choose **Pause editor for agent
    changes**. This retains the same child and its unsaved content. It does not
    declare that content saved. Normal individual approval is still required.
-4. Resume the same editor when ready. A committed draft does not automatically
-   reload it. Only choose **I saved or cancelled my edits — reload editor**
-   after doing that in the native editor. This replaces only the child and
-   preserves chat, sign-in and an unfinished composer message.
+5. Control editor refresh and navigation safely:
+   - Windmill supports child-only iframe navigation to authorized targets and drafts.
+   - If **Allow child refresh after agent mutations** is enabled, a successful mutation
+     will automatically navigate the native child to the resulting draft or source.
+     This authorization is strictly single-generation and is cleared on resume or manual child navigation.
+   - Stock n8n blocks cross-origin framing (`SAMEORIGIN`); its targets and results provide
+     an explicit **Open in new tab** fallback.
+   - Only choose **I saved or cancelled my edits — reload editor** after saving or discarding
+     edits in the native editor. This replaces only the child and preserves chat, sign-in,
+     and an unfinished composer message.
 
 ![Native workspace and retained chat](screenshots/workspace-native-pane.png)
 
@@ -28,12 +40,20 @@ undo a native job or cancel one already accepted by the engine.
 
 ![Shared corner Stop](screenshots/workspace-corner-stop.png)
 
-The page knows the configured connection, not the active native node or current
-unsaved workflow selection. It does not read private editor stores or import a
-native browser cookie. Review the actual account, connection, target and saved
-version in each approval. Opening or pausing the page grants no tools, native
-permissions or credentials. **Agent actions → Inspect outcome** verifies known
-results without repeating them. Drafts and execution have no certified Undo.
+## Explicit workflow context and draft protection
+
+The page explicitly distinguishes between:
+- The target selected for agent operations.
+- The workflow actually known to be open in the native editor.
+- An editor whose current selection cannot be observed across origins.
+
+A launch URL or configured connection alone does not prove the editor's current selection.
+Never assume an open editor matches the agent's target.
+
+When the agent executes a content mutation:
+- The committed receipt distinguishes between modifying the **original source** versus creating a **new copy/draft**.
+- The result banner provides child navigation (for Windmill) or separate-tab links (for n8n).
+- If optional child navigation fails, the committed receipt is preserved and the operation is never repeated.
 
 ![Inspect a saved native draft](screenshots/workspace-native-audit.png)
 

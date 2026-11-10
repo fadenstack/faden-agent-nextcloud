@@ -22,6 +22,7 @@ import AgentfileResultsCard from './AgentfileResultsCard.vue'
 import AssistantDetails from './AssistantDetails.vue'
 import ActionHistory from './ActionHistory.vue'
 import EngineConnections from './EngineConnections.vue'
+import { currentEngineSurface } from '../workspace/engineSurface.ts'
 import '../styles/nextcloud.css'
 
 const props = defineProps<{ host: NextcloudAgent; context?: FileContext; loadingContext?: boolean; documentContext?: boolean; contextError?: string }>()
@@ -36,6 +37,14 @@ watch(() => { void version.value; return props.host.contextAttachment }, (attach
 }, { immediate: true })
 const composerContext = computed(() => { void version.value; return props.host.selection.snapshot() })
 const displayContext = computed(() => { void version.value; return chat.isBusy ? props.host.turnContext : composerContext.value })
+const engineSurface = computed(() => {
+	void version.value
+	return currentEngineSurface(document)
+})
+const engineTarget = computed(() => {
+	void version.value
+	return engineSurface.value?.state.target
+})
 const nativeContext = computed(() => {
 	void version.value
 	const app = props.host.workspace?.dependencies.guard.snapshot().app
@@ -51,6 +60,14 @@ const nativeContext = computed(() => {
 	if (app === 'notes') return t('fadenstack_agent', 'Notes view · Read notes or create a new one. Switch native editors to Preview before an automatic refresh.')
 	if (app === 'bookmarks') return t('fadenstack_agent', 'Bookmarks view · Read saved links or prepare a bookmark. Native URL fetching needs your approval.')
 	if (app === 'flow') return t('fadenstack_agent', 'Personal Flow · Review blocked drafts or approve a rule change.')
+	if (app === 'windmill') {
+		if (engineTarget.value) return t('fadenstack_agent', 'Windmill target: {name} · Native editor unobservable.', { name: engineTarget.value.name })
+		return t('fadenstack_agent', 'Windmill workspace · Select a workflow target above to begin.')
+	}
+	if (app === 'n8n') {
+		if (engineTarget.value) return t('fadenstack_agent', 'n8n target: {name} · Native editor unobservable.', { name: engineTarget.value.name })
+		return t('fadenstack_agent', 'n8n workspace · Select a workflow target above to begin.')
+	}
 	return ''
 })
 const contextLabel = computed(() => {
@@ -207,6 +224,15 @@ function signOut() {
 						<Icon :name="displayContext.file.folder ? 'book' : 'page'" :size="16" />
 						<span>{{ displayContext.file.name }}</span>
 					</button>
+					<button v-else-if="engineTarget"
+						type="button"
+						class="fadenstack-context-target"
+						:title="engineTarget.reference"
+						:aria-label="t('fadenstack_agent', 'Workflow target details: {name}', { name: engineTarget.name })"
+						@click="openDetails">
+						<Icon name="page" :size="16" />
+						<span>{{ engineTarget.name }}</span>
+					</button>
 					<span v-else-if="nativeContext" class="fdn-muted">{{ nativeContext }}</span>
 					<span v-else class="fdn-muted">{{ chat.isBusy ? t('fadenstack_agent', 'No file included in this response.') : t('fadenstack_agent', 'Search files or choose a file in Files.') }}</span>
 				</div>
@@ -236,6 +262,8 @@ function signOut() {
 			:agent="host.config.agent"
 			:context="displayContext"
 			:document-context="documentContext"
+			:engine-target="engineTarget"
+			:engine-workspace="!!engineSurface"
 			@close="closeDetails" />
 	</div>
 </template>

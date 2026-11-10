@@ -114,6 +114,11 @@ export class NativeWorkspace {
 
 	async refresh(result: WriteResult, signal: AbortSignal): Promise<ViewOutcome> {
 		if (result.provider?.app === 'spreed') return this.observeTalk(result, signal)
+		const engine = currentEngineSurface(this.page)
+		if (engine && result.provider && ['windmill', 'n8n'].includes(result.provider.app)) {
+			if (engine.descriptor.provider !== result.provider.app) return 'not_visible'
+			return engine.refresh(result, signal)
+		}
 		if (!result.provider || !this.#frame || this.#app !== result.provider.app) return 'refresh_required'
 		if (result.provider.app === 'files' && !/^[1-9][0-9]{0,14}$/.test(result.provider.collectionId)) return 'refresh_required'
 		if (this.snapshot().editState !== 'clean') return 'refresh_required'

@@ -1,5 +1,5 @@
 export type EditState = 'clean' | 'dirty' | 'unknown'
-export interface NativeView { app: string; key: string; epoch: number; editState: EditState; reason: string; handoff?: 'paused-engine-editor' }
+export interface NativeView { app: string; key: string; epoch: number; editState: EditState; reason: string; handoff?: 'paused-engine-editor'; refreshAuthorized?: boolean }
 
 /** A conservative UI latch. Blur or closing a form never establishes that edits were saved. */
 export class NativeViewGuard {

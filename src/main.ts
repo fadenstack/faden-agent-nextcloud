@@ -77,10 +77,14 @@ function mount() {
 		return
 	}
 	if (document.getElementById('fadenstack-agent-drawer')) return
+	let engineSurfaceInstance: ReturnType<typeof installEngineSurface> | undefined
 	try {
-		const surface = installEngineSurface(document)
-		if (surface) createApp(EngineWorkspacePane, { surface: markRaw(surface) }).mount(document.getElementById('fadenstack-engine-surface')!)
+		engineSurfaceInstance = installEngineSurface(document)
+		if (engineSurfaceInstance) createApp(EngineWorkspacePane, { surface: markRaw(engineSurfaceInstance) }).mount(document.getElementById('fadenstack-engine-surface')!)
 	} catch { state.error = 'The native workflow workspace is unavailable. Reload before continuing.' }
+	watch(() => state.runtime?.files.nativeProviders, api => {
+		if (api && engineSurfaceInstance) engineSurfaceInstance.setApi(api)
+	})
 	const root = document.createElement('div')
 	root.id = 'fadenstack-agent-drawer'
 	document.body.appendChild(root)

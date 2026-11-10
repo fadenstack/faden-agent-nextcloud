@@ -100,11 +100,11 @@ final class EngineWorkspace {
 		if ($own['actor'] !== $policy['actor'] || $own['endpoint']['provider'] !== $entry['provider']) {
 			throw new Problem('Connect your own native workflow account first.', 403);
 		}
-		$this->broker->probe($id, $own['apiToken'], $own['revision']);
+		$probe = $this->broker->probe($id, $own['apiToken'], $own['revision']);
 		if (($this->configured()[$id] ?? null) !== $entry || $this->policies->engine($entry['provider'])['policyVersion'] !== $policy['policyVersion']) {
 			throw new Problem('The native workspace destination or scope changed. Reload before continuing.', 409);
 		}
-		return [...$entry, 'revision' => StructuredProvider::digest([$entry, $own['revision'], $policy['policyVersion']])];
+		return [...$entry, 'revision' => StructuredProvider::digest([$entry, $own['revision'], $policy['policyVersion']]), 'apiPrincipal' => $probe['principal'] ?? null];
 	}
 
 	public function listing(): array {
