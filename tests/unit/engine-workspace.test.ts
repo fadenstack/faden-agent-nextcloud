@@ -45,6 +45,8 @@ describe('Native workflow workspace handoff', () => {
 		surface.unbind(); expect(unsubscribe).toHaveBeenCalledOnce(); expect(surface.state.busy).toBe(false)
 	})
 	it('refuses credential-bearing descriptors and foreign or substituted native workspace links', () => {
+		expect(engineSurfaceDescriptor({ ...descriptor, url: 'http://wm.faden.localhost/', origin: 'http://wm.faden.localhost' }).origin).toBe('http://wm.faden.localhost')
+		expect(() => engineSurfaceDescriptor({ ...descriptor, url: 'http://wm.faden.localhost.example/', origin: 'http://wm.faden.localhost.example' })).toThrow()
 		expect(() => engineSurfaceDescriptor({ ...descriptor, url: 'https://user:password@engine.test/' })).toThrow()
 		expect(() => engineSurfaceDescriptor({ ...descriptor, origin: 'https://other.test' })).toThrow()
 		expect(() => engineSurfaceDescriptor({ ...descriptor, apiToken: 'untrusted' })).toThrow()
@@ -65,7 +67,7 @@ describe('Native workflow workspace handoff', () => {
 					})
 				}
 				return Promise.resolve({
-					copySource: { reference: params.reference, kind: params.sourceKind || 'flow', revision: 'rev-read-1' },
+					copySource: { reference: params.reference, kind: params.sourceKind || 'saved', revision: 'c'.repeat(64) },
 					definition: { name: 'flow1' },
 				})
 			}),
@@ -75,19 +77,19 @@ describe('Native workflow workspace handoff', () => {
 		expect(list).toHaveLength(2)
 		expect(list[0].reference).toBe('u/admin/flow1')
 
-		await surface.selectTarget('u/admin/flow1', 'flow')
+		await surface.selectTarget('u/admin/flow1', 'saved')
 		expect(surface.state.target).toEqual({
 			connectionId: 'own-engine',
 			provider: 'windmill',
 			reference: 'u/admin/flow1',
-			sourceKind: 'flow',
+			sourceKind: 'saved',
 			name: 'flow1',
-			revision: 'rev-read-1',
+			revision: 'c'.repeat(64),
 			apiPrincipal: 'admin@windmill.local',
 			copySource: {
-				kind: 'flow',
+				kind: 'saved',
 				reference: 'u/admin/flow1',
-				revision: 'rev-read-1',
+				revision: 'c'.repeat(64),
 			},
 		})
 
@@ -96,15 +98,16 @@ describe('Native workflow workspace handoff', () => {
 		const binding = coordinator.prepare('windmill')
 
 		// Changing target invalidates approval binding via snapshot key
-		await surface.selectTarget('f/global/flow2', 'flow')
+		await surface.selectTarget('f/global/flow2', 'saved')
 		expect(() => coordinator.begin('stale-target', binding)).toThrow('view changed')
 	})
 	it('distinguishes original source from newly created copy and constructs safe engine URLs', () => {
 		const surface = new EngineSurface(descriptor)
 		surface.recordResult({
+			provider: 'windmill', actionId: 'c'.repeat(32), generation: 0, createdName: 'Original',
 			operation: 'nc_windmill_draft',
-			sourceReference: 'f/original',
-			createdReference: 'f/original',
+			sourceReference: 'f/group/original',
+			createdReference: 'f/group/original',
 			sourceKind: 'flow',
 			connectionId: 'own-engine',
 			isCopy: false,
@@ -112,8 +115,9 @@ describe('Native workflow workspace handoff', () => {
 		expect(surface.state.lastResult?.isCopy).toBe(false)
 
 		surface.recordResult({
+			provider: 'windmill', actionId: 'c'.repeat(32), generation: 0, createdName: 'Copy',
 			operation: 'nc_windmill_draft',
-			sourceReference: 'f/original',
+			sourceReference: 'f/group/original',
 			createdReference: 'u/admin/draft_copy',
 			sourceKind: 'flow',
 			connectionId: 'own-engine',
@@ -124,7 +128,7 @@ describe('Native workflow workspace handoff', () => {
 
 		// Windmill target URLs
 		expect(surface.targetUrl('u/admin/draft_copy')).toBe('https://engine.test/flows/edit/u/admin/draft_copy?workspace=own')
-		expect(surface.targetUrl('f/original')).toBe('https://engine.test/flows/edit/f/original?workspace=own')
+		expect(surface.targetUrl('f/group/original')).toBe('https://engine.test/flows/edit/f/group/original?workspace=own')
 
 		// n8n target URLs
 		const n8nSurface = new EngineSurface({
@@ -139,6 +143,8 @@ describe('Native workflow workspace handoff', () => {
 
 		// Child navigation origin validation
 		surface.navigateChild('https://engine.test/flows/edit/u/admin/draft_copy?workspace=own')
+		expect(surface.state.currentUrl).toBe(descriptor.url)
+		surface.confirmNavigation()
 		expect(surface.state.currentUrl).toBe('https://engine.test/flows/edit/u/admin/draft_copy?workspace=own')
 		expect(() => surface.navigateChild('https://malicious.test/exploit')).toThrow('Invalid child navigation destination.')
 	})
@@ -160,6 +166,7 @@ describe('Native workflow workspace handoff', () => {
 		surface.pause()
 		surface.authorizeRefresh(true)
 		surface.navigateChild('https://engine.test/?workspace=own#/flow/u/admin/test')
+		surface.confirmNavigation()
 		expect(surface.state.refreshAuthorized).toBe(false)
 
 		// Child load clears refresh authorization
@@ -169,13 +176,16 @@ describe('Native workflow workspace handoff', () => {
 	})
 	it('handles child-only refresh for Windmill and preserves SAMEORIGIN fallback for n8n', async () => {
 		const surface = new EngineSurface(descriptor)
+		surface.pause()
 		surface.authorizeRefresh(true)
-		const windmillResult = await surface.refresh({
+		const pending = surface.refresh({
 			operation: 'nc_windmill_draft',
 			file: { id: 0, name: 'draft', path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
 			provider: { app: 'windmill', collectionId: 'own-engine', filename: 'u/admin/draft_flow' },
 		})
-		expect(windmillResult).toBe('refreshed')
+		surface.loaded(surface.state.generation)
+		expect(await pending).toBe('refresh_required')
+		expect(surface.state.loadStatus).toBe('loaded-unverified')
 		expect(surface.state.currentUrl).toBe('https://engine.test/flows/edit/u/admin/draft_flow?workspace=own')
 
 		const n8nSurface = new EngineSurface({
@@ -254,12 +264,14 @@ describe('Native workflow workspace handoff', () => {
 			connectionId: 'own-engine',
 			provider: 'windmill',
 			reference: 'u/operator/test_flow',
-			sourceKind: 'flow',
+			sourceKind: 'saved',
 			name: 'test_flow',
+			revision: 'a'.repeat(64),
 		})
 		surface.recordResult({
+			provider: 'windmill', actionId: 'c'.repeat(32), generation: 0, createdName: 'Copy',
 			operation: 'nc_windmill_draft',
-			sourceReference: 'f/main_flow',
+			sourceReference: 'f/group/main_flow',
 			createdReference: 'u/operator/test_flow',
 			sourceKind: 'flow',
 			connectionId: 'own-engine',

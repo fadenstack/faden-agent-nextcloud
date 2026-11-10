@@ -47,7 +47,7 @@ function dismiss() { props.runtime?.workspace.dismissReceipt() }
 				{{ t('fadenstack_agent', 'Inspect Agent actions for native job status. External effects are not verified and cannot be undone.') }}
 			</p>
 			<p v-if="latest.outcome === 'committed' && !['reconcile', 'revalidate', 'nc_windmill_run', 'nc_n8n_execute'].includes(latest.operation) && latest.view !== 'refreshed'">
-				{{ ['nc_windmill_draft', 'nc_n8n_draft'].includes(latest.operation) ? t('fadenstack_agent', 'Saved in the workflow engine. Your editor has not been reloaded. Save or cancel native edits before refreshing it.') : latest.view === 'not_visible' ? t('fadenstack_agent', 'Saved in Nextcloud. Open the changed resource to see it.') : t('fadenstack_agent', 'Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.') }}
+				{{ ['nc_windmill_draft', 'nc_n8n_draft'].includes(latest.operation) ? t('fadenstack_agent', 'Saved in the workflow engine. Check the native editor display; a child load does not verify the shown result. Save or cancel native edits before reloading.') : latest.view === 'not_visible' ? t('fadenstack_agent', 'Saved in Nextcloud. Open the changed resource to see it.') : t('fadenstack_agent', 'Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.') }}
 			</p>
 			<button v-if="!open" type="button" @click="emit('show')">
 				{{ t('fadenstack_agent', 'Show chat') }}

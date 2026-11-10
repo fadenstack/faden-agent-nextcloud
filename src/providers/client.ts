@@ -1,5 +1,6 @@
 import type { ProviderCapability } from './registry.ts'
 import type { ProviderResource } from './scope.ts'
+import { workflowSource, type WorkflowSource } from '../workspace/engineSurface.ts'
 import type { TableSnapshot, DeckBoardSnapshot } from '../integrations/nextcloud/types.ts'
 import { changedEngineConnection, engineConnectionList, engineWebhookList, engineWorkspaceLinks, engineOAuthList, engineOAuthAuthorization, type EngineOAuthSummary, type EngineConnectionSummary, type EngineWebhookSummary, type EngineWorkspaceLink } from './engineConnections.ts'
 
@@ -39,7 +40,7 @@ export interface StructuredRead {
 	readonly resource: ProviderResource
 }
 export interface CommunicationProposal extends Omit<StructuredProposal, 'provider'> { provider: 'mail' | 'talk' }
-export interface ContentProposal extends Omit<StructuredProposal, 'provider'> { provider: ContentProviderId; destinationAudience?: 'private' | 'unknown' }
+export interface ContentProposal extends Omit<StructuredProposal, 'provider'> { provider: ContentProviderId; destinationAudience?: 'private' | 'unknown'; readonly copySource?: Readonly<WorkflowSource> }
 export interface ContentOutcome extends Omit<CommunicationOutcome, 'provider' | 'outcome'> { provider: ContentProviderId; outcome: 'verified' | 'running' | 'partial' | 'unknown' }
 export interface StructuredOutcome {
 	readonly status: 'saved' | 'deleted'
@@ -197,6 +198,13 @@ export function nativeProvidersApi(post: <T>(path: string, body: unknown, signal
 				if (value.id !== requestId || !/^[a-f0-9]{64}$/.test(value.digest) || value.toolName !== toolName || !['collectives', 'forms', 'notes', 'bookmarks', 'whiteboard', 'flow', 'windmill', 'n8n'].includes(value.provider) || value.provider !== toolName.split('_')[1]
 					|| value.history !== 'audit-only' || !Array.isArray(value.display) || !value.resource || !value.payload || typeof value.target !== 'string' || typeof value.limitation !== 'string'
 					|| (route === 'engines' && value.destinationAudience !== (['nc_windmill_run', 'nc_n8n_execute'].includes(toolName) ? 'unknown' : 'private'))) throw new Error('Invalid native content preview.')
+				if (route === 'engines') {
+					if (args.sourceReference !== undefined) {
+						const source = workflowSource(value.provider as 'windmill' | 'n8n', value.copySource)
+						if (source.reference !== args.sourceReference || source.revision !== args.sourceRevision || source.kind !== (args.sourceKind ?? 'saved')) throw new Error('The native copy source differs from the requested source.')
+						Object.freeze(value.copySource)
+					} else if (value.copySource !== undefined) throw new Error('Unexpected native copy source.')
+				}
 				signal.throwIfAborted()
 				return value
 			} catch (error) { await post(`/providers/${route}/${requestId}/cancel`, {}, new AbortController().signal).catch(() => {}); throw error }

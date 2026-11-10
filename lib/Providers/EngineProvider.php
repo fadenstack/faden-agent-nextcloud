@@ -163,7 +163,7 @@ final class EngineProvider {
 			if (!$this->tickets->move($identity, $requestId, ['preparing'], 'prepared')) {
 				throw new Problem('The engine preview was stopped.', 410);
 			}
-			return array_intersect_key($p, array_flip(['id', 'digest', 'toolName', 'provider', 'target', 'before', 'payload', 'resource', 'destinationAudience', 'display', 'limitation', 'history', 'expires']));
+			return array_intersect_key($p, array_flip(['id', 'digest', 'toolName', 'provider', 'target', 'before', 'payload', 'resource', 'destinationAudience', 'display', 'limitation', 'history', 'expires', 'copySource']));
 		} catch (\Throwable $error) {
 			$this->tickets->cancel($identity, $requestId);
 			throw $error;

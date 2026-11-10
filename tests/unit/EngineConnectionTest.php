@@ -405,6 +405,18 @@ final class EngineConnectionTest extends TestCase {
 		$state->settings['development'] = '0';
 		$this->refused(fn () => $workspace->configured(), 503);
 	}
+	public function testSameSiteLocalhostBrowserDomainsAreDevelopmentOnly(): void {
+		[$workspace, $state] = $this->workspace();
+		$entry = ['connectionId' => 'engine-test', 'browserUrl' => 'http://wm.faden.localhost:18421/user/login'];
+		$state->settings['engine_workspaces'] = json_encode(['version' => 1, 'workspaces' => [$entry]]);
+		self::assertSame('http://wm.faden.localhost:18421', $workspace->configured()['engine-test']['origin']);
+		$state->settings['development'] = '0';
+		$this->refused(fn () => $workspace->configured(), 503);
+		$state->settings['development'] = '1';
+		$entry['browserUrl'] = 'http://wm.faden.localhost.example.test';
+		$state->settings['engine_workspaces'] = json_encode(['version' => 1, 'workspaces' => [$entry]]);
+		$this->refused(fn () => $workspace->configured(), 503);
+	}
 	public function testWorkspaceRequiresOwnCurrentCredentialAndScopeAndKeepsN8nBrowserAuthSeparate(): void {
 		[$workspace, $state] = $this->workspace('n8n');
 		self::assertSame('https://editor.example.test/native', $workspace->resolve('engine-test')['url']);

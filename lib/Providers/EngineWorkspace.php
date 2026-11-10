@@ -59,7 +59,8 @@ final class EngineWorkspace {
 					throw new \UnexpectedValueException();
 				}
 				$authority = $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '');
-				$loopback = filter_var($p['host'], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false && str_starts_with($p['host'], '127.');
+				$loopback = (filter_var($p['host'], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false && str_starts_with($p['host'], '127.'))
+					|| $p['host'] === 'localhost' || str_ends_with($p['host'], '.localhost');
 				$origin = $development && $p['scheme'] === 'http' && $loopback ? 'http://' . $authority
 					: Configuration::origin($p['scheme'] . '://' . $authority, $development);
 				foreach ($result as $existing) {

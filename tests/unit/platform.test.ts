@@ -58,6 +58,12 @@ function fixture(change: Partial<ScopePolicy> = {}, identityChange: Partial<Scop
 }
 
 describe('reviewed host capability inventory', () => {
+	it('permits reserved localhost browser subdomains only with explicit development policy, never as a new HTTP gateway', () => {
+		expect(() => fixture({ developmentLoopback: true }, { nextcloudOrigin: 'http://nc.faden.localhost' })).not.toThrow()
+		expect(() => fixture({}, { nextcloudOrigin: 'http://nc.faden.localhost' })).toThrow('HTTPS origin')
+		expect(() => fixture({ developmentLoopback: true }, { nextcloudOrigin: 'http://nc.faden.localhost.example' })).toThrow('HTTPS origin')
+		expect(() => fixture({ developmentLoopback: true, gatewayOrigin: 'http://gateway.faden.localhost' }, { fadenstackOrigin: 'http://gateway.faden.localhost' })).toThrow('HTTPS origin')
+	})
 	it('preserves the nine Files names and conservative mutation risks without enabling the research catalog', () => {
 		expect(FILE_CAPABILITIES).toHaveLength(9)
 		expect(new Set(FILE_CAPABILITIES.map(tool => tool.name)).size).toBe(9)

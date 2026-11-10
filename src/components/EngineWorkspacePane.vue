@@ -76,6 +76,10 @@ function dismissResult() {
 	props.surface.dismissResult()
 }
 
+function onFrameLoad(event: Event) {
+	props.surface.loaded(Number((event.currentTarget as HTMLIFrameElement).dataset.generation))
+}
+
 watch(() => props.surface.state.target, target => {
 	if (!target) {
 		selectedReference.value = ''
@@ -120,13 +124,25 @@ onMounted(() => {
 				{{ t('fadenstack_agent', 'I saved or cancelled my edits — reload editor') }}
 			</button>
 			<label class="fadenstack-engine-refresh-toggle"
-				:title="t('fadenstack_agent', 'Authorize automatic child reload upon verified agent operation for this view generation')">
+				:title="t('fadenstack_agent', 'Pause first. This permits one child replacement after a verified draft save and may discard unsaved native edits. Editor state stays unknown.')">
 				<input type="checkbox"
 					:checked="surface.state.refreshAuthorized"
-					:disabled="surface.state.busy"
+					:disabled="surface.state.busy || !surface.state.paused"
 					@change="toggleRefresh">
-				<span>{{ t('fadenstack_agent', 'Authorize child refresh') }}</span>
+				<span>{{ t('fadenstack_agent', 'I saved or discarded native edits — allow one automatic child replacement') }}</span>
 			</label>
+		</div>
+		<div v-if="surface.state.pendingNavigation"
+			role="alertdialog"
+			:aria-label="t('fadenstack_agent', 'Replace native editor?')"
+			class="fadenstack-engine-results-banner">
+			<p>{{ t('fadenstack_agent', 'This replaces the native editor and can discard unsaved edits. Save or discard your native changes first. The explicit agent target stays unchanged.') }}</p>
+			<button type="button" :disabled="surface.state.busy" @click="surface.confirmNavigation()">
+				{{ t('fadenstack_agent', 'I saved or discarded my edits — continue') }}
+			</button>
+			<button type="button" @click="surface.cancelNavigation()">
+				{{ t('fadenstack_agent', 'Cancel — keep editor') }}
+			</button>
 		</div>
 
 		<!-- Target Workflow Selection Bar -->
@@ -235,7 +251,7 @@ onMounted(() => {
 						class="fadenstack-btn-sm"
 						:disabled="surface.state.busy"
 						@click="surface.navigateChild(surface.targetUrl(surface.state.lastResult!.createdReference))">
-						{{ t('fadenstack_agent', 'Navigate editor to new copy') }}
+						{{ surface.state.lastResult.isCopy ? t('fadenstack_agent', 'Navigate editor to new copy') : t('fadenstack_agent', 'Navigate editor to new draft') }}
 					</button>
 					<button v-if="surface.state.lastResult.sourceReference"
 						type="button"
@@ -250,7 +266,7 @@ onMounted(() => {
 						target="_blank"
 						rel="noopener noreferrer"
 						class="fadenstack-link-sm">
-						{{ t('fadenstack_agent', 'Open new copy in new tab') }}
+						{{ surface.state.lastResult.isCopy ? t('fadenstack_agent', 'Open new copy in new tab') : t('fadenstack_agent', 'Open new draft in new tab') }}
 					</a>
 					<a v-if="surface.state.lastResult.sourceReference"
 						:href="surface.targetUrl(surface.state.lastResult.sourceReference)"
@@ -272,13 +288,20 @@ onMounted(() => {
 		<p class="fadenstack-engine-workspace__notice">
 			{{ t('fadenstack_agent', 'Sign in to the native editor separately if asked. Your API connection does not sign in this view. Editor state is unknown; pause preserves unsaved edits. Changes are never refreshed automatically unless authorized. If framing is blocked, open the native editor in a new tab.') }}
 		</p>
+		<p v-if="surface.state.loadStatus === 'loaded-unverified'" class="fadenstack-engine-workspace__notice" role="status">
+			{{ t('fadenstack_agent', 'Native child loaded. Check its sign-in and workflow: cross-origin loading does not verify the displayed result.') }}
+		</p>
+		<p v-else-if="surface.state.loadStatus === 'failed' || surface.state.loadStatus === 'stopped'" class="fadenstack-engine-workspace__notice" role="status">
+			{{ t('fadenstack_agent', 'Native display could not be confirmed. Inspect the recorded action; do not repeat the save.') }}
+		</p>
 		<div class="fadenstack-engine-workspace__view">
 			<iframe :key="surface.state.generation"
+				:data-generation="surface.state.generation"
 				:src="surface.state.currentUrl"
 				:title="t('fadenstack_agent', 'Native workflow editor: {name}', { name: surface.descriptor.label })"
 				:inert.attr="surface.state.paused || surface.state.busy ? true : undefined"
 				referrerpolicy="no-referrer"
-				@load="surface.loaded()" />
+				@load="onFrameLoad" />
 			<div v-if="surface.state.paused || surface.state.busy" class="fadenstack-engine-workspace__cover" role="status">
 				{{ surface.state.busy ? t('fadenstack_agent', 'Assistant is working. Use the shared Stop control to stop further agent work.') : t('fadenstack_agent', 'Native editor paused. Unsaved content is retained. Resume it when you are ready.') }}
 			</div>

@@ -96,7 +96,7 @@ import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, C
 import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEngineDraftTools, nativeEngineRunTools, nativeAgentfileTools, nativeWorkflowTools } from '../providers/contentTools.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
 import { reportEnginePlacement, type PlacementReporter } from '../providers/enginePlacement.ts'
-import { currentEngineSurface } from '../workspace/engineSurface.ts'
+import { currentEngineSurface, workflowSource, type EngineSurface, type WorkflowTarget } from '../workspace/engineSurface.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
 
@@ -117,6 +117,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #davProposals = new Map<string, DavProposal>()
 	readonly #communicationProposals = new Map<string, CommunicationProposal>()
 	readonly #contentProposals = new Map<string, ContentProposal>()
+	#engineTurn: { surface: EngineSurface; target?: WorkflowTarget; key: string; epoch: number; generation: number } | undefined
+	#engineAttachment: AttachmentViewModel | undefined
 	readonly #mailProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
 	readonly #talkProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
 	readonly #collectivesProposals = new Map<string, { name: string; args: Record<string, unknown>; target: string; revision: string }>()
@@ -430,10 +432,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if (CONTENT_MUTATIONS.has(request.toolName) && request.source === 'host' && nativeContent) {
 						if (this.#writeBlocked || !this.#providerReads!.offeredTools.includes(request.toolName)) throw new Error('This native content operation is unavailable.')
 						const provider = fileCapability(request.toolName)!.subsystem as ContentProviderId
+						if (['windmill', 'n8n'].includes(provider)) this.assertEngineTarget(provider, request.arguments, request.toolName)
 						const binding = await this.workspace?.prepareProvider(provider === 'whiteboard' ? 'files' : provider)
 						await this.#providerReads!.assertProcessing(signal)
 						const plan = await files.nativeProviders!.contentPropose!(request.toolName, request.arguments, signal)
 						this.#contentProposals.set(request.callId, plan)
+						if (['windmill', 'n8n'].includes(provider)) this.assertEngineProposal(plan, request.arguments)
 						this.#providerReads!.inspectLocalSource(plan.resource)
 						this.#providerReads!.assertStructuredWrite(plan.provider, plan.resource.collectionId)
 						await this.assertContentSources(plan, signal)
@@ -2259,6 +2263,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	async readContent(provider: ReadProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown> {
+		if (['windmill', 'n8n'].includes(provider)) this.assertEngineTarget(provider, args)
 		await this.files.assertIdentity(signal)
 		const guard = this.#providerReads!.readGuard()
 		const result = await this.files.nativeProviders!.contentRead!(provider, args, signal)
@@ -2268,7 +2273,33 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		return result
 	}
 
+	private assertEngineTarget(provider: string, args: Readonly<Record<string, unknown>>, tool?: string): void {
+		const turn = this.#engineTurn
+		if (!turn) return
+		const view = turn.surface.snapshot()
+		if (view.key !== turn.key || view.epoch !== turn.epoch || provider !== turn.surface.descriptor.provider) throw new Error('The workflow workspace changed. Review a new request.')
+		if (args.connectionId !== undefined && args.connectionId !== turn.surface.descriptor.connectionId) throw new Error('Switch the workspace connection before using another engine account.')
+		const target = turn.target
+		if (!target || args.actionId !== undefined) return
+		if (args.reference !== undefined && (args.reference !== target.reference || (args.sourceKind ?? 'saved') !== target.sourceKind)) throw new Error('Switch the explicit workflow target before reading another workflow.')
+		if (tool?.endsWith('_draft') && (args.sourceReference !== target.reference || args.sourceRevision !== target.revision || (args.sourceKind ?? 'saved') !== target.sourceKind)) throw new Error('Use the selected workflow source binding for a copy, or clear the target to create a fresh draft.')
+	}
+
+	private assertEngineProposal(proposal: ContentProposal, args?: Readonly<Record<string, unknown>>): void {
+		this.assertEngineTarget(proposal.provider, args ?? {}, args ? proposal.toolName : undefined)
+		const turn = this.#engineTurn
+		if (!turn) return
+		if (proposal.resource.collectionId !== turn.surface.descriptor.connectionId) throw new Error('The proposal belongs to another workflow connection.')
+		const target = turn.target
+		if (!target) return
+		if (proposal.toolName.endsWith('_draft')) {
+			const source = workflowSource(target.provider, proposal.copySource)
+			if (source.reference !== target.reference || source.kind !== target.sourceKind || source.revision !== target.revision) throw new Error('The proposal differs from the selected native workflow source.')
+		} else if (target.sourceKind !== 'saved' || proposal.target !== target.reference || proposal.resource.revision !== target.revision) throw new Error('The execution target or native revision differs from the selected workflow.')
+	}
+
 	private async assertContentSources(proposal: ContentProposal, signal: AbortSignal, beforeFirstDispatch = true): Promise<void> {
+		if (['windmill', 'n8n'].includes(proposal.provider)) this.assertEngineProposal(proposal)
 		if (!this.#scope) throw new Error('The native content turn is unavailable.')
 		for (const reference of this.#sources.references) await this.authorizeSource(reference, signal, this.#sources.purpose(reference))
 		this.#sources.assertProcessing(this.#scope.policy)
@@ -2321,19 +2352,22 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				const app = proposal.provider === 'whiteboard' ? 'files' : proposal.provider
 				const collectionId = proposal.provider === 'whiteboard' ? String(result.result?.folderId ?? '') : result.collectionId!
 				const ref = String(result.result?.reference ?? id)
-				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app, collectionId, filename: ref } }, call.signal) : undefined
-				const engineSurface = typeof document !== 'undefined' ? currentEngineSurface(document) : undefined
-				if (engineSurface && ['nc_windmill_draft', 'nc_n8n_draft'].includes(name)) {
-					const copySource = (proposal as { copySource?: { reference?: string; kind?: string } }).copySource
-					engineSurface.recordResult({
+				const engineTurn = this.#engineTurn
+				if (engineTurn && !call.signal.aborted && ['nc_windmill_draft', 'nc_n8n_draft'].includes(name)) {
+					const copySource = proposal.copySource
+					engineTurn.surface.recordResult({
+						connectionId: collectionId,
+						actionId: result.actionId,
+						generation: engineTurn.generation,
 						operation: name,
-						sourceReference: copySource?.reference ?? (proposal.payload.sourceReference as string | undefined),
-						sourceKind: copySource?.kind ?? (proposal.payload.sourceKind as string | undefined),
+						sourceReference: copySource?.reference,
+						sourceKind: copySource?.kind,
 						createdReference: String(result.result?.reference ?? proposal.target),
 						createdName: proposal.target,
 						provider: proposal.provider as 'windmill' | 'n8n',
 					})
 				}
+				const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, { operation: name, file: { id, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' }, provider: { app, collectionId, filename: ref } }, call.signal) : undefined
 				this.#providerCompletion = ['nc_windmill_run', 'nc_n8n_execute'].includes(name)
 					? `${proposal.provider === 'windmill' ? 'Windmill' : 'n8n'} verified one execution dispatch (${String(result.result?.jobId ?? result.result?.executionId)}). Native execution state: ${String(result.result?.executionState)}. This does not verify external effects. Audit only; no Undo. Inspect Agent actions without repeating the run.`
 					: `Nextcloud verified and recorded this action: ${proposal.target}. Audit only; no Undo. Start a new conversation to use fresh native context.`
@@ -2676,6 +2710,14 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const include = !command && (this.#include ?? this.#attachment?.sends ?? false)
 		this.#include = undefined
 		try {
+			if (this.#engineAttachment) this.chat.removeAttachment(this.#engineAttachment)
+			this.#engineAttachment = undefined
+			this.#engineTurn = undefined
+			const surface = !command && typeof document !== 'undefined' ? currentEngineSurface(document) : undefined
+			if (surface) {
+				const view = surface.snapshot()
+				this.#engineTurn = { surface, target: surface.state.target, key: view.key, epoch: view.epoch, generation: surface.state.generation }
+			}
 			if (this.#closed) throw new Error('This connection has ended. Sign in again.')
 			this.#writeBlocked = false
 			this.#providerCompletion = undefined
@@ -2725,6 +2767,27 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					this.#scope.budget, () => this.#scope!.assertCurrent(), stopped)
 			}
 			stopped.throwIfAborted()
+			const target = this.#engineTurn?.target
+			if (target) {
+				const tool = `nc_${target.provider}_read`
+				if (!this.#scope || !this.#providerReads?.offeredTools.includes(tool)) throw new Error('The selected workflow has no governed native reader. Clear the target or enable its reviewed read capability.')
+				this.#providerReads.begin(tool)
+				const result = await this.readContent(target.provider, { connectionId: target.connectionId, reference: target.reference, sourceKind: target.sourceKind }, stopped) as { copySource?: unknown }
+				const source = workflowSource(target.provider, result.copySource)
+				if (source.reference !== target.reference || source.kind !== target.sourceKind || source.revision !== target.revision) throw new Error('The selected workflow changed. Select it again before sending.')
+				this.#scope.budget.consumeResult(result, 1)
+				this.assertEngineTarget(target.provider, {})
+				this.#engineAttachment = new AttachmentViewModel({
+					title: target.name,
+					implicit: true,
+					resolve: async attachmentSignal => {
+						attachmentSignal.throwIfAborted()
+						this.assertEngineTarget(target.provider, {})
+						return { title: target.name, kind: 'document', source: 'Nextcloud workflow', reference: `nextcloud:${target.provider}:${target.reference}`, content: JSON.stringify({ selectedWorkflow: { connectionId: target.connectionId, ...source }, editorState: 'unobservable; saved native source only', untrustedDocumentData: result }) }
+					},
+				})
+				this.chat.addAttachment(this.#engineAttachment)
+			}
 			if (include && !this.#active) throw new Error('Select a file first.')
 			if (this.#active) this.discovery.remember(this.#active.file)
 			if (this.#active && !this.#attachment) this.chat.addAttachment(new AttachmentViewModel({ title: this.#active.file.name, resolve: signal => this.resolveAttachment(signal) }))
@@ -2737,6 +2800,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	/** After the turn: its file context and any proposals it left are gone. */
 	#finish(command = false): void {
+		if (this.#engineAttachment) this.chat.removeAttachment(this.#engineAttachment)
+		this.#engineAttachment = undefined
+		this.#engineTurn = undefined
 		this.cancelFileOperations()
 		this.history.inspecting = false
 		this.history.verifying = false

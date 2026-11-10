@@ -65,10 +65,11 @@ export function fileReference(value: unknown): string {
 	return value
 }
 
-function origin(value: string, development = false): string {
+function origin(value: string, development = false, browser = false): string {
 	try {
 		const url = new URL(value)
-		const loopback = development && url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+		const loopback = development && url.protocol === 'http:' && (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+			|| (browser && url.hostname.endsWith('.localhost')))
 		if ((!loopback && url.protocol !== 'https:') || url.username || url.password || url.pathname !== '/' || url.search || url.hash || url.origin !== value) throw new Error()
 		return url.origin
 	} catch { throw new ScopeViolation('invalid_origin', 'A configured HTTPS origin is required.') }
@@ -105,7 +106,7 @@ export class TurnScope {
 
 	constructor(identity: ScopeIdentity, policy: ScopePolicy, published: readonly PublishedTool[],
 		readonly current: () => ScopeIdentity, readonly resolve: ResourceResolver, now = Date.now) {
-		origin(identity.nextcloudOrigin, policy.developmentLoopback)
+		origin(identity.nextcloudOrigin, policy.developmentLoopback, true)
 		origin(identity.fadenstackOrigin, policy.developmentLoopback)
 		if (![identity.nextcloudUser, identity.nextcloudBinding, identity.fadenstackPrincipal.id, identity.agent,
 			identity.schemaVersion, identity.contractVersion, identity.policyVersion].every(value => typeof value === 'string' && value.length > 0 && encoder.encode(value).length <= 1024)
