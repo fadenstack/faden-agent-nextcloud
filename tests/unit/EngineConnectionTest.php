@@ -136,7 +136,7 @@ final class EngineConnectionTest extends TestCase {
 		$s->reference = $provider === 'windmill' ? 'u/alice/source' : 'source';
 		$s->source = $provider === 'windmill'
 			? (object)['path' => $s->reference, 'summary' => 'Source', 'description' => 'original', 'value' => (object)['modules' => []], 'schema' => (object)['x-fadenstack-provenance' => (object)['native' => 'prior']]]
-			: (object)['id' => 'source', 'name' => 'Source', 'description' => 'original', 'nodes' => [(object)['id' => 'a', 'parameters' => new \stdClass()]], 'connections' => new \stdClass(), 'settings' => new \stdClass()];
+			: (object)['id' => 'source', 'name' => 'Source', 'description' => 'original', 'nodes' => [(object)['id' => 'a', 'parameters' => new \stdClass()]], 'connections' => new \stdClass(), 'settings' => new \stdClass(), 'shared' => [(object)['role' => 'workflow:owner', 'project' => (object)['type' => 'personal', 'creatorId' => 'cfec15c4-5036-4f30-957c-306f577c19cc']]]];
 		$s->beforeResponse = static function ($url) use ($s, $kind): void {
 			$s->status = 200;
 			$s->body = json_encode(match (true) {
@@ -374,7 +374,7 @@ final class EngineConnectionTest extends TestCase {
 		$urls = $this->createMock(IURLGenerator::class);
 		$urls->method('getAbsoluteURL')->willReturn('https://cloud.example.test/');
 		$urls->method('linkToRoute')->willReturn('/apps/fadenstack_agent/engines/workspace/engine-test');
-		return [new EngineWorkspace($config, new Configuration($config), new EngineEndpoint($config), $vault, $broker, $policy, $urls), $state, $vault];
+		return [new EngineWorkspace($config, new Configuration($config), new EngineEndpoint($config), $vault, $broker, $policy, $urls), $state, $vault, $policy, $broker, $config];
 	}
 	public function testWorkspaceUsesOnlyApprovedBrowserDestinationAndNoTokenHandoff(): void {
 		[$workspace, $state] = $this->workspace();
@@ -930,5 +930,53 @@ final class EngineConnectionTest extends TestCase {
 		} catch (JournalException) {
 			self::assertCount($before, $state->trace);
 		}
+	}
+	public function testN8nWorkspaceDisclosesVerifiedUserJwtPrincipalAndOpaqueKeyLimitation(): void {
+		[$workspace, $state, $vault] = $this->workspace('n8n');
+		$opaque = $workspace->resolve('engine-test');
+		self::assertNull($opaque['apiPrincipal']);
+		self::assertStringContainsString('Opaque n8n API key connected', $vault->status('engine-test')['keyAccess']);
+		$encode = static fn ($v) => rtrim(strtr(base64_encode(json_encode($v)), '+/', '-_'), '=');
+		$subA = '11111111-2222-4333-8444-555555555555';
+		$subB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+		$tokenA = $encode(['alg' => 'HS256']) . '.' . $encode(['iss' => 'n8n', 'aud' => 'public-api', 'sub' => $subA]) . '.' . str_repeat('a', 43);
+		$vault->replace('engine-test', $vault->status('engine-test')['revision'], $tokenA);
+		$resolvedA = $workspace->resolve('engine-test');
+		self::assertSame($subA, $resolvedA['apiPrincipal']);
+		self::assertNotSame($opaque['revision'], $resolvedA['revision']);
+		self::assertSame('Non-Enterprise API keys can access all resources and capabilities of the connected n8n account.', $vault->status('engine-test')['keyAccess']);
+		$tokenB = $encode(['alg' => 'HS256']) . '.' . $encode(['iss' => 'n8n', 'aud' => 'public-api', 'sub' => $subB]) . '.' . str_repeat('b', 43);
+		$vault->replace('engine-test', $vault->status('engine-test')['revision'], $tokenB);
+		$resolvedB = $workspace->resolve('engine-test');
+		self::assertSame($subB, $resolvedB['apiPrincipal']);
+		self::assertNotSame($resolvedA['revision'], $resolvedB['revision']);
+		unset($state);
+	}
+	public function testEngineReadsIncludeCurrentWorkspaceRevisionAndTrackConnectionRotation(): void {
+		[$workspace, $state, $vault, $policy, $broker, $config] = $this->workspace('windmill');
+		$reads = new EngineReads($vault, $broker, $policy, new EngineWebhookTargets($config), $workspace);
+		$state->beforeResponse = static function (string $url) use ($state): void {
+			$state->body = str_ends_with($url, '/users/whoami') ? '{"username":"alice"}' : '[{"path":"u/alice/triage","summary":"Triage"}]';
+		};
+		$initialWs = $workspace->resolve('engine-test');
+		$firstRead = $reads->read('windmill', ['connectionId' => 'engine-test']);
+		self::assertSame($initialWs['revision'], $firstRead['workspaceRevision']);
+		$vault->replace('engine-test', $vault->status('engine-test')['revision'], self::TOKEN . '-rotated');
+		$rotatedRead = $reads->read('windmill', ['connectionId' => 'engine-test']);
+		self::assertNotSame($initialWs['revision'], $rotatedRead['workspaceRevision']);
+		self::assertSame($workspace->resolve('engine-test')['revision'], $rotatedRead['workspaceRevision']);
+	}
+	public function testOAuthListingMarksGrantReconnectRequiredWhenApiPrincipalChanges(): void {
+		[$service, $vault] = $this->oauthFixture();
+		$service->start('own-oauth', $vault->status('engine-test')['revision']);
+		$this->oauthComplete($service, $vault);
+		self::assertSame('connected', $service->listing()[0]['state']);
+		$c = $vault->resolve('engine-test');
+		$encode = static fn ($v) => rtrim(strtr(base64_encode(json_encode($v)), '+/', '-_'), '=');
+		$otherToken = $encode(['alg' => 'HS256']) . '.' . $encode(['iss' => 'n8n', 'aud' => 'public-api', 'sub' => '99999999-8888-4777-8666-555555555555']) . '.' . str_repeat('c', 43);
+		$vault->replace('engine-test', $c['revision'], $otherToken, $c['webhooks'], $c['oauth'], null, $c['expiresAt']);
+		self::assertSame('reconnect', $service->listing()[0]['state']);
+		$service->remove('engine-test', 'own-oauth', $vault->status('engine-test')['revision']);
+		self::assertSame('disconnected', $service->listing()[0]['state']);
 	}
 }

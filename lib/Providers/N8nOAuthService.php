@@ -36,9 +36,11 @@ final class N8nOAuthService {
 			$expires = null;
 			try {
 				$c = $this->vault->resolve($entry['target']['connectionId']);
+				$subject = EngineAuthority::n8nVerifiedSubject($c['apiToken']);
 				$g = $c['oauth'][$id] ?? null;
 				if ($g !== null) {
-					$state = $g['state'] === 'ready' && $g['stamp'] === $entry['stamp'] ? ($g['expiresAt'] > time() + 30 ? 'connected' : 'expired') : 'reconnect';
+					$state = $g['state'] === 'ready' && $g['stamp'] === $entry['stamp'] && $subject !== null && $g['subject'] === $subject
+						? ($g['expiresAt'] > time() + 30 ? 'connected' : 'expired') : 'reconnect';
 					$expires = $g['expiresAt'];
 				}
 				$p = $c['oauthPending'];

@@ -56,7 +56,15 @@ final class EngineConnectionsController extends Controller {
 	public function connect(string $id, string $revision, string $token): DataResponse {
 		return $this->run(function () use ($id, $revision, $token): array {
 			$this->broker->probe($id, $token);
-			return $this->vault->replace($id, $revision, $token);
+			$webhooks = [];
+			$oauth = [];
+			try {
+				$c = $this->vault->resolve($id);
+				$webhooks = $c['webhooks'];
+				$oauth = $c['oauth'];
+			} catch (Problem) {
+			}
+			return $this->vault->replace($id, $revision, $token, $webhooks, $oauth);
 		}, true);
 	}
 	#[NoAdminRequired]

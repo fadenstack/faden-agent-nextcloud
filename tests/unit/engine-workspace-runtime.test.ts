@@ -99,4 +99,21 @@ describe('Governed workflow workspace through published SDK', () => {
 		if (mode === 'valid') { expect((await pending).copySource).toEqual(binding); expect(post).not.toHaveBeenCalled() }
 		else { await expect(pending).rejects.toThrow(); expect(post).toHaveBeenCalledOnce() }
 	})
+	it('invalidates the workspace target and refuses model disclosure when the connection changes in another tab', async () => {
+		const test = await fixture()
+		vi.mocked(test.native.contentRead!).mockResolvedValue({
+			provider: 'windmill',
+			connectionId: 'own',
+			reference,
+			copySource: binding,
+			workspaceRevision: 'f'.repeat(64),
+			resource: { provider: 'windmill', collectionId: 'own', resourceId: 'nextcloud:windmill:c291cmNl', revision, policyVersion: 'native-policy', sourceClass: 'standard', audience: 'private' },
+		} as never)
+		try {
+			await expect(test.send()).rejects.toThrow('workflow connection or account changed')
+			expect(test.messages).toBe('')
+			expect(test.surface.state.target).toBeUndefined()
+			expect(test.surface.state.connectionError).toContain('Reload the native workspace')
+		} finally { await test.close() }
+	})
 })

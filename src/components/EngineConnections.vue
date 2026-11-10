@@ -7,6 +7,7 @@ import NcTextField from '@nextcloud/vue/components/NcTextField'
 import { AgentAvatar } from '@fadenstack/ui-vue'
 import type { NativeProvidersApi } from '../providers/client.ts'
 import type { EngineConnectionSummary, EngineWebhookSummary, EngineWorkspaceLink, EngineOAuthSummary } from '../providers/engineConnections.ts'
+import { currentEngineSurface, notifyEngineConnectionChanged } from '../workspace/engineSurface.ts'
 
 const props = defineProps<{ api: NativeProvidersApi }>()
 const emit = defineEmits<{ close: [] }>()
@@ -58,11 +59,24 @@ async function loadOAuth() {
 	} catch { /* Optional OAuth setup never blocks local credential removal. */ }
 }
 
+async function syncConnections(): Promise<void> {
+	try {
+		const loaded = await props.api.engineConnections!(abort.signal)
+		connections.value = loaded
+		if (typeof document !== 'undefined') {
+			for (const item of loaded) currentEngineSurface(document)?.observeConnection(item.id, item.revision, item.connected, false)
+		}
+	} catch { /* Preserve prior state and primary error message. */ }
+}
+
 async function load() {
 	busy.value = true
 	error.value = ''
 	try {
 		connections.value = await props.api.engineConnections!(abort.signal)
+		if (typeof document !== 'undefined') {
+			for (const item of connections.value) currentEngineSurface(document)?.observeConnection(item.id, item.revision, item.connected, false)
+		}
 		targets.value = await props.api.engineWebhooks?.(abort.signal) ?? []
 		if (!connections.value.some(item => item.id === selectedId.value)) selectedId.value = connections.value[0]?.id ?? ''
 		if (!ownTargets.value.some(target => target.id === selectedTarget.value)) selectedTarget.value = ownTargets.value[0]?.id ?? ''
@@ -85,10 +99,14 @@ async function change(disconnect = false) {
 			? await props.api.engineDisconnect!(current.id, current.revision, abort.signal)
 			: await props.api.engineConnect!(current.id, current.revision, secret, abort.signal)
 		connections.value = connections.value.map(item => item.id === result.id ? result : item)
+		notifyEngineConnectionChanged(result.id, result.revision, result.connected)
 		targets.value = await props.api.engineWebhooks?.(abort.signal) ?? []
 		authorization.value = null
 		notice.value = disconnect ? t('fadenstack_agent', 'Local access removed. New agent requests cannot use this credential. Revoke previously issued OAuth grants in n8n to invalidate them remotely.') : t('fadenstack_agent', 'API access verified and token saved in your Nextcloud account.')
-	} catch { error.value = t('fadenstack_agent', 'The connection could not be confirmed. Reload before changing it again.') } finally { busy.value = false }
+	} catch {
+		error.value = t('fadenstack_agent', 'The connection could not be confirmed. Reload before changing it again.')
+		await syncConnections()
+	} finally { busy.value = false }
 	void loadWorkspaces()
 	void loadOAuth()
 }
@@ -105,7 +123,12 @@ async function changeOAuth(target: EngineOAuthSummary, operation: 'start' | 'ref
 			notice.value = operation === 'refresh' ? t('fadenstack_agent', 'OAuth grant refreshed. Earlier execution previews need new approval.') : t('fadenstack_agent', 'Local OAuth access and pending consent removed. Revoke the grant in n8n to invalidate tokens already issued.')
 		}
 		connections.value = await props.api.engineConnections!(abort.signal)
-	} catch { error.value = t('fadenstack_agent', 'OAuth is unconfirmed. Reload connections. An uncertain exchange or refresh is not retried; cancel local access and reconnect if required.') } finally { busy.value = false }
+		const updated = connections.value.find(item => item.id === current.id)
+		if (updated) notifyEngineConnectionChanged(updated.id, updated.revision, updated.connected)
+	} catch {
+		error.value = t('fadenstack_agent', 'OAuth is unconfirmed. Reload connections. An uncertain exchange or refresh is not retried; cancel local access and reconnect if required.')
+		await syncConnections()
+	} finally { busy.value = false }
 	void loadOAuth()
 }
 async function changeWebhook(remove = false) {
@@ -117,9 +140,13 @@ async function changeWebhook(remove = false) {
 	try {
 		const result = await props.api.engineWebhookChange!(target.id, current.id, current.revision, remove ? null : secret, abort.signal)
 		connections.value = connections.value.map(item => item.id === result.id ? result : item)
+		notifyEngineConnectionChanged(result.id, result.revision, result.connected)
 		targets.value = await props.api.engineWebhooks!(abort.signal)
 		notice.value = remove ? t('fadenstack_agent', 'Webhook key removed. New agent dispatch cannot use it.') : t('fadenstack_agent', 'Webhook key stored encrypted. Its validity is checked by n8n only during an approved dispatch; no test execution was sent.')
-	} catch { error.value = t('fadenstack_agent', 'The webhook key change could not be confirmed. Reload before changing it again.') } finally { busy.value = false }
+	} catch {
+		error.value = t('fadenstack_agent', 'The webhook key change could not be confirmed. Reload before changing it again.')
+		await syncConnections()
+	} finally { busy.value = false }
 }
 </script>
 

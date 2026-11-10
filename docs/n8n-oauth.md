@@ -19,6 +19,8 @@ inspection.
 
 ![Native n8n consent](screenshots/engine-oauth-consent.png)
 
+![Connected user-bound n8n OAuth grant](screenshots/engine-oauth-connected.png)
+
 Connecting does not approve an execution. Ask the agent to run the configured
 target, then review the native account, published version, exact inputs and
 unknown external audience before **Allow**. **Deny** and **Stop** prevent new
@@ -26,12 +28,21 @@ dispatch. Stop cannot retract a webhook already sent. Execution has no Undo.
 
 ![Review one individually approved execution](screenshots/engine-oauth-execution.png)
 
+![Verified OAuth execution receipt](screenshots/engine-oauth-execution-receipt.png)
+
 Use **Refresh OAuth grant** explicitly when required. Refresh or any connection
 change invalidates earlier execution approvals. An uncertain exchange or refresh
 is never repeated automatically: remove local OAuth access, then reconnect.
 If you denied consent or closed the n8n tab, cancel the pending local connection;
 it also expires after ten minutes. The native Deny button may return to n8n home
 without a Nextcloud callback.
+
+### Principal switching and unstranded removal
+
+- **Principal change invalidation**: When reconnecting the n8n API key under a different engine account, any existing user-bound OAuth grant is automatically demoted to `reconnect` state. This prevents an agent operating under Principal B from executing webhooks using Principal A's prior OAuth authorization.
+- **Unstranded removal**: Choosing **Remove local OAuth access** cleanly purges stored tokens from the encrypted native vault without stranding the connection. Re-authorizing via OAuth transitions the connection back to fully verified state.
+
+![OAuth grant transitions to reconnect upon principal change](screenshots/engine-n8n-principal-switch-reconnect.png)
 
 **Remove local OAuth access** stops new Nextcloud requests and clears pending
 consent. It does not revoke tokens already issued by n8n. Revoke the app's access

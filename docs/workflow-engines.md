@@ -23,7 +23,24 @@ The engine and Nextcloud integration apps need no source changes.
 4. Use **Disconnect** to remove access. An administrator endpoint change or
    the local 30-day expiry requires an explicit reconnect.
 
-![Own engine connection](screenshots/engine-connection.png)
+![Own engine connection](screenshots/engine-windmill-owner-connected.png)
+
+### Token capabilities, scopes and truthful refusals
+
+Each engine connection enforces current native token authority throughout its lifecycle:
+- **API principal identification**: On Connect, the extension queries the engine to resolve and display the authenticated API principal (e.g. `admin@windmill.local` or `alice@n8n.local`). This identity is displayed on the connection badge and in the native workspace.
+- **Read-only tokens**: A token lacking write or execution permissions (such as a Windmill viewer token) is verified and connected for reads, but truthful capability refusals block flow execution and draft creation with explicit audit records.
+- **Revoked or expired credentials**: When a token is revoked or expires, attempts to read, draft, or run trigger clean unbinding without stranding credential removal.
+- **n8n Community broad keys**: Non-Enterprise n8n API keys have full instance-wide access. The connection truthfully discloses this broad scope rather than falsely claiming fine-grained scoping. In Community edition, personal workflows belong strictly to their creator; User 2 cannot read or copy User 1's personal workflows even if the underlying key could reach them.
+- **Opaque API keys**: If an n8n API key does not permit verifying the underlying user account identity, draft creation and workflow mutations are refused with an explicit disclosure (`account ownership unverifiable`).
+
+![Windmill read-only refusal](screenshots/engine-windmill-readonly-refusal.png)
+
+![Windmill revoked token disconnect](screenshots/engine-windmill-revoked-token-disconnect.png)
+
+![n8n broad key connection](screenshots/engine-n8n-broad-key-connected.png)
+
+![n8n opaque key disclosure](screenshots/engine-n8n-opaque-key-disclosure.png)
 
 Separate Fadenstack sign-in works without enterprise SSO. Your Nextcloud
 password, native session cookie and engine connection token stay outside

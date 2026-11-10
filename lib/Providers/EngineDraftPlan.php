@@ -52,6 +52,9 @@ final class EngineDraftPlan {
 			$value = EngineDraft::parse($provider, $args['definitionJson']);
 		}
 		$principal = $this->native->principal($connection);
+		if ($copy !== null && $provider === 'n8n') {
+			EngineAuthority::assertN8nOwner((array)$copy['definition'], $principal);
+		}
 		if ($provider === 'windmill') {
 			$target = 'u/' . $principal . '/fadenstack_' . substr($requestId, 0, 16);
 			$value->path = $target;

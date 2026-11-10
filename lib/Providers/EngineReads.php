@@ -14,6 +14,7 @@ final class EngineReads {
 		private EngineBroker $broker,
 		private ProviderPolicy $policies,
 		private EngineWebhookTargets $targets,
+		private ?EngineWorkspace $workspace = null,
 	) {
 	}
 	private function policy(string $provider): array {
@@ -169,8 +170,10 @@ final class EngineReads {
 		EngineAuthority::secretGuard($encoded, $connection);
 		$resource = $this->resource($provider, $args['connectionId'], $policy, $args, [$snapshot, $endpoint['stamp'], $connection['revision']]);
 		unset($snapshot['draftRevision']);
+		$workspaceRevision = $this->workspace?->revisionFor($args['connectionId'], $connection['revision'], $policy['policyVersion']);
 		return [...$snapshot, 'provider' => $provider, 'connectionId' => $args['connectionId'],
 			...($reference === null ? [] : ['copySource' => ['reference' => $reference, 'kind' => $kind, 'revision' => $resource['revision']]]),
+			...($workspaceRevision === null ? [] : ['workspaceRevision' => $workspaceRevision]),
 			'limitation' => 'Saved native workflow data only. Engine permissions apply independently of Nextcloud. Graphs may contain inline inputs or code and stored credential references. Credential stores are never read. No editor state, execution, deployment or automatic refresh is granted by this read.',
 			'resource' => $resource];
 	}

@@ -35,6 +35,7 @@ final class EngineProvider {
 		private ILockingProvider $locks,
 		private EngineRunPlan $runs,
 		private N8nExecutePlan $n8nRuns,
+		private ?EngineWorkspace $workspace = null,
 	) {
 	}
 	public function attemptId(): ?string {
@@ -163,7 +164,9 @@ final class EngineProvider {
 			if (!$this->tickets->move($identity, $requestId, ['preparing'], 'prepared')) {
 				throw new Problem('The engine preview was stopped.', 410);
 			}
-			return array_intersect_key($p, array_flip(['id', 'digest', 'toolName', 'provider', 'target', 'before', 'payload', 'resource', 'destinationAudience', 'display', 'limitation', 'history', 'expires', 'copySource']));
+			$wsRevision = $this->workspace?->revisionFor($p['connectionId'], $p['connectionRevision'], $p['resource']['policyVersion']);
+			return [...array_intersect_key($p, array_flip(['id', 'digest', 'toolName', 'provider', 'target', 'before', 'payload', 'resource', 'destinationAudience', 'display', 'limitation', 'history', 'expires', 'copySource'])),
+				...($wsRevision === null ? [] : ['workspaceRevision' => $wsRevision])];
 		} catch (\Throwable $error) {
 			$this->tickets->cancel($identity, $requestId);
 			throw $error;

@@ -17,7 +17,7 @@ final class EngineDraft {
 	public static function copy(string $provider, \stdClass $source, string $replacementJson): array {
 		$fields = self::fields($provider);
 		$metadata = $provider === 'windmill'
-			? ['path', 'workspace_id', 'edited_by', 'edited_at', 'archived', 'extra_perms', 'dependency_job', 'versions', 'is_draft', 'draft_saved_at', 'no_deployed']
+			? ['path', 'workspace_id', 'edited_by', 'edited_at', 'archived', 'extra_perms', 'dependency_job', 'lock_error_logs', 'versions', 'version_id', 'is_draft', 'draft_saved_at', 'no_deployed']
 			: ['id', 'active', 'activeVersionId', 'createdAt', 'updatedAt', 'isArchived', 'versionId', 'versionCounter', 'sourceWorkflowId', 'triggerCount', 'pinData', 'meta', 'tags', 'shared', 'activeVersion'];
 		if (array_diff(array_keys(get_object_vars($source)), [...$fields, ...$metadata])) {
 			throw new Problem('The native source contains unsupported root fields. Review it in the native editor; no fields were silently dropped.', 400);

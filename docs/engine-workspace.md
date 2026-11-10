@@ -11,7 +11,9 @@ copilot workspace for an editor whose unsaved state Nextcloud cannot inspect.
 2. Sign in to Fadenstack in the new page and to the native editor separately
    if needed. An API connection does not log you into the editor; SSO is not
    required for the API tools. The API execution account (e.g. `admin@windmill.local`)
-   is displayed in the toolbar badge.
+   is displayed in the toolbar badge. When credentials rotate or reconnect as a different
+   principal, the badge updates immediately and any existing target selection bound to the
+   prior principal is invalidated.
 3. Select an explicit workflow target:
    - For Windmill: Choose an authorized workflow or enter a private user draft path (e.g. `u/admin/draft_flow`).
    - For n8n: Choose an authorized workflow by reference.
@@ -21,8 +23,14 @@ copilot workspace for an editor whose unsaved state Nextcloud cannot inspect.
      Changed or revoked sources stop the message. Changing the target invalidates stale approvals.
      A copy must use that exact source binding; clear the target to create a fresh draft.
 4. Before requesting an engine change, choose **Pause editor for agent
-   changes**. This retains the same child and its unsaved content. It does not
-   declare that content saved. Normal individual approval is still required.
+   changes**. Because the embedded native editor cannot be observed or inspected across
+   cross-origin boundaries, pausing the editor is an explicit handoff protocol that
+   protects unsaved native edits from uncoordinated overwrites. Attempting to propose
+   drafts without pausing the editor is blocked with a prompt to pause. This retains
+   the same child and its unsaved content. It does not declare that content saved.
+   Normal individual approval is still required.
+
+![Native workspace with API execution account badge and pause control](screenshots/workspace-principal-switch.png)
 5. Control editor refresh and navigation safely:
    - Windmill supports child-only iframe navigation to authorized targets and drafts.
    - Target and result navigation first ask you to save or discard native edits.

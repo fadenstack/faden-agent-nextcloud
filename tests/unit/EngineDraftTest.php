@@ -173,7 +173,7 @@ final class EngineDraftTest extends TestCase {
 	public function testNativeCopiesPreserveUnspecifiedOpaqueFieldsAndOriginAcrossTopLevelReplacements(): void {
 		foreach (['windmill', 'n8n'] as $provider) {
 			$source = $provider === 'windmill'
-				? '{"path":"u/alice/source","summary":"Source","description":"User description","value":{"modules":[{"id":"a","opaque":{"keep":true}}]},"schema":{"x-fadenstack-provenance":{"native":"prior"},"x-opaque":{}},"is_draft":true}'
+				? '{"path":"u/alice/source","summary":"Source","description":"User description","value":{"modules":[{"id":"a","opaque":{"keep":true}}]},"schema":{"x-fadenstack-provenance":{"native":"prior"},"x-opaque":{}},"lock_error_logs":"","version_id":1,"is_draft":false}'
 				: '{"id":"source","name":"Source","description":"User description","nodes":[{"id":"a","notes":"User notes\\n<!-- fadenstack-provenance:eyJuYXRpdmUiOiJwcmlvciJ9 -->","credentials":{"ref":{"id":"keep"}},"parameters":{},"opaque":{}}],"connections":{},"settings":{"timezone":"Europe/Berlin"},"pinData":{"omit":"sample"},"shared":[]}';
 			$patch = $provider === 'windmill' ? '{"summary":"Copy","schema":{"x-replacement":true}}' : '{"name":"Copy"}';
 			$copy = EngineDraft::copy($provider, EngineJson::decode($source), $patch);

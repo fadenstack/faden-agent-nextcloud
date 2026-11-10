@@ -27,6 +27,22 @@ final class EngineAuthority {
 		}
 		return [...$value, 'policy' => $policy];
 	}
+	public static function n8nVerifiedSubject(string $token): ?string {
+		$parts = explode('.', $token);
+		try {
+			if (count($parts) !== 3 || !preg_match('/^[A-Za-z0-9_-]+$/D', $parts[1])) {
+				return null;
+			}
+			$payload = base64_decode(strtr($parts[1], '-_', '+/') . str_repeat('=', (4 - strlen($parts[1]) % 4) % 4), true);
+			$claims = json_decode((string)$payload, true, 8, JSON_THROW_ON_ERROR);
+			return ($claims['iss'] ?? null) === 'n8n' && ($claims['aud'] ?? null) === 'public-api'
+				&& is_string($claims['sub'] ?? null) && preg_match('/^[a-f0-9-]{36}$/D', $claims['sub']) === 1
+				&& (!isset($claims['exp']) || (is_int($claims['exp']) && $claims['exp'] > time()))
+				? $claims['sub'] : null;
+		} catch (\Throwable) {
+			return null;
+		}
+	}
 	public function principal(array $connection): string {
 		$verified = $this->broker->probe($connection['endpoint']['id'], $connection['apiToken'], $connection['revision']);
 		if ($connection['endpoint']['provider'] === 'windmill') {
@@ -36,22 +52,8 @@ final class EngineAuthority {
 		// n8n 2.43.8 matches the stored key, checks its issuer/signature/expiry,
 		// and binds server-generated JWTs to the native user's ID. Legacy opaque
 		// keys remain read-only. We never infer an owner from an unaccepted JWT.
-		$parts = explode('.', $connection['apiToken']);
-		try {
-			if (count($parts) !== 3 || !preg_match('/^[A-Za-z0-9_-]+$/D', $parts[1])) {
-				throw new \UnexpectedValueException();
-			}
-			$payload = base64_decode(strtr($parts[1], '-_', '+/') . str_repeat('=', (4 - strlen($parts[1]) % 4) % 4), true);
-			$claims = json_decode($payload, true, 8, JSON_THROW_ON_ERROR);
-			if (($claims['iss'] ?? null) !== 'n8n' || ($claims['aud'] ?? null) !== 'public-api'
-				|| !is_string($claims['sub'] ?? null) || !preg_match('/^[a-f0-9-]{36}$/D', $claims['sub'])
-				|| (isset($claims['exp']) && (!is_int($claims['exp']) || $claims['exp'] <= time()))) {
-				throw new \UnexpectedValueException();
-			}
-			return $claims['sub'];
-		} catch (\Throwable) {
-			throw new Problem('For n8n writes, reconnect with a current native user API key whose account can be verified.', 403);
-		}
+		return self::n8nVerifiedSubject($connection['apiToken'])
+			?? throw new Problem('For n8n writes, reconnect with a current native user API key whose account can be verified.', 403);
 	}
 	public static function assertN8nOwner(array $definition, string $principal): void {
 		$shared = $definition['shared'] ?? null;

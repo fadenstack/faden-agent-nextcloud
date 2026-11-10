@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { changedEngineConnection, engineConnectionList, engineConnectionSummary, engineWebhookList, engineOAuthList, engineOAuthAuthorization, type EngineOAuthSummary } from '../../src/providers/engineConnections.ts'
 import { nativeProvidersApi } from '../../src/providers/client.ts'
+import { EngineSurface } from '../../src/workspace/engineSurface.ts'
 import { createApp, markRaw } from 'vue'
 import EngineConnections from '../../src/components/EngineConnections.vue'
 
@@ -119,5 +120,67 @@ describe('human workflow connections', () => {
 		await api.engineDisconnect!(original.id, connected.revision, signal)
 		expect(sent.map(item => item.path)).toEqual(['/engines/connections', '/engines/connections/connect', '/engines/connections/disconnect'])
 		expect(sent[2]!.body).toEqual({ id: original.id, revision: connected.revision })
+	})
+	it('resynchronizes connection revision after a failed OAuth refresh so local removal and disconnect never strand', async () => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+		let currentRevision = original.revision
+		let oauthState: EngineOAuthSummary['state'] = 'connected'
+		const target = { id: 'own-oauth', connectionId: original.id, workflowId: 'flow1', issuer: 'https://editor.example.test', expiresAt: 1999999999 }
+		const removeOAuth = vi.fn(async (_tid: string, _cid: string, rev: string) => {
+			if (rev !== currentRevision) throw new Error('Stale revision 409')
+			currentRevision = 'c'.repeat(64)
+			oauthState = 'disconnected'
+			return { ...original, connected: true, revision: currentRevision }
+		})
+		const api = markRaw({
+			engineConnections: async () => [{ ...original, connected: true, revision: currentRevision }],
+			engineWebhooks: async () => [],
+			engineOAuth: async () => [{ ...target, state: oauthState }],
+			engineOAuthRefresh: async () => {
+				currentRevision = 'b'.repeat(64)
+				oauthState = 'reconnect'
+				throw new Error('Remote OIDC refresh rejected (consent revoked)')
+			},
+			engineOAuthRemove: removeOAuth,
+		})
+		const root = document.createElement('div'); document.body.append(root)
+		const app = createApp(EngineConnections, { api: api as never })
+		try {
+			app.mount(root)
+			const button = (name: string) => [...root.querySelectorAll('button')].find(b => b.textContent?.trim() === name)
+			await vi.waitFor(() => expect(button('Refresh OAuth grant')).toBeDefined())
+			button('Refresh OAuth grant')!.click()
+			await vi.waitFor(() => expect(root.textContent).toContain('OAuth is unconfirmed'))
+			await vi.waitFor(() => expect(button('Remove local OAuth access')).toBeDefined())
+			button('Remove local OAuth access')!.click()
+			await vi.waitFor(() => expect(removeOAuth).toHaveBeenCalledExactlyOnceWith('own-oauth', original.id, 'b'.repeat(64), expect.any(AbortSignal)))
+			await vi.waitFor(() => expect(root.textContent).toContain('Local OAuth access and pending consent removed'))
+		} finally { app.unmount(); root.remove(); vi.unstubAllGlobals() }
+	})
+	it('invalidates the active EngineSurface target and result state when the connection is rotated or disconnected', async () => {
+		vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+		const surface = new EngineSurface({ connectionId: original.id, provider: 'n8n', label: 'My workflows', url: 'https://editor.example.test', origin: 'https://editor.example.test', revision: 'f'.repeat(64), apiPrincipal: '11111111-2222-4333-8444-555555555555' })
+		;(window as unknown as { __fadenstackEngineSurface?: EngineSurface }).__fadenstackEngineSurface = surface
+		surface.setTarget({ connectionId: original.id, provider: 'n8n', reference: 'flow1', sourceKind: 'saved', name: 'Flow 1', revision: 'd'.repeat(64), copySource: { reference: 'flow1', kind: 'saved', revision: 'd'.repeat(64) }, apiPrincipal: '11111111-2222-4333-8444-555555555555' })
+		surface.recordResult({ connectionId: original.id, actionId: 'e'.repeat(32), generation: 0, operation: 'nc_n8n_draft', createdReference: 'flow2', createdName: 'Flow 2', provider: 'n8n' })
+		surface.pause()
+		const disconnect = vi.fn(async () => ({ ...original, connected: false, revision: 'b'.repeat(64) }))
+		const api = markRaw({ engineConnections: async () => [{ ...original, connected: true }], engineWebhooks: async () => [], engineDisconnect: disconnect })
+		const root = document.createElement('div'); document.body.append(root)
+		const app = createApp(EngineConnections, { api: api as never })
+		try {
+			app.mount(root)
+			const button = (name: string) => [...root.querySelectorAll('button')].find(b => b.textContent?.trim() === name)
+			await vi.waitFor(() => expect(button('Disconnect')?.disabled).toBe(false))
+			button('Disconnect')!.click()
+			await vi.waitFor(() => expect(disconnect).toHaveBeenCalledOnce())
+			expect(surface.state.target).toBeUndefined()
+			expect(surface.state.lastResult).toBeUndefined()
+			expect(surface.state.paused).toBe(false)
+			expect(surface.state.connectionError).toContain('disconnected')
+		} finally {
+			delete (window as unknown as { __fadenstackEngineSurface?: EngineSurface }).__fadenstackEngineSurface
+			surface.unbind(); app.unmount(); root.remove(); vi.unstubAllGlobals()
+		}
 	})
 })

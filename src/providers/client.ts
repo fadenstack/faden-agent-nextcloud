@@ -40,7 +40,7 @@ export interface StructuredRead {
 	readonly resource: ProviderResource
 }
 export interface CommunicationProposal extends Omit<StructuredProposal, 'provider'> { provider: 'mail' | 'talk' }
-export interface ContentProposal extends Omit<StructuredProposal, 'provider'> { provider: ContentProviderId; destinationAudience?: 'private' | 'unknown'; readonly copySource?: Readonly<WorkflowSource> }
+export interface ContentProposal extends Omit<StructuredProposal, 'provider'> { provider: ContentProviderId; destinationAudience?: 'private' | 'unknown'; readonly copySource?: Readonly<WorkflowSource>; readonly workspaceRevision?: string }
 export interface ContentOutcome extends Omit<CommunicationOutcome, 'provider' | 'outcome'> { provider: ContentProviderId; outcome: 'verified' | 'running' | 'partial' | 'unknown' }
 export interface StructuredOutcome {
 	readonly status: 'saved' | 'deleted'

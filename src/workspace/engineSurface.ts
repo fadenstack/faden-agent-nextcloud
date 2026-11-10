@@ -93,11 +93,14 @@ export class EngineSurface {
 		lastResult: WorkflowResultRecord | undefined
 		pendingNavigation: { url: string; epoch: number } | undefined
 		loadStatus: 'unknown' | 'loading' | 'loaded-unverified' | 'stopped' | 'failed'
+		connectionRevision: string | undefined
+		connectionError: string | undefined
 	}
 
 	api: NativeProvidersApi | undefined
 
 	#unsubscribe: (() => void) | undefined
+	#channel: BroadcastChannel | undefined
 	#selection = 0
 	#loaded: { generation: number; resolve: () => void } | undefined
 
@@ -113,11 +116,48 @@ export class EngineSurface {
 			lastResult: undefined,
 			pendingNavigation: undefined,
 			loadStatus: 'unknown',
+			connectionRevision: undefined,
+			connectionError: undefined,
 		})
+		if (typeof BroadcastChannel !== 'undefined') {
+			try {
+				this.#channel = new BroadcastChannel('fadenstack_engine_connections')
+				this.#channel.onmessage = event => {
+					const data = event?.data as { connectionId?: unknown; revision?: unknown; connected?: unknown } | undefined
+					if (data && typeof data.connectionId === 'string' && typeof data.revision === 'string' && typeof data.connected === 'boolean') {
+						this.observeConnection(data.connectionId, data.revision, data.connected, true)
+					}
+				}
+			} catch { /* Same-page invalidation and server revision checks still apply. */ }
+		}
 	}
 
 	get apiPrincipal(): string | null | undefined {
 		return this.descriptor.apiPrincipal
+	}
+
+	invalidateConnection(reason = 'The workflow connection or account changed. Reload the native workspace before continuing.'): void {
+		this.#selection++
+		this.state.target = undefined
+		this.state.lastResult = undefined
+		this.state.pendingNavigation = undefined
+		this.state.refreshAuthorized = false
+		this.state.paused = false
+		this.state.connectionError = reason
+		this.state.epoch++
+	}
+
+	observeConnection(connectionId: string, revision: string, connected: boolean, mutated = false): void {
+		if (connectionId !== this.descriptor.connectionId) return
+		if (!connected) {
+			this.invalidateConnection('The workflow connection was disconnected. Reconnect your account and reload the native workspace.')
+			return
+		}
+		if (mutated || (this.state.connectionRevision !== undefined && this.state.connectionRevision !== revision)) {
+			this.invalidateConnection('The workflow connection or account changed. Reload the native workspace before continuing.')
+			return
+		}
+		this.state.connectionRevision = revision
 	}
 
 	loaded(generation = this.state.generation): void {
@@ -278,6 +318,16 @@ export class EngineSurface {
 	}
 
 	snapshot(): NativeView {
+		if (this.state.connectionError) {
+			return {
+				app: this.descriptor.provider,
+				key: 'engine-workspace:' + this.descriptor.connectionId + ':invalidated:' + this.state.epoch,
+				epoch: this.state.epoch,
+				editState: 'unknown',
+				refreshAuthorized: false,
+				reason: this.state.connectionError,
+			}
+		}
 		const targetKey = this.state.target
 			? `:${this.state.target.reference}:${this.state.target.sourceKind}:${this.state.target.revision}`
 			: ':no-target'
@@ -306,18 +356,26 @@ export class EngineSurface {
 
 	unbind(): void {
 		this.#unsubscribe?.(); this.#unsubscribe = undefined; this.state.busy = false
+		try { this.#channel?.close() } catch { /* Ignore channel close errors */ }
+		this.#channel = undefined
 		this.api = undefined
 		this.setTarget(undefined)
 		this.state.lastResult = undefined
 	}
 
 	async loadWorkflows(signal?: AbortSignal): Promise<readonly WorkflowSummary[]> {
+		if (this.state.connectionError) throw new Error(this.state.connectionError)
 		if (!this.api?.contentRead) return []
-		const result = await this.api.contentRead(this.descriptor.provider, { connectionId: this.descriptor.connectionId }, signal ?? new AbortController().signal) as { workflows?: readonly WorkflowSummary[] }
+		const result = await this.api.contentRead(this.descriptor.provider, { connectionId: this.descriptor.connectionId }, signal ?? new AbortController().signal) as { workflows?: readonly WorkflowSummary[]; workspaceRevision?: string }
+		if (typeof result.workspaceRevision === 'string' && result.workspaceRevision !== this.descriptor.revision) {
+			this.invalidateConnection('The workflow connection or account changed. Reload the native workspace before continuing.')
+			throw new Error(this.state.connectionError!)
+		}
 		return result.workflows ?? []
 	}
 
 	async selectTarget(reference: string, sourceKind: 'saved' | 'own-draft' = 'saved', name?: string, signal?: AbortSignal): Promise<WorkflowTarget> {
+		if (this.state.connectionError) throw new Error(this.state.connectionError)
 		if (this.state.busy) throw new Error('Cannot change workflow target while assistant is working.')
 		if (!this.api?.contentRead) throw new Error('Native providers API is unavailable.')
 		workflowReference(this.descriptor.provider, reference)
@@ -330,8 +388,13 @@ export class EngineSurface {
 			copySource?: { reference: string; kind: string; revision: string }
 			resource?: { revision: string }
 			definition?: { summary?: string; name?: string }
+			workspaceRevision?: string
 		}
 		signal?.throwIfAborted()
+		if (typeof result.workspaceRevision === 'string' && result.workspaceRevision !== this.descriptor.revision) {
+			this.invalidateConnection('The workflow connection or account changed. Reload the native workspace before continuing.')
+			throw new Error(this.state.connectionError!)
+		}
 		if (request !== this.#selection || epoch !== this.state.epoch || this.api !== api || this.state.busy) throw new Error('The workflow selection changed. Select the target again.')
 		const source = workflowSource(this.descriptor.provider, result.copySource)
 		if (source.reference !== reference || source.kind !== sourceKind) throw new Error('The native target differs from the requested workflow.')
@@ -367,4 +430,14 @@ export function installEngineSurface(page: Document): EngineSurface | undefined 
 }
 export function currentEngineSurface(page: Document): EngineSurface | undefined {
 	return surfaces.get(page) ?? (typeof window !== 'undefined' ? (window as unknown as { __fadenstackEngineSurface?: EngineSurface }).__fadenstackEngineSurface : undefined)
+}
+export function notifyEngineConnectionChanged(connectionId: string, revision: string, connected: boolean): void {
+	if (typeof document !== 'undefined') currentEngineSurface(document)?.observeConnection(connectionId, revision, connected, true)
+	if (typeof BroadcastChannel !== 'undefined') {
+		try {
+			const channel = new BroadcastChannel('fadenstack_engine_connections')
+			channel.postMessage({ connectionId, revision, connected })
+			channel.close()
+		} catch { /* Ignore BroadcastChannel errors */ }
+	}
 }

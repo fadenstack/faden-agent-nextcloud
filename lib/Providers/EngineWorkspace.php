@@ -105,7 +105,17 @@ final class EngineWorkspace {
 		if (($this->configured()[$id] ?? null) !== $entry || $this->policies->engine($entry['provider'])['policyVersion'] !== $policy['policyVersion']) {
 			throw new Problem('The native workspace destination or scope changed. Reload before continuing.', 409);
 		}
-		return [...$entry, 'revision' => StructuredProvider::digest([$entry, $own['revision'], $policy['policyVersion']]), 'apiPrincipal' => $probe['principal'] ?? null];
+		$principal = $probe['principal'] ?? ($entry['provider'] === 'n8n' ? EngineAuthority::n8nVerifiedSubject($own['apiToken']) : null);
+		return [...$entry, 'revision' => StructuredProvider::digest([$entry, $own['revision'], $policy['policyVersion']]), 'apiPrincipal' => $principal];
+	}
+
+	public function revisionFor(string $id, string $connectionRevision, string $policyVersion): ?string {
+		try {
+			$entry = $this->configured()[EngineEndpoint::id($id)] ?? null;
+			return $entry === null ? null : StructuredProvider::digest([$entry, $connectionRevision, $policyVersion]);
+		} catch (\Throwable) {
+			return null;
+		}
 	}
 
 	public function listing(): array {

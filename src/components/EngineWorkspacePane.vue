@@ -100,8 +100,8 @@ onMounted(() => {
 		<div class="fadenstack-engine-workspace__toolbar" role="toolbar" :aria-label="t('fadenstack_agent', 'Workspace toolbar')">
 			<strong><Icon name="page" :size="16" /> {{ surface.descriptor.label }}</strong>
 			<span class="fadenstack-engine-badge fadenstack-engine-account"
-				:title="surface.descriptor.apiPrincipal ? t('fadenstack_agent', 'API credentials verified for execution') : t('fadenstack_agent', 'API execution account unverifiable')">
-				{{ surface.descriptor.apiPrincipal ? t('fadenstack_agent', 'API: {name}', { name: surface.descriptor.apiPrincipal }) : t('fadenstack_agent', 'API: unverifiable') }}
+				:title="surface.state.connectionError ? surface.state.connectionError : (surface.descriptor.apiPrincipal ? t('fadenstack_agent', 'API credentials verified for execution') : t('fadenstack_agent', 'API execution account unverifiable'))">
+				{{ surface.state.connectionError ? t('fadenstack_agent', 'API: changed — reload workspace') : (surface.descriptor.apiPrincipal ? t('fadenstack_agent', 'API: {name}', { name: surface.descriptor.apiPrincipal }) : t('fadenstack_agent', 'API: unverifiable')) }}
 			</span>
 			<span class="fadenstack-engine-badge fadenstack-engine-editor-status"
 				:title="t('fadenstack_agent', 'Native editor state cannot be observed across origins')">
@@ -131,6 +131,9 @@ onMounted(() => {
 					@change="toggleRefresh">
 				<span>{{ t('fadenstack_agent', 'I saved or discarded native edits — allow one automatic child replacement') }}</span>
 			</label>
+		</div>
+		<div v-if="surface.state.connectionError" role="alert" class="fadenstack-engine-error">
+			{{ surface.state.connectionError }}
 		</div>
 		<div v-if="surface.state.pendingNavigation"
 			role="alertdialog"
@@ -368,7 +371,7 @@ onMounted(() => {
 
 .fadenstack-btn-clear { background: transparent; }
 
-.fadenstack-engine-error { color: var(--color-error); font-size: 12px; }
+.fadenstack-engine-error { padding: 6px 12px; background: color-mix(in srgb, var(--color-error) 12%, var(--color-main-background)); border: 1px solid var(--color-error); border-radius: var(--border-radius-element, 6px); color: var(--color-main-text); font-size: 13px; font-weight: 500; }
 
 /* Committed results banner */
 .fadenstack-engine-results-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; padding: 8px 12px; background: color-mix(in srgb, var(--color-success) 12%, var(--color-main-background)); border: 1px solid var(--color-success); border-radius: var(--border-radius-element, 6px); margin: 6px 12px; font-size: 13px; }

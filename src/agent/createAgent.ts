@@ -437,10 +437,16 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						await this.#providerReads!.assertProcessing(signal)
 						const plan = await files.nativeProviders!.contentPropose!(request.toolName, request.arguments, signal)
 						this.#contentProposals.set(request.callId, plan)
-						if (['windmill', 'n8n'].includes(provider)) this.assertEngineProposal(plan, request.arguments)
-						this.#providerReads!.inspectLocalSource(plan.resource)
-						this.#providerReads!.assertStructuredWrite(plan.provider, plan.resource.collectionId)
-						await this.assertContentSources(plan, signal)
+						try {
+							if (['windmill', 'n8n'].includes(provider)) this.assertEngineProposal(plan, request.arguments)
+							this.#providerReads!.inspectLocalSource(plan.resource)
+							this.#providerReads!.assertStructuredWrite(plan.provider, plan.resource.collectionId)
+							await this.assertContentSources(plan, signal)
+						} catch (error) {
+							this.#contentProposals.delete(request.callId)
+							await files.nativeProviders!.contentCancel?.(plan).catch(() => {})
+							throw error
+						}
 						if (binding) this.#proposalViews.set(request.callId, binding)
 						request = { ...request, canAllowAlways: false, canAllowForSession: false, arguments: { ...request.arguments, proposalId: plan.id, digest: plan.digest, target: plan.target, before: plan.before, content: plan.payload, limitation: plan.limitation, nativeAudience: plan.destinationAudience ?? plan.resource.audience, fields: plan.display } }
 					}
@@ -2269,6 +2275,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const result = await this.files.nativeProviders!.contentRead!(provider, args, signal)
 		guard(); signal.throwIfAborted()
 		if (result.resource.provider !== provider) throw new Error('Invalid native content source.')
+		if (['windmill', 'n8n'].includes(provider) && this.#engineTurn && typeof result.workspaceRevision === 'string'
+			&& result.workspaceRevision !== this.#engineTurn.surface.descriptor.revision) {
+			this.#engineTurn.surface.invalidateConnection('The workflow connection or account changed. Reload the native workspace before continuing.')
+			throw new Error('The workflow connection or account changed. Reload the native workspace before continuing.')
+		}
 		this.#providerReads!.recordSource(result.resource)
 		return result
 	}
@@ -2276,6 +2287,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	private assertEngineTarget(provider: string, args: Readonly<Record<string, unknown>>, tool?: string): void {
 		const turn = this.#engineTurn
 		if (!turn) return
+		if (turn.surface.state.connectionError) throw new Error(turn.surface.state.connectionError)
 		const view = turn.surface.snapshot()
 		if (view.key !== turn.key || view.epoch !== turn.epoch || provider !== turn.surface.descriptor.provider) throw new Error('The workflow workspace changed. Review a new request.')
 		if (args.connectionId !== undefined && args.connectionId !== turn.surface.descriptor.connectionId) throw new Error('Switch the workspace connection before using another engine account.')
@@ -2290,6 +2302,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const turn = this.#engineTurn
 		if (!turn) return
 		if (proposal.resource.collectionId !== turn.surface.descriptor.connectionId) throw new Error('The proposal belongs to another workflow connection.')
+		if (typeof proposal.workspaceRevision === 'string' && proposal.workspaceRevision !== turn.surface.descriptor.revision) {
+			turn.surface.invalidateConnection('The workflow connection or account changed. Reload the native workspace before continuing.')
+			throw new Error('The workflow connection or account changed. Reload the native workspace before continuing.')
+		}
 		const target = turn.target
 		if (!target) return
 		if (proposal.toolName.endsWith('_draft')) {
@@ -2715,6 +2731,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			this.#engineTurn = undefined
 			const surface = !command && typeof document !== 'undefined' ? currentEngineSurface(document) : undefined
 			if (surface) {
+				if (surface.state.connectionError) throw new Error(surface.state.connectionError)
 				const view = surface.snapshot()
 				this.#engineTurn = { surface, target: surface.state.target, key: view.key, epoch: view.epoch, generation: surface.state.generation }
 			}

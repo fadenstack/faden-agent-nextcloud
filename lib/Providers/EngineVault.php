@@ -60,7 +60,11 @@ final class EngineVault {
 		return ['id' => $id, 'provider' => $endpoint['provider'], 'label' => $endpoint['label'], 'baseUrl' => $endpoint['baseUrl'],
 			'workspace' => $endpoint['workspace'], 'version' => $endpoint['version'], 'revision' => hash('sha256', $raw),
 			'connected' => $value !== null, 'expiresAt' => $value['expiresAt'] ?? null, 'setupAllowed' => true,
-			'keyAccess' => $endpoint['provider'] === 'n8n' ? 'Non-Enterprise API keys can access all resources and capabilities of the connected n8n account.' : 'Use a scoped Windmill user token for the required resources and actions.'];
+			'keyAccess' => $endpoint['provider'] === 'n8n'
+				? ($value !== null && EngineAuthority::n8nVerifiedSubject($value['apiToken']) === null
+					? 'Opaque n8n API key connected (account ownership unverifiable; read-only discovery and reads only). Non-Enterprise user API keys can access all resources and capabilities of the connected n8n account.'
+					: 'Non-Enterprise API keys can access all resources and capabilities of the connected n8n account.')
+				: 'Use a scoped Windmill user token for the required resources and actions.'];
 	}
 	public function listing(): array {
 		$ids = array_keys($this->endpoints->all());
