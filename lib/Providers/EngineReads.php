@@ -35,6 +35,11 @@ final class EngineReads {
 		}
 		return $value;
 	}
+	/** Call only after this exact token has been accepted by the native API. */
+	private static function readPrincipal(array $connection): string {
+		return EngineAuthority::n8nVerifiedSubject($connection['apiToken'])
+			?? throw new Problem('Reconnect with a verifiable n8n user API key. Agent reads require your own personal workflows.', 403);
+	}
 	public function capabilities(): array {
 		$result = [];
 		foreach (self::TOOLS as $provider => $name) {
@@ -51,6 +56,9 @@ final class EngineReads {
 				try {
 					$connection = $this->connection($provider, $id, $policy);
 					$this->broker->probe($id, $connection['apiToken'], $connection['revision']);
+					if ($provider === 'n8n') {
+						self::readPrincipal($connection);
+					}
 					$available[] = [$id, $connection['endpoint']['stamp'], $connection['revision']];
 				} catch (Problem $error) {
 					if (!in_array($error->status, [401, 403, 404, 409, 413, 423, 429, 503], true)) {
@@ -85,6 +93,9 @@ final class EngineReads {
 				try {
 					$connection = $this->connection($provider, $id, $policy);
 					$this->broker->probe($id, $connection['apiToken'], $connection['revision']);
+					if ($provider === 'n8n') {
+						self::readPrincipal($connection);
+					}
 					$items[] = ['connectionId' => $id, 'name' => $connection['endpoint']['label'], 'workspace' => $connection['endpoint']['workspace']];
 					$versions[] = [$id, $connection['endpoint']['stamp'], $connection['revision']];
 				} catch (Problem $error) {
@@ -106,6 +117,7 @@ final class EngineReads {
 		$request = $reference === null ? EngineRequest::list($policy['actor'], $endpoint) : ($kind === 'own-draft'
 			? EngineRequest::ownDraft($policy['actor'], $endpoint, $reference) : EngineRequest::definition($policy['actor'], $endpoint, $reference));
 		$data = $this->broker->request($request, $connection['revision']);
+		$principal = $provider === 'n8n' ? self::readPrincipal($connection) : null;
 		if ($kind === 'own-draft') {
 			if ($data === null) {
 				throw new Problem('This own-user Windmill draft is unavailable.', 404);
@@ -125,6 +137,8 @@ final class EngineReads {
 				throw new Problem('Malformed bounded workflow collection.', 503);
 			}
 			$items = [];
+			$limited = false;
+			$deadline = microtime(true) + 20;
 			foreach (array_slice($rows, 0, 20) as $row) {
 				if (!$row instanceof \stdClass) {
 					throw new Problem('Malformed native workflow metadata.', 503);
@@ -133,7 +147,39 @@ final class EngineReads {
 				if (!is_string($id)) {
 					throw new Problem('Unverified native workflow reference.', 503);
 				}
-				EngineRequest::definition($policy['actor'], $endpoint, $id);
+				$resolve = EngineRequest::definition($policy['actor'], $endpoint, $id);
+				if ($provider === 'n8n') {
+					$ownerData = (array)$row;
+					// The pinned public list omits expanded project ownership. Resolve
+					// at most these 20 rows through the same closed native GET; do not
+					// infer ownership from broad list access or traverse more pages.
+					$edges = $row->shared ?? null;
+					$expanded = is_array($edges) && count($edges) === 1 && $edges[0] instanceof \stdClass
+						&& ($edges[0]->project ?? null) instanceof \stdClass && is_string($edges[0]->project->creatorId ?? null);
+					if (!$expanded) {
+						if (microtime(true) >= $deadline) {
+							$limited = true;
+							break;
+						}
+						try {
+							$ownerData = $this->broker->request($resolve, $connection['revision']);
+						} catch (Problem $error) {
+							if ($error->status !== 404) {
+								throw $error;
+							}
+							$limited = true;
+							continue;
+						}
+						if (($ownerData['id'] ?? null) !== $id) {
+							throw new Problem('The native workflow ownership reference changed.', 503);
+						}
+					}
+					try {
+						EngineAuthority::assertN8nOwner($ownerData, $principal);
+					} catch (Problem) {
+						continue; // Never project another owner's name, ID or revision.
+					}
+				}
 				$revision = $provider === 'windmill' ? ($row->edited_at ?? null) : ($row->versionId ?? null);
 				if ($revision !== null && (!is_string($revision) || strlen($revision) > 200)) {
 					throw new Problem('Malformed native workflow revision.', 503);
@@ -141,7 +187,7 @@ final class EngineReads {
 				$items[] = ['reference' => $id, 'name' => ContentPlan::text($provider === 'windmill' ? ($row->summary ?? $id) : ($row->name ?? $id), 200, true),
 					'revision' => $revision];
 			}
-			$snapshot = ['workflows' => $items, 'complete' => count($rows) <= 20 && ($provider === 'windmill' || ($data['nextCursor'] ?? null) === null), 'limit' => 20];
+			$snapshot = ['workflows' => $items, 'complete' => !$limited && count($rows) <= 20 && ($provider === 'windmill' || ($data['nextCursor'] ?? null) === null), 'limit' => 20];
 		} else {
 			$actual = $provider === 'windmill' ? ($data['path'] ?? null) : ($data['id'] ?? null);
 			if ($actual !== $reference || !isset($data[$provider === 'windmill' ? 'value' : 'nodes'])) {
@@ -156,6 +202,9 @@ final class EngineReads {
 				throw new Problem('Use a native workflow with at most 200 nodes.', 413);
 			}
 			EngineJson::encode((object)$data);
+			if ($provider === 'n8n') {
+				EngineAuthority::assertN8nOwner($data, $principal);
+			}
 			$snapshot = ['definition' => (object)$data, 'reference' => $reference, ...($kind === 'own-draft' ? ['draftRevision' => $draftRevision] : [])];
 		}
 		if ($provider === 'n8n') {

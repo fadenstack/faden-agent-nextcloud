@@ -55,7 +55,8 @@ export class ProviderReadRuntime {
 	#policy: ScopePolicy | undefined
 	#epoch = 0
 
-	constructor(readonly api: NativeProvidersApi) {}
+	constructor(readonly api: NativeProvidersApi,
+		readonly assertContentRead: (provider: string, value: { resource: ProviderResource; workspaceRevision?: unknown }) => void = () => {}) {}
 
 	get offeredTools(): readonly string[] { return this.#scope?.tools.map(tool => tool.name) ?? [] }
 	get hasSources(): boolean { return this.#sources.size > 0 }
@@ -107,6 +108,7 @@ export class ProviderReadRuntime {
 				values = value ? [value.resource] : []
 			} else if (resource.provider === 'collectives' || resource.provider === 'forms' || resource.provider === 'notes' || resource.provider === 'bookmarks' || resource.provider === 'whiteboard' || resource.provider === 'flow' || resource.provider === 'windmill' || resource.provider === 'n8n' || resource.provider === 'agentfile') {
 				const value = await this.api.contentRead?.(resource.provider, JSON.parse(resource.filename || '{}'), innerSignal)
+				if (value) this.assertContentRead(resource.provider, value)
 				values = value ? [value.resource] : []
 			} else if (resource.provider === 'tables' || resource.provider === 'deck') {
 				const value = await this.api.structuredRead?.(resource.provider, Number(resource.collectionId), innerSignal)

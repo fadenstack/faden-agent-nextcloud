@@ -136,6 +136,14 @@ export class EngineSurface {
 		return this.descriptor.apiPrincipal
 	}
 
+	assertRevision(revision: unknown): void {
+		if (typeof revision !== 'string' || !/^[a-f0-9]{64}$/.test(revision) || revision !== this.descriptor.revision) {
+			this.invalidateConnection()
+			throw new Error(this.state.connectionError!)
+		}
+		if (this.state.connectionError) throw new Error(this.state.connectionError)
+	}
+
 	invalidateConnection(reason = 'The workflow connection or account changed. Reload the native workspace before continuing.'): void {
 		this.#selection++
 		this.state.target = undefined
@@ -367,10 +375,7 @@ export class EngineSurface {
 		if (this.state.connectionError) throw new Error(this.state.connectionError)
 		if (!this.api?.contentRead) return []
 		const result = await this.api.contentRead(this.descriptor.provider, { connectionId: this.descriptor.connectionId }, signal ?? new AbortController().signal) as { workflows?: readonly WorkflowSummary[]; workspaceRevision?: string }
-		if (typeof result.workspaceRevision === 'string' && result.workspaceRevision !== this.descriptor.revision) {
-			this.invalidateConnection('The workflow connection or account changed. Reload the native workspace before continuing.')
-			throw new Error(this.state.connectionError!)
-		}
+		this.assertRevision(result.workspaceRevision)
 		return result.workflows ?? []
 	}
 
@@ -391,10 +396,7 @@ export class EngineSurface {
 			workspaceRevision?: string
 		}
 		signal?.throwIfAborted()
-		if (typeof result.workspaceRevision === 'string' && result.workspaceRevision !== this.descriptor.revision) {
-			this.invalidateConnection('The workflow connection or account changed. Reload the native workspace before continuing.')
-			throw new Error(this.state.connectionError!)
-		}
+		this.assertRevision(result.workspaceRevision)
 		if (request !== this.#selection || epoch !== this.state.epoch || this.api !== api || this.state.busy) throw new Error('The workflow selection changed. Select the target again.')
 		const source = workflowSource(this.descriptor.provider, result.copySource)
 		if (source.reference !== reference || source.kind !== sourceKind) throw new Error('The native target differs from the requested workflow.')

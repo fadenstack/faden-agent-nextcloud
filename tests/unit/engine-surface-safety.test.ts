@@ -10,6 +10,16 @@ const result: WriteResult = { operation: 'nc_windmill_draft', file: { id: 0, nam
 const receipt = { operation: 'nc_windmill_draft', connectionId: 'own-engine', actionId: 'a'.repeat(32), generation: 0, createdReference: 'u/me/copy', createdName: 'Copy', provider: 'windmill' as const }
 
 describe('Opaque native editor safety', () => {
+	it.each([undefined, null, '', false, 'b'.repeat(64)])('refuses unbound selection and discovery (%s)', async workspaceRevision => {
+		for (const operation of ['list', 'select']) {
+			const surface = new EngineSurface(descriptor)
+			surface.setApi({ contentRead: async () => ({ workspaceRevision, workflows: [], copySource: { reference: 'u/me/first', kind: 'saved', revision: 'a'.repeat(64) } }) } as NativeProvidersApi)
+			try {
+				await expect(operation === 'list' ? surface.loadWorkflows() : surface.selectTarget('u/me/first')).rejects.toThrow('workflow connection or account changed')
+				expect(surface.state.target).toBeUndefined()
+			} finally { surface.unbind() }
+		}
+	})
 	it('keeps the exact child on navigation request and Cancel, replacing only after saved-edits acknowledgement', async () => {
 		const surface = new EngineSurface(descriptor), root = document.createElement('div')
 		document.body.append(root)
@@ -79,20 +89,20 @@ describe('Opaque native editor safety', () => {
 		const refusal = expect(first).rejects.toThrow()
 		if (mode === 'new-selection') {
 			const second = surface.selectTarget('u/me/second')
-			resolves.get('u/me/second')!({ copySource: { reference: 'u/me/second', kind: 'saved', revision: 'b'.repeat(64) } })
+			resolves.get('u/me/second')!({ workspaceRevision: descriptor.revision, copySource: { reference: 'u/me/second', kind: 'saved', revision: 'b'.repeat(64) } })
 			await second
 		} else if (mode === 'clear') surface.setTarget(undefined)
 		else if (mode === 'load') surface.loaded()
 		else if (mode === 'disconnect') surface.unbind()
 		else controller.abort()
-		resolves.get('u/me/first')!({ copySource: { reference: 'u/me/first', kind: 'saved', revision: 'a'.repeat(64) } })
+		resolves.get('u/me/first')!({ workspaceRevision: descriptor.revision, copySource: { reference: 'u/me/first', kind: 'saved', revision: 'a'.repeat(64) } })
 		await refusal
 		expect(surface.state.target?.reference).toBe(mode === 'new-selection' ? 'u/me/second' : undefined)
 	})
 
 	it.each([undefined, { reference: 'u/me/other', kind: 'saved', revision: 'a'.repeat(64) }, { reference: 'u/me/first', kind: 'saved', revision: '' }])('rejects missing or mismatched canonical source metadata', async copySource => {
 		const surface = new EngineSurface(descriptor)
-		surface.setApi({ contentRead: async () => ({ copySource }) } as NativeProvidersApi)
+		surface.setApi({ contentRead: async () => ({ workspaceRevision: descriptor.revision, copySource }) } as NativeProvidersApi)
 		await expect(surface.selectTarget('u/me/first')).rejects.toThrow()
 		expect(surface.state.target).toBeUndefined()
 	})

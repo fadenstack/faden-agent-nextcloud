@@ -11,9 +11,15 @@ copilot workspace for an editor whose unsaved state Nextcloud cannot inspect.
 2. Sign in to Fadenstack in the new page and to the native editor separately
    if needed. An API connection does not log you into the editor; SSO is not
    required for the API tools. The API execution account (e.g. `admin@windmill.local`)
-   is displayed in the toolbar badge. When credentials rotate or reconnect as a different
-   principal, the badge updates immediately and any existing target selection bound to the
-   prior principal is invalidated.
+   is displayed in the toolbar badge (Windmill username or n8n user UUID). When credentials
+   change, the badge says **API: changed — reload workspace** and the prior target is
+   invalidated. Save or discard native edits before reloading the workspace page to see
+   the new account. A missing or invalid workspace binding also blocks new model context,
+   replay of earlier workflow context, and proposals. Standalone tool use does not require
+   an embedded workspace.
+   The server also binds the configured browser destination to approval and
+   dispatch. Changing or removing it invalidates an earlier proposal, including
+   a fresh draft with no selected source.
 3. Select an explicit workflow target:
    - For Windmill: Choose an authorized workflow or enter a private user draft path (e.g. `u/admin/draft_flow`).
    - For n8n: Choose an authorized workflow by reference.

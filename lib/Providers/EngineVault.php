@@ -10,6 +10,7 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IConfig;
 use OCP\IUserSession;
 use OCP\Lock\ILockingProvider;
+use OCP\Lock\LockedException;
 use OCP\Security\ICrypto;
 
 /** Per-native-user encrypted credentials. Never put these in an action snapshot. */
@@ -62,8 +63,8 @@ final class EngineVault {
 			'connected' => $value !== null, 'expiresAt' => $value['expiresAt'] ?? null, 'setupAllowed' => true,
 			'keyAccess' => $endpoint['provider'] === 'n8n'
 				? ($value !== null && EngineAuthority::n8nVerifiedSubject($value['apiToken']) === null
-					? 'Opaque n8n API key connected (account ownership unverifiable; read-only discovery and reads only). Non-Enterprise user API keys can access all resources and capabilities of the connected n8n account.'
-					: 'Non-Enterprise API keys can access all resources and capabilities of the connected n8n account.')
+					? 'Opaque n8n API key connected (account ownership unverifiable; agent reads, drafts and execution unavailable). Reconnect with a current user API key.'
+					: 'Non-Enterprise API keys may have instance-wide access. This agent restricts reads, drafts and execution to verified personal ownership; the native key remains broad.')
 				: 'Use a scoped Windmill user token for the required resources and actions.'];
 	}
 	public function listing(): array {
@@ -203,7 +204,11 @@ final class EngineVault {
 			throw new Problem('OAuth needs your own active n8n API connection.', 403);
 		}
 		$key = hash('sha256', 'fadenstack:engine-vault:' . $actor . ':' . $id);
-		$this->locks->acquireLock($key, ILockingProvider::LOCK_EXCLUSIVE);
+		try {
+			$this->locks->acquireLock($key, ILockingProvider::LOCK_EXCLUSIVE);
+		} catch (LockedException) {
+			throw new Problem('Another connection change is in progress. Reload before changing it again.', 409);
+		}
 		try {
 			if ($this->actor() !== $actor || ($this->endpoints->all()[$id]['stamp'] ?? null) !== ($endpoint['stamp'] ?? null)
 				|| !hash_equals($expectedRevision, hash('sha256', $this->raw($actor, $id)))) {

@@ -37,9 +37,24 @@ If you denied consent or closed the n8n tab, cancel the pending local connection
 it also expires after ten minutes. The native Deny button may return to n8n home
 without a Nextcloud callback.
 
+An expired grant cannot prepare an execution. Refresh explicitly or remove it.
+
+![Expired OAuth grant refuses execution](screenshots/engine-oauth-expired.png)
+
+If n8n has revoked the grant, a refresh can leave **OAuth is unconfirmed**.
+Choose **Remove local OAuth access** in the scrollable dialog, then reconnect
+if needed. Removal uses the current connection revision; it does not repeat
+the failed refresh. Concurrent connection changes are refused with a conflict
+before a second token request is sent.
+
+![Native-revoked grant requires reconnection](screenshots/engine-oauth-revoked.png)
+
+![Local OAuth access removed](screenshots/engine-oauth-removed.png)
+
 ### Principal switching and unstranded removal
 
 - **Principal change invalidation**: When reconnecting the n8n API key under a different engine account, any existing user-bound OAuth grant is automatically demoted to `reconnect` state. This prevents an agent operating under Principal B from executing webhooks using Principal A's prior OAuth authorization.
+- **Expired or unconfirmed grants**: Execution refuses an expired grant before sending a webhook. Refresh explicitly, or remove local access and reconnect. A failed or interrupted refresh is consumed; it is not automatically retried. Removal remains available with the refreshed connection revision.
 - **Unstranded removal**: Choosing **Remove local OAuth access** cleanly purges stored tokens from the encrypted native vault without stranding the connection. Re-authorizing via OAuth transitions the connection back to fully verified state.
 
 ![OAuth grant transitions to reconnect upon principal change](screenshots/engine-n8n-principal-switch-reconnect.png)

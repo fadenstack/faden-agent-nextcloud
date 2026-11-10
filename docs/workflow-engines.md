@@ -28,11 +28,12 @@ The engine and Nextcloud integration apps need no source changes.
 ### Token capabilities, scopes and truthful refusals
 
 Each engine connection enforces current native token authority throughout its lifecycle:
-- **API principal identification**: On Connect, the extension queries the engine to resolve and display the authenticated API principal (e.g. `admin@windmill.local` or `alice@n8n.local`). This identity is displayed on the connection badge and in the native workspace.
+
+- **API principal identification**: Connect verifies the token against the native API. The workspace toolbar displays the Windmill username or the verified n8n user UUID. The connection dialog shows connection status and key limitations; it does not display a verified account badge.
 - **Read-only tokens**: A token lacking write or execution permissions (such as a Windmill viewer token) is verified and connected for reads, but truthful capability refusals block flow execution and draft creation with explicit audit records.
-- **Revoked or expired credentials**: When a token is revoked or expires, attempts to read, draft, or run trigger clean unbinding without stranding credential removal.
-- **n8n Community broad keys**: Non-Enterprise n8n API keys have full instance-wide access. The connection truthfully discloses this broad scope rather than falsely claiming fine-grained scoping. In Community edition, personal workflows belong strictly to their creator; User 2 cannot read or copy User 1's personal workflows even if the underlying key could reach them.
-- **Opaque API keys**: If an n8n API key does not permit verifying the underlying user account identity, draft creation and workflow mutations are refused with an explicit disclosure (`account ownership unverifiable`).
+- **Revoked or expired credentials**: The native engine refuses requests that use them. Choose **Disconnect** to remove local access even when the engine is unreachable. A refused request does not automatically erase the credential or prove that a remote grant has been revoked.
+- **n8n Community broad keys**: Native keys may have instance-wide access, including other users' workflows. This agent adds a personal-owner boundary: discovery omits workflows without one verified matching personal owner, and direct reads, copies and runs refuse them. Team/shared projects are outside this supported subset. Native key permissions themselves remain broad.
+- **Opaque API keys**: An unverifiable key provides no agent workflow read, draft or execution capability. Disconnect it or replace it with a current verifiable native user key. The native editor still has its own login.
 
 ![Windmill read-only refusal](screenshots/engine-windmill-readonly-refusal.png)
 
@@ -50,6 +51,9 @@ Non-Enterprise n8n keys can be broader than this assistant's allowed tools.
 Each list returns at most 20 workflows. Definitions are bounded to 128 KiB
 and 200 top-level nodes/modules. Reads use current engine permissions and
 retain graph fields, credential references and existing origin metadata.
+n8n lists resolve missing ownership through bounded native reads before showing
+names or identifiers. A time-limited or truncated page is marked incomplete;
+it does not prove that no other authorized workflows exist.
 Graphs can contain inline inputs and code. Credential stores and n8n pinned
 execution samples are excluded. Unsaved editor changes are outside the read.
 
@@ -151,8 +155,9 @@ In **Workflow connections**, select n8n and the published target. Save its
 dedicated **X-Fadenstack-Workflow-Key** secret. This is separate from the n8n
 API key. Both stay encrypted under your native Nextcloud account; no SSO is
 required. Saving a webhook key sends no test execution and does not claim
-that the key has been verified. Replacing the API token removes its stored
-webhook keys. Disconnect removes both kinds of credential.
+that the key has been verified. Replacing a valid API connection retains its
+webhook keys and OAuth grants. OAuth for a different API principal requires
+reconnection. Disconnect removes the stored API key, webhook keys and grants.
 
 ![Store a dedicated n8n webhook key](screenshots/engine-n8n-webhook-key.png)
 

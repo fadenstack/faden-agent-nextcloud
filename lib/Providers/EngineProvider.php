@@ -107,11 +107,14 @@ final class EngineProvider {
 		return $rows;
 	}
 	private function prepare(string $tool, array $args, string $id): array {
-		return match ($tool) {
+		$p = match ($tool) {
 			EngineRunPlan::TOOL => $this->runs->prepare($args, $id),
 			N8nExecutePlan::TOOL => $this->n8nRuns->prepare($args, $id),
 			default => $this->plans->prepare($tool, $args, $id),
 		};
+		// Server-side approval/dispatch must also notice browser destination
+		// removal or changes, even for fresh drafts with no retained sources.
+		return [...$p, 'workspaceBinding' => $this->workspace?->revisionFor($p['connectionId'], $p['connectionRevision'], $p['resource']['policyVersion'])];
 	}
 	private static function execution(array $p): bool {
 		return in_array($p['toolName'], [EngineRunPlan::TOOL, N8nExecutePlan::TOOL], true);
@@ -396,12 +399,14 @@ final class EngineProvider {
 		if (!self::execution($p) || $p['provider'] !== $provider) {
 			throw new Problem('Choose a recorded run from this engine provider.', 400);
 		}
-		$source = $this->reads->read($provider, ['connectionId' => $p['connectionId']])['resource'];
+		$read = $this->reads->read($provider, ['connectionId' => $p['connectionId']]);
+		$source = $read['resource'];
 		$result = $this->inspect($args['actionId']);
 		$filename = EngineJson::encode((object)$args);
 		$source['filename'] = $filename;
 		$source['resourceId'] = 'nextcloud:' . $provider . ':' . rtrim(strtr(base64_encode($filename), '+/', '-_'), '=');
 		$source['revision'] = StructuredProvider::digest([$result, $source['revision']]);
-		return [...$result, 'provider' => $provider, 'connectionId' => $p['connectionId'], 'resource' => $source];
+		return [...$result, 'provider' => $provider, 'connectionId' => $p['connectionId'], 'resource' => $source,
+			...(isset($read['workspaceRevision']) ? ['workspaceRevision' => $read['workspaceRevision']] : [])];
 	}
 }

@@ -14,6 +14,7 @@ use OCA\FadenstackAgent\Providers\EngineAuthority;
 use OCA\FadenstackAgent\Providers\EngineBroker;
 use OCA\FadenstackAgent\Providers\EngineDraftPlan;
 use OCA\FadenstackAgent\Providers\EngineEndpoint;
+use OCA\FadenstackAgent\Providers\EngineProvider;
 use OCA\FadenstackAgent\Providers\EngineReads;
 use OCA\FadenstackAgent\Providers\EngineRequest;
 use OCA\FadenstackAgent\Providers\EngineRunPlan;
@@ -40,12 +41,21 @@ use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserSession;
 use OCP\Lock\ILockingProvider;
+use OCP\Lock\LockedException;
 use OCP\Security\ICrypto;
 use OCP\Share\IManager;
 use PHPUnit\Framework\TestCase;
 
 final class EngineConnectionTest extends TestCase {
 	private const TOKEN = 'synthetic-engine-api-token';
+	private const OWNER = 'cfec15c4-5036-4f30-957c-306f577c19cc';
+	private static function userToken(): string {
+		$encode = static fn ($v) => rtrim(strtr(base64_encode(json_encode($v)), '+/', '-_'), '=');
+		return $encode(['alg' => 'HS256']) . '.' . $encode(['iss' => 'n8n', 'aud' => 'public-api', 'sub' => self::OWNER]) . '.' . str_repeat('a', 43);
+	}
+	private static function ownership(string $owner = self::OWNER): array {
+		return [(object)['role' => 'workflow:owner', 'project' => (object)['type' => 'personal', 'creatorId' => $owner]]];
+	}
 	private function fixture(string $provider = 'windmill'): array {
 		$entry = ['id' => 'engine-test', 'provider' => $provider, 'label' => 'My workflow engine', 'baseUrl' => 'https://engine.example.test', 'version' => EngineEndpoint::VERSIONS[$provider]];
 		if ($provider === 'windmill') {
@@ -91,7 +101,13 @@ final class EngineConnectionTest extends TestCase {
 		$clock = $this->createMock(ITimeFactory::class);
 		$clock->method('getTime')->willReturnCallback(static fn () => $state->time);
 		$endpoints = new EngineEndpoint($config);
-		$vault = new EngineVault($config, $users, $crypto, $endpoints, $this->createMock(ILockingProvider::class), $clock);
+		$locks = $this->createMock(ILockingProvider::class);
+		$locks->method('acquireLock')->willReturnCallback(static function () use ($state): void {
+			if ($state->lockConflict ?? false) {
+				throw new LockedException('synthetic-vault-lock');
+			}
+		});
+		$vault = new EngineVault($config, $users, $crypto, $endpoints, $locks, $clock);
 		$session = $this->createMock(ISession::class);
 		$session->method('getId')->willReturn('native-session');
 		$session->method('close')->willReturnCallback(static function () use ($state): void {
@@ -152,7 +168,32 @@ final class EngineConnectionTest extends TestCase {
 			}
 		};
 		$plan = new EngineDraftPlan(new EngineAuthority($vault, $broker, $policy), $reads, new Configuration($config));
-		return [$plan, $reads, $vault, $s];
+		return [$plan, $reads, $vault, $s, $config, $broker, $policy];
+	}
+	public function testApprovalValidationBindsWorkspaceChangesAndKeepsStandalonePlans(): void {
+		[$plan, $reads, $vault, $s, $config, $broker, $policy] = $this->copyFixture('windmill');
+		$s->settings['engine_workspaces'] = json_encode(['version' => 1, 'workspaces' => [['connectionId' => 'engine-test', 'browserUrl' => 'https://editor.example.test']]]);
+		$workspace = new EngineWorkspace($config, new Configuration($config), new EngineEndpoint($config), $vault, $broker, $policy, $this->createMock(IURLGenerator::class));
+		$type = new \ReflectionClass(EngineProvider::class);
+		$provider = $type->newInstanceWithoutConstructor();
+		$type->getProperty('plans')->setValue($provider, $plan);
+		$type->getProperty('workspace')->setValue($provider, $workspace);
+		$read = $reads->read('windmill', ['connectionId' => 'engine-test', 'reference' => $s->reference]);
+		$args = ['connectionId' => 'engine-test', 'sourceReference' => $s->reference, 'sourceRevision' => $read['copySource']['revision'], 'definitionJson' => '{"summary":"Copy"}'];
+		$prepared = $type->getMethod('prepare')->invoke($provider, 'nc_windmill_draft', $args, str_repeat('a', 48));
+		$prepared['id'] = str_repeat('a', 48);
+		self::assertIsString($prepared['workspaceBinding']);
+		$type->getMethod('validate')->invoke($provider, $prepared);
+		foreach (['', '{"invalid":true}'] as $configValue) {
+			$s->settings['engine_workspaces'] = $configValue;
+			$this->refused(fn () => $type->getMethod('validate')->invoke($provider, $prepared), 409);
+		}
+		$s->settings['engine_workspaces'] = '';
+		$standalone = $type->getMethod('prepare')->invoke($provider, 'nc_windmill_draft', $args, str_repeat('b', 48));
+		$standalone['id'] = str_repeat('b', 48);
+		self::assertNull($standalone['workspaceBinding']);
+		$type->getMethod('validate')->invoke($provider, $standalone);
+		self::assertSame(['GET'], array_values(array_unique(array_column($s->trace, 'method'))));
 	}
 	public function testSourceBoundPlanPreservesNativeOriginAndRefusesStaleOrRevokedSources(): void {
 		foreach ([['windmill', 'saved'], ['windmill', 'own-draft'], ['n8n', 'saved']] as [$provider, $kind]) {
@@ -281,6 +322,18 @@ final class EngineConnectionTest extends TestCase {
 			self::assertSame('disconnected', $service->listing()[0]['state']);
 		}
 	}
+	public function testConcurrentRefreshLockRefusesBeforeTokenDispatchWithoutDamagingGrant(): void {
+		[$service, $vault, $s] = $this->oauthFixture();
+		$service->start('own-oauth', $vault->status('engine-test')['revision']);
+		$this->oauthComplete($service, $vault);
+		$before = $vault->resolve('engine-test');
+		$s->trace = [];
+		$s->lockConflict = true;
+		$this->refused(fn () => $service->refresh('own-oauth', $before['revision']), 409);
+		self::assertSame($before, $vault->resolve('engine-test'));
+		self::assertSame('connected', $service->listing()[0]['state']);
+		self::assertSame([], array_values(array_filter($s->trace, static fn ($r) => $r['method'] !== 'GET')));
+	}
 	public function testOAuthRefreshInvalidatesPriorApprovalsAndBrokerSendsBearerOnly(): void {
 		[$service, $vault, $s, $oauth, $broker, $endpoints, $target, $owner] = $this->oauthFixture();
 		$service->start('own-oauth', $vault->status('engine-test')['revision']);
@@ -354,6 +407,14 @@ final class EngineConnectionTest extends TestCase {
 		$scope = new ScopePolicy($config, $this->createMock(IRootFolder::class), $users, $this->createMock(IManager::class));
 		$policy = new ProviderPolicy($config, new Configuration($config), $scope, $users);
 		$this->connected($vault);
+		if ($provider === 'n8n') {
+			$vault->replace('engine-test', $vault->status('engine-test')['revision'], self::userToken());
+			$state->beforeResponse = static function (string $url) use ($state): void {
+				if (str_contains($url, '/workflows?limit=1')) {
+					$state->body = '{"data":[]}';
+				}
+			};
+		}
 		return [new EngineReads($vault, $broker, $policy, new EngineWebhookTargets($config)), $vault, $state, $policy, $broker, $config];
 	}
 	private function connected(EngineVault $vault): array {
@@ -709,6 +770,11 @@ final class EngineConnectionTest extends TestCase {
 			$state->body = $provider === 'windmill'
 				? '{"path":"u/alice/synthetic","value":{"modules":[],"future":{}},"schema":{"properties":{},"x-fadenstack-provenance":{"opaque":true}}}'
 				: '{"id":"synthetic-workflow","nodes":[{"credentials":{"test":{"id":"native-ref"}}}],"connections":{},"pinData":{"secret":"not-for-model"},"future":{}}';
+			if ($provider === 'n8n') {
+				$data = json_decode($state->body);
+				$data->shared = self::ownership();
+				$state->body = json_encode($data);
+			}
 			$result = $reads->read($provider, ['connectionId' => 'engine-test', 'reference' => $reference]);
 			$definition = $result['definition'];
 			self::assertInstanceOf(\stdClass::class, $definition);
@@ -726,7 +792,7 @@ final class EngineConnectionTest extends TestCase {
 	public function testReadCollectionsAreBoundedAndPaginationDoesNotClaimCompleteness(): void {
 		foreach (['windmill', 'n8n'] as $provider) {
 			[$reads, , $state] = $this->reads($provider);
-			$rows = array_fill(0, 21, $provider === 'windmill' ? ['path' => 'u/alice/example', 'summary' => 'Synthetic'] : ['id' => 'example', 'name' => 'Synthetic']);
+			$rows = array_fill(0, 21, $provider === 'windmill' ? ['path' => 'u/alice/example', 'summary' => 'Synthetic'] : ['id' => 'example', 'name' => 'Synthetic', 'shared' => self::ownership()]);
 			$state->body = json_encode($provider === 'windmill' ? $rows : ['data' => $rows, 'nextCursor' => 'opaque']);
 			$result = $reads->read($provider, ['connectionId' => 'engine-test']);
 			self::assertCount(20, $result['workflows']);
@@ -757,12 +823,72 @@ final class EngineConnectionTest extends TestCase {
 		self::assertCount(1, $state->trace);
 	}
 	public function testAnEngineCannotEchoTheVaultTokenThroughOpaqueGraphFields(): void {
-		[$reads, $vault, $state] = $this->reads('n8n');
+		[$reads, $vault, $state] = $this->reads('windmill');
 		foreach ([self::TOKEN, 'printable-"quoted"-\\-credential'] as $token) {
 			$vault->replace('engine-test', $vault->status('engine-test')['revision'], $token);
-			$state->body = json_encode(['id' => 'example', 'nodes' => [], 'connections' => new \stdClass(), 'opaque' => ['echo' => 'Bearer ' . $token]]);
-			$this->refused(fn () => $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'example']), 403);
+			$state->body = json_encode(['path' => 'u/alice/example', 'value' => (object)['modules' => []], 'opaque' => ['echo' => 'Bearer ' . $token]]);
+			$this->refused(fn () => $reads->read('windmill', ['connectionId' => 'engine-test', 'reference' => 'u/alice/example']), 403);
 		}
+	}
+	public function testN8nReadsAndDiscoveryRequireVerifiedPersonalOwnership(): void {
+		[$reads, $vault, $s] = $this->reads('n8n');
+		$own = ['id' => 'own', 'name' => 'Own', 'nodes' => [], 'connections' => new \stdClass(), 'shared' => self::ownership()];
+		$foreign = [...$own, 'id' => 'foreign-secret-id', 'name' => 'Foreign secret name', 'shared' => self::ownership('11111111-2222-4333-8444-555555555555')];
+		$s->body = json_encode(['data' => [$foreign, $own], 'nextCursor' => 'next-native-page']);
+		$list = $reads->read('n8n', ['connectionId' => 'engine-test']);
+		self::assertSame(['own'], array_column($list['workflows'], 'reference'));
+		self::assertFalse($list['complete']);
+		self::assertStringNotContainsString('Foreign secret', json_encode($list));
+		self::assertStringNotContainsString('foreign-secret-id', json_encode($list));
+		$s->body = json_encode($own);
+		self::assertSame('own', $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'own'])['definition']->id);
+		foreach ([$foreign['shared'], [], null, [...self::ownership(), ...self::ownership()], [(object)['role' => 'workflow:owner', 'project' => (object)['type' => 'team', 'creatorId' => self::OWNER]]]] as $edges) {
+			$s->body = json_encode([...$own, 'shared' => $edges]);
+			$this->refused(fn () => $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'own']), 403);
+		}
+		$this->connected($vault); // Accepted opaque native credential does not prove personal ownership.
+		$s->body = json_encode($own);
+		$this->refused(fn () => $reads->read('n8n', ['connectionId' => 'engine-test', 'reference' => 'own']), 403);
+		self::assertSame([], $reads->capabilities());
+		$this->refused(fn () => $reads->read('n8n', []), 403);
+	}
+	public function testN8nListResolvesOmittedOwnershipBeforeProjectingMetadata(): void {
+		[$reads, , $s] = $this->reads('n8n');
+		$s->beforeResponse = static function (string $url) use ($s): void {
+			$s->body = json_encode(match (true) {
+				str_contains($url, '/workflows?') => ['data' => [['id' => 'own', 'name' => 'Own', 'shared' => [(object)['role' => 'workflow:owner', 'projectId' => 'opaque-native-project']]], ['id' => 'foreign', 'name' => 'Foreign']]],
+				str_contains($url, '/workflows/own?') => ['id' => 'own', 'shared' => self::ownership()],
+				default => ['id' => 'foreign', 'shared' => self::ownership('11111111-2222-4333-8444-555555555555')],
+			});
+		};
+		$r = $reads->read('n8n', ['connectionId' => 'engine-test']);
+		self::assertSame(['own'], array_column($r['workflows'], 'reference'));
+		self::assertTrue($r['complete']);
+		self::assertCount(3, $s->trace);
+		self::assertSame(['GET'], array_values(array_unique(array_column($s->trace, 'method'))));
+		self::assertStringNotContainsString('foreign', json_encode($r));
+	}
+	public function testExpiredOAuthGrantRefusesBeforeWebhookDispatchAndAllowsRemoval(): void {
+		[$service, $vault, $s, $oauth, $broker, $endpoints, , $owner] = $this->oauthFixture();
+		$service->start('own-oauth', $vault->status('engine-test')['revision']);
+		$this->oauthComplete($service, $vault);
+		$c = $vault->resolve('engine-test');
+		$grants = $c['oauth'];
+		$grants['own-oauth']['expiresAt'] = time() - 1;
+		$vault->changeOAuth('engine-test', $c['revision'], $grants, null);
+		$c = $vault->resolve('engine-test');
+		self::assertSame('expired', $service->listing()[0]['state']);
+		$count = count($s->trace);
+		$gate = 0;
+		$r = EngineRequest::n8nWebhook('alice', $endpoints->get('engine-test'), $oauth->get('own-oauth')['target'], '{}', $owner);
+		$this->refused(fn () => $broker->request($r, $c['revision'], static function () use (&$gate): void {
+			$gate++;
+		}), 403);
+		self::assertSame(0, $gate);
+		self::assertCount($count, $s->trace);
+		self::assertFalse($broker->effectAttempted());
+		$service->remove('engine-test', 'own-oauth', $c['revision']);
+		self::assertSame('disconnected', $service->listing()[0]['state']);
 	}
 	public function testCredentialRotationBeforeHttpRefusesTheCapturedGenerationWithoutAnyRequest(): void {
 		[$endpoints, $vault, $broker, $state] = $this->fixture();
@@ -933,6 +1059,7 @@ final class EngineConnectionTest extends TestCase {
 	}
 	public function testN8nWorkspaceDisclosesVerifiedUserJwtPrincipalAndOpaqueKeyLimitation(): void {
 		[$workspace, $state, $vault] = $this->workspace('n8n');
+		$this->connected($vault);
 		$opaque = $workspace->resolve('engine-test');
 		self::assertNull($opaque['apiPrincipal']);
 		self::assertStringContainsString('Opaque n8n API key connected', $vault->status('engine-test')['keyAccess']);
@@ -944,7 +1071,7 @@ final class EngineConnectionTest extends TestCase {
 		$resolvedA = $workspace->resolve('engine-test');
 		self::assertSame($subA, $resolvedA['apiPrincipal']);
 		self::assertNotSame($opaque['revision'], $resolvedA['revision']);
-		self::assertSame('Non-Enterprise API keys can access all resources and capabilities of the connected n8n account.', $vault->status('engine-test')['keyAccess']);
+		self::assertStringContainsString('instance-wide access', $vault->status('engine-test')['keyAccess']);
 		$tokenB = $encode(['alg' => 'HS256']) . '.' . $encode(['iss' => 'n8n', 'aud' => 'public-api', 'sub' => $subB]) . '.' . str_repeat('b', 43);
 		$vault->replace('engine-test', $vault->status('engine-test')['revision'], $tokenB);
 		$resolvedB = $workspace->resolve('engine-test');

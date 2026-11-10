@@ -26,8 +26,8 @@ async function fixture(mode = 'summary') {
 	const native: NativeProvidersApi = {
 		calendarCollections: vi.fn(async () => []), calendarEvents: vi.fn(async () => []),
 		capabilities: vi.fn(async () => [{ provider: 'windmill', apiVersion: 'windmill-1.841.0-token', policyVersion: 'native-policy', enabled: true, tools: mode === 'no-reader' ? [] : ['nc_windmill_read', 'nc_windmill_draft'], canRead: true, canWrite: true, history: 'audit-only', conflict: 'native', refresh: 'manual' }]),
-		contentRead: vi.fn(async () => ({ provider: 'windmill', connectionId: 'own', reference, copySource: binding, definition: { path: reference, summary: 'Native source', value: { modules: [] } }, resource })),
-		contentPropose: vi.fn(async (): Promise<ContentProposal> => ({ id: 'a'.repeat(48), digest: 'b'.repeat(64), toolName: 'nc_windmill_draft', provider: 'windmill', target: 'New copy', before: null, payload: { definitionJson: '{}' }, copySource: binding, resource, history: 'audit-only', limitation: 'Audit only; no Undo', expires: Date.now() / 1000 + 600, display: [] })),
+		contentRead: vi.fn(async () => ({ workspaceRevision: surface.descriptor.revision, provider: 'windmill', connectionId: 'own', reference, copySource: binding, definition: { path: reference, summary: 'Native source', value: { modules: [] } }, resource })),
+		contentPropose: vi.fn(async (): Promise<ContentProposal> => ({ workspaceRevision: surface.descriptor.revision, id: 'a'.repeat(48), digest: 'b'.repeat(64), toolName: 'nc_windmill_draft', provider: 'windmill', target: 'New copy', before: null, payload: { definitionJson: '{}' }, copySource: binding, resource, history: 'audit-only', limitation: 'Audit only; no Undo', expires: Date.now() / 1000 + 600, display: [] })),
 		contentApprove: vi.fn(async () => ({ approved: true })), contentCancel: vi.fn(async () => ({})),
 		contentCommit: vi.fn(async () => ({ provider: 'windmill', target: 'New copy', collectionId: 'own', history: 'audit-only', outcome: 'verified', continue: false, actionId: 'c'.repeat(32), result: { reference: 'u/alice/new_copy', inactiveDraft: true, originStored: true } })),
 	}
@@ -36,9 +36,13 @@ async function fixture(mode = 'summary') {
 	surface.pause()
 	const workspace = new WorkspaceCoordinator({ guard: { snapshot: () => surface.snapshot(), dispose() {} }, refresh: (r, s) => surface.refresh(r, s) })
 	const files: FileApi = { identity: async () => identity, assertIdentity: async () => {}, scopeResource: vi.fn(), select: vi.fn(), read: vi.fn(), list: vi.fn(), pdf: vi.fn(), propose: vi.fn(), approve: vi.fn(), commit: vi.fn(), nativeProviders: native }
-	let messages = ''
+	let messages = '', modelCalls = 0
 	const gateway = new FakeGateway({ agents: [{ slug: identity.agent, version: 1, contract: identity.scopePolicy!.tools.map(name => ({ name, risk: name.endsWith('_read') ? 'read' : 'destructive' })) }], users: [{ email: 'alice', password: 'test', agents: [identity.agent] }], model: request => {
 		messages = JSON.stringify(request.messages)
+		modelCalls++
+		if (mode === 'audit' || mode === 'discovery') return modelCalls === 1
+			? { toolCalls: [{ id: 'read', name: 'nc_windmill_read', arguments: mode === 'audit' ? { actionId: 'c'.repeat(32) } : {} }] }
+			: { text: 'Read-only result.' }
 		return mode === 'summary' || mode === 'no-reader' ? { text: 'Summary.' } : { toolCalls: [{ id: 'copy', name: 'nc_windmill_draft', arguments: args }] }
 	} })
 	const host = new NextcloudAgent(identity, files, gateway.fetch, workspace)
@@ -54,6 +58,61 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('Governed workflow workspace through published SDK', () => {
+	it.each(['audit', 'discovery'])('preserves bound %s reads in the workspace', async mode => {
+		const test = await fixture(mode)
+		test.surface.setTarget(undefined)
+		try {
+			await test.send()
+			expect(test.native.contentRead).toHaveBeenCalledWith('windmill', mode === 'audit' ? { actionId: 'c'.repeat(32) } : { connectionId: 'own' }, expect.any(AbortSignal))
+			expect(test.surface.state.connectionError).toBeUndefined()
+			expect(test.native.contentCommit).not.toHaveBeenCalled()
+		} finally { await test.close() }
+	})
+	it('retains standalone history revalidation without a configured browser workspace', async () => {
+		const test = await fixture()
+		try {
+			await test.send()
+			delete globalWindow.__fadenstackEngineSurface
+			const original = await test.native.contentRead!('windmill', {}, new AbortController().signal)
+			const { workspaceRevision: _binding, ...standalone } = original
+			vi.mocked(test.native.contentRead!).mockResolvedValue(standalone)
+			await expect(test.send()).resolves.toBeUndefined()
+			expect(test.messages).toContain('Native source')
+		} finally { await test.close() }
+	})
+	it.each([undefined, null, 'f'.repeat(64)])('revalidates workspace binding of stored model context (%s)', async workspaceRevision => {
+		const test = await fixture()
+		try {
+			await test.send()
+			test.surface.setTarget(undefined)
+			const original = await test.native.contentRead!('windmill', {}, new AbortController().signal)
+			vi.mocked(test.native.contentRead!).mockResolvedValue({ ...original, workspaceRevision } as never)
+			const requests = test.messages
+			await expect(test.send()).rejects.toThrow('workflow connection or account changed')
+			expect(test.messages).toBe(requests)
+		} finally { await test.close() }
+	})
+	it.each([undefined, null, '', 42, 'f'.repeat(64)])('blocks invalid workspace binding %s before model disclosure', async workspaceRevision => {
+		const test = await fixture()
+		const original = await test.native.contentRead!('windmill', {}, new AbortController().signal)
+		vi.mocked(test.native.contentRead!).mockResolvedValue({ ...original, workspaceRevision } as never)
+		try {
+			await expect(test.send()).rejects.toThrow('workflow connection or account changed')
+			expect(test.messages).toBe('')
+			expect(test.native.contentCommit).not.toHaveBeenCalled()
+		} finally { await test.close() }
+	})
+	it.each([undefined, '', 'f'.repeat(64)])('cancels proposals lacking the workspace binding %s', async workspaceRevision => {
+		const test = await fixture('copy')
+		const original = await test.native.contentPropose!('nc_windmill_draft', {}, new AbortController().signal)
+		vi.mocked(test.native.contentPropose!).mockResolvedValue({ ...original, workspaceRevision })
+		try {
+			await test.send()
+			expect(test.native.contentCancel).toHaveBeenCalledOnce()
+			expect(test.native.contentApprove).not.toHaveBeenCalled()
+			expect(test.native.contentCommit).not.toHaveBeenCalled()
+		} finally { await test.close() }
+	})
 	it('sends freshly authorized, bounded native target context to the model', async () => {
 		const test = await fixture()
 		try {
@@ -88,7 +147,7 @@ describe('Governed workflow workspace through published SDK', () => {
 	})
 	it('refuses a changed source before any model disclosure', async () => {
 		const test = await fixture()
-		vi.mocked(test.native.contentRead!).mockResolvedValue({ copySource: { ...binding, revision: 'e'.repeat(64) }, resource: { provider: 'windmill', collectionId: 'own', resourceId: 'nextcloud:windmill:c291cmNl', revision: 'e'.repeat(64), policyVersion: 'native-policy', sourceClass: 'standard', audience: 'private' } })
+		vi.mocked(test.native.contentRead!).mockResolvedValue({ workspaceRevision: test.surface.descriptor.revision, copySource: { ...binding, revision: 'e'.repeat(64) }, resource: { provider: 'windmill', collectionId: 'own', resourceId: 'nextcloud:windmill:c291cmNl', revision: 'e'.repeat(64), policyVersion: 'native-policy', sourceClass: 'standard', audience: 'private' } })
 		try { await expect(test.send()).rejects.toThrow('selected workflow changed'); expect(test.messages).toBe('') } finally { await test.close() }
 	})
 	it.each(['missing', 'mismatch', 'valid'])('validates %s source metadata in the actual proposal transport', async mode => {

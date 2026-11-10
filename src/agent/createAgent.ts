@@ -92,6 +92,7 @@ import { commandChat } from './commands.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
+import type { ProviderResource } from '../providers/scope.ts'
 import type { CalendarCommitOutcome, CommunicationProposal, CommunicationRead, ContentProposal, ContentProviderId, ProviderInspection, ReadProviderId, StructuredProposal } from '../providers/client.ts'
 import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEngineDraftTools, nativeEngineRunTools, nativeAgentfileTools, nativeWorkflowTools } from '../providers/contentTools.ts'
 import { nativeCalendarDate } from '../providers/davDate.ts'
@@ -180,7 +181,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		this.#reportPlacement = (report, signal) => client.agent!.provenance.reportPlacement(report, signal)
 		const experimental = experimentalAdaptersAllowed(config)
-		if (config.development && config.providerReadsEnabled === true && config.scopePolicy && files.nativeProviders) this.#providerReads = new ProviderReadRuntime(files.nativeProviders)
+		if (config.development && config.providerReadsEnabled === true && config.scopePolicy && files.nativeProviders) {
+			this.#providerReads = new ProviderReadRuntime(files.nativeProviders, (provider, value) => this.assertEngineRead(provider, value))
+		}
 		const filesReadsActive = config.filesReadsEnabled === true && !!config.scopePolicy && !!files.organizeRead && !!files.sharesRead
 		const folderCreateActive = (config.development === true && config.folderCreateEnabled === true && !!config.scopePolicy && !!files.scopeResource && !!files.proposeFolderCreate && !!files.approveFolderCreate && !!files.commitFolderCreate)
 			|| (experimental && config.extendedFilesEnabled === true && !files.proposeFolderCreate && !!files.createFolder)
@@ -2269,19 +2272,27 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	async readContent(provider: ReadProviderId, args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<unknown> {
+		if (['windmill', 'n8n'].includes(provider) && this.#engineTurn && args.connectionId === undefined && args.actionId === undefined) {
+			args = { ...args, connectionId: this.#engineTurn.surface.descriptor.connectionId }
+		}
 		if (['windmill', 'n8n'].includes(provider)) this.assertEngineTarget(provider, args)
 		await this.files.assertIdentity(signal)
 		const guard = this.#providerReads!.readGuard()
 		const result = await this.files.nativeProviders!.contentRead!(provider, args, signal)
 		guard(); signal.throwIfAborted()
 		if (result.resource.provider !== provider) throw new Error('Invalid native content source.')
-		if (['windmill', 'n8n'].includes(provider) && this.#engineTurn && typeof result.workspaceRevision === 'string'
-			&& result.workspaceRevision !== this.#engineTurn.surface.descriptor.revision) {
-			this.#engineTurn.surface.invalidateConnection('The workflow connection or account changed. Reload the native workspace before continuing.')
-			throw new Error('The workflow connection or account changed. Reload the native workspace before continuing.')
-		}
+		this.assertEngineRead(provider, result)
 		this.#providerReads!.recordSource(result.resource)
 		return result
+	}
+
+	private assertEngineRead(provider: string, value: { resource: ProviderResource; workspaceRevision?: unknown }): void {
+		const turn = this.#engineTurn
+		if (!turn || !['windmill', 'n8n'].includes(provider)) return
+		if (provider !== turn.surface.descriptor.provider || value.resource.collectionId !== turn.surface.descriptor.connectionId) {
+			throw new Error('The workflow source belongs to another workspace connection. Start a new conversation.')
+		}
+		turn.surface.assertRevision(value.workspaceRevision)
 	}
 
 	private assertEngineTarget(provider: string, args: Readonly<Record<string, unknown>>, tool?: string): void {
@@ -2302,10 +2313,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const turn = this.#engineTurn
 		if (!turn) return
 		if (proposal.resource.collectionId !== turn.surface.descriptor.connectionId) throw new Error('The proposal belongs to another workflow connection.')
-		if (typeof proposal.workspaceRevision === 'string' && proposal.workspaceRevision !== turn.surface.descriptor.revision) {
-			turn.surface.invalidateConnection('The workflow connection or account changed. Reload the native workspace before continuing.')
-			throw new Error('The workflow connection or account changed. Reload the native workspace before continuing.')
-		}
+		turn.surface.assertRevision(proposal.workspaceRevision)
 		const target = turn.target
 		if (!target) return
 		if (proposal.toolName.endsWith('_draft')) {

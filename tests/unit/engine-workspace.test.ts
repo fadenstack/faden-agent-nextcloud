@@ -60,6 +60,7 @@ describe('Native workflow workspace handoff', () => {
 			contentRead: vi.fn().mockImplementation((_provider, params) => {
 				if (!params?.reference) {
 					return Promise.resolve({
+						workspaceRevision: descriptor.revision,
 						workflows: [
 							{ reference: 'u/admin/flow1', name: 'flow1', revision: 'r1' },
 							{ reference: 'f/global/flow2', name: 'flow2', revision: 'r2' },
@@ -67,6 +68,7 @@ describe('Native workflow workspace handoff', () => {
 					})
 				}
 				return Promise.resolve({
+					workspaceRevision: descriptor.revision,
 					copySource: { reference: params.reference, kind: params.sourceKind || 'saved', revision: 'c'.repeat(64) },
 					definition: { name: 'flow1' },
 				})
