@@ -16,6 +16,7 @@ use OCP\AppFramework\Http\DataDownloadResponse;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\Response;
 use OCP\IRequest;
+use Psr\Log\LoggerInterface;
 
 class FilesController extends Controller {
 	public function __construct(
@@ -25,6 +26,7 @@ class FilesController extends Controller {
 		private SearchAccessService $search,
 		private CloudIdentityVerifier $cloud,
 		private Configuration $configuration,
+		private LoggerInterface $logger,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -55,6 +57,9 @@ class FilesController extends Controller {
 		} catch (\OCP\Lock\LockedException $e) {
 			$response = new DataResponse(['message' => 'The file is busy. Try again.'], 409);
 		} catch (\Throwable $e) {
+			$this->logger->error('Native Files runtime failure ({class} at {file}:{line}).', [
+				'app' => 'fadenstack_agent', 'class' => get_class($e), 'file' => basename($e->getFile()), 'line' => $e->getLine(),
+			]);
 			$response = new DataResponse(['message' => 'The file operation failed. No success is claimed.'], 500);
 		}
 		$response->addHeader('Cache-Control', 'no-store');

@@ -81,3 +81,17 @@ jobs:
       - run: node --experimental-transform-types tests/integration/search-security.mjs
         env:
           NEXTCLOUD_URL: http://localhost:${{ matrix.port }}
+      - name: Sanitized native failure diagnostics
+        if: failure()
+        run: |
+          docker compose exec -T -u www-data ${{ matrix.service }} php -r '
+            $path = "/var/www/html/data/nextcloud.log";
+            if (!is_file($path)) { exit(0); }
+            foreach (array_slice(file($path), -250) as $line) {
+              $row = json_decode($line, true);
+              $message = $row["message"] ?? "";
+              if (($row["app"] ?? "") === "fadenstack_agent" && is_string($message) && str_starts_with($message, "Native Files runtime failure")) {
+                echo json_encode(["time" => $row["time"] ?? null, "message" => $message]), PHP_EOL;
+              }
+            }
+          '
