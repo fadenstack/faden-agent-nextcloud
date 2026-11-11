@@ -165,7 +165,9 @@ const nativeLink = computed(() => {
 .fadenstack-assistant-details dd { margin: 0; }
 
 .fadenstack-engine-details-list { margin: 4px 0 !important; font-size: var(--font-size-small, 13px); }
+
 .fadenstack-engine-details-list dt { font-weight: 600; color: var(--color-text-maxcontrast); margin-block-start: 4px; }
+
 .fadenstack-engine-details-list dd { margin-inline-start: 0; color: var(--color-main-text); }
 
 .fadenstack-assistant-details section {
