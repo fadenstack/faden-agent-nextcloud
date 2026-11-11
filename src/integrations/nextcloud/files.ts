@@ -476,6 +476,7 @@ export class NextcloudFiles implements FileApi {
 		const now = await this.identity(signal)
 		if (now.userId !== this.initial.userId || now.binding !== this.initial.binding
 			|| now.historyEnabled !== this.initial.historyEnabled
+			|| now.fileProvenanceEnabled !== this.initial.fileProvenanceEnabled
 			|| now.providerReadsEnabled !== this.initial.providerReadsEnabled
 			|| now.development !== this.initial.development
 			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled', 'filesReadsEnabled', 'folderCreateEnabled', 'filesMutationsEnabled'] as const).some(key => now[key] !== this.initial[key])
@@ -486,10 +487,12 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-		if (this.initial.historyEnabled && (/^\/proposals(?:\/|$)/.test(path) || /^\/files\/(?:folder|operations)(?:\/|$)/.test(path) || path === '/creations/finish')) return this.authenticatedPost(path, body, signal)
-		return (await axios.post<T>(generateUrl(`/apps/fadenstack_agent${path}`), body, {
-			headers: { 'X-Fadenstack-Session': this.initial.binding }, signal, timeout: 20000,
-		})).data
+		if ((this.initial.historyEnabled || this.initial.fileProvenanceEnabled) && (/^\/proposals(?:\/|$)/.test(path) || /^\/files\/(?:folder|operations)(?:\/|$)/.test(path) || path === '/creations/finish')) return this.authenticatedPost(path, body, signal)
+		try {
+			return (await axios.post<T>(generateUrl(`/apps/fadenstack_agent${path}`), body, {
+				headers: { 'X-Fadenstack-Session': this.initial.binding }, signal, timeout: 20000,
+			})).data
+		} catch (error) { throw nextcloudError(error) }
 	}
 
 	select(fileId: number, signal?: AbortSignal): Promise<FileContext> { return this.post('/context', { fileId }, signal) }
@@ -501,7 +504,9 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async approve(id: string, signal?: AbortSignal): Promise<void> { await this.post(`/proposals/${encodeURIComponent(id)}/approve`, {}, signal) }
-	async commit(id: string, signal?: AbortSignal): Promise<WriteResult> {
+	async cancelProposal(id: string): Promise<void> { await this.post(`/proposals/${encodeURIComponent(id)}/cancel`, {}, AbortSignal.timeout(5000)) }
+	async commit(id: string, signal?: AbortSignal, mark?: import('./types.ts').WriteMark): Promise<WriteResult> {
+		if (mark) throw new Error('Prepare marked content before approval; a commit cannot change it.')
 		const result = await this.post<WriteResult | DavCreatePlan>(`/proposals/${encodeURIComponent(id)}/commit`, { createProtocol: 1 }, signal)
 		if (!('kind' in result)) return result
 		const prefix = `/files/${encodeURIComponent(this.initial.userId)}/`
@@ -511,7 +516,7 @@ export class NextcloudFiles implements FileApi {
 		if (!parent?.folder || parent.path !== result.parent_path || parent.etag !== result.parent_etag || !(parent.permissions & 4)) throw new Error('The approved destination changed. No write was performed.')
 		const put = await axios.put(generateRemoteUrl('dav') + result.dav_path, result.content, {
 			headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-None-Match': '*', 'X-OC-CTime': String(Math.floor(Date.now() / 1000)) }, signal, timeout: 20000,
-		})
+		}).catch(error => { throw nextcloudError(error) })
 		if (put.status !== 201) throw new Error('Nextcloud did not confirm a new file creation. No success is claimed.')
 		await this.assertIdentity(signal)
 		return this.post('/creations/finish', { receiptId: result.receiptId }, signal)
@@ -799,6 +804,21 @@ export class NextcloudFiles implements FileApi {
 
 }
 
+export class NextcloudRequestError extends Error {
+
+	constructor(readonly status: number, message: string, options?: { cause?: unknown }) {
+		super(message, options)
+		this.name = requestErrorName(status)
+	}
+
+}
+export function requestErrorName(status: number): string {
+	return ({ 403: 'NextcloudForbidden', 404: 'NextcloudNotFound', 409: 'NextcloudConflict', 412: 'NextcloudPreconditionFailed', 423: 'NextcloudLocked', 429: 'NextcloudTooManyRequests' } as Record<number, string>)[status] ?? (status >= 500 ? 'NextcloudServerError' : 'NextcloudRequestFailed')
+}
+export function nextcloudError(error: unknown): unknown {
+	const status = (error as { response?: { status?: unknown } })?.response?.status
+	return typeof status === 'number' ? new NextcloudRequestError(status, errorMessage(error), { cause: error }) : error
+}
 export function errorMessage(error: unknown): string {
 	const response = (error as { response?: { data?: { message?: unknown } } })?.response
 	return typeof response?.data?.message === 'string'

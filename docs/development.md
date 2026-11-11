@@ -56,6 +56,20 @@ Artifacts in ignored `build/live` contain no tokens or passwords. It allows ten
 minutes per turn by default; `FADENSTACK_TURN_TIMEOUT_MS` changes that limit.
 Browser checks additionally cover the browser PDF worker and actual Vue UI.
 
+## AI marks on written files
+
+Run the provenance/frontend and `Provenance|FrontMatter` PHP regressions with Node
+24 and PHP 8.3/8.5 plus intl. Shared vectors in `tests/fixtures/provenance` keep
+the native front matter byte-compatible with the published SDK. The native
+proposal signs hashes and finishes transformations before approval; the old
+post-approval SDK-placement harness is retired. A fake signer is not accepted by
+the native publisher-pinning checks.
+
+Real native/LLM evidence and its isolated, resumable harness live in the private
+dev repository under `nextcloud/maintenance/provenance-merge-2026-11-11/`.
+Transport-only CI deliberately sets `file_provenance_enabled=0`; it cannot
+certify signing, UI approval or file-mark persistence.
+
 ## Search release tests and representative data
 
 Run `node --experimental-transform-types tests/integration/search.mjs` and

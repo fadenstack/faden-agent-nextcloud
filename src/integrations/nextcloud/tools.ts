@@ -24,12 +24,18 @@ export function writeArguments(name: string, args: Readonly<Record<string, unkno
 			|| args.filename.length > 200 || /[\x00-\x1f\x7f/\\:<>"|?*]/.test(args.filename) || !/\.(txt|md)$/i.test(args.filename)) {
 			throw new Error('Use a simple .txt or .md filename without a path.')
 		}
-		return { operation: 'create', filename: args.filename, content: args.content }
+		return { operation: 'create', filename: args.filename, content: args.content, ...(args.edit_kind === undefined ? {} : { editKind: editKindOf(CREATE_EDIT_KINDS, args.edit_kind) }) }
 	}
 	if (name !== 'nc_update_text_file' || typeof args.expectedEtag !== 'string' || !args.expectedEtag) {
 		throw new Error('The ETag from the file read is required.')
 	}
-	return { operation: 'update', content: args.content, expectedEtag: args.expectedEtag }
+	return { operation: 'update', content: args.content, expectedEtag: args.expectedEtag, ...(args.edit_kind === undefined ? {} : { editKind: editKindOf(UPDATE_EDIT_KINDS, args.edit_kind) }) }
+}
+export const CREATE_EDIT_KINDS = ['generated', 'summarised', 'translated'] as const
+export const UPDATE_EDIT_KINDS = ['rewritten', 'corrected', 'summarised', 'translated'] as const
+export function editKindOf(kinds: readonly string[], value: unknown): string {
+	if (typeof value !== 'string' || !kinds.includes(value)) throw new Error('Unsupported file edit kind.')
+	return value
 }
 export const WRITE_TOOLS = new Set(['nc_create_text_file', 'nc_update_text_file'])
 export const HISTORY_TOOLS = new Set(['nc_actions_undo', 'nc_actions_redo', 'nc_actions_reconcile', 'nc_actions_revalidate'])
@@ -141,14 +147,14 @@ export function nextcloudTools(host: ToolHost) {
 			name: 'nc_create_text_file',
 			description: 'Propose a new .txt or .md in the included file\'s folder, or known resource_id folder/file parent. Confirm destination with the user through the exact approval card. Always asks once; no overwrites.',
 			toolClass: 'destructive',
-			parameters: { type: 'object', properties: { filename: { type: 'string' }, content, resource_id: resource }, required: ['filename', 'content'], additionalProperties: false },
+			parameters: { type: 'object', properties: { filename: { type: 'string' }, content, resource_id: resource, edit_kind: { type: 'string', enum: [...CREATE_EDIT_KINDS] } }, required: ['filename', 'content'], additionalProperties: false },
 			run: (args, c) => host.write(writeArguments('nc_create_text_file', args), c, args.resource_id),
 		}),
 		defineTool({
 			name: 'nc_update_text_file',
 			description: 'Propose replacing the included or known resource_id .txt/.md after reading it. Always asks once; fails if expectedEtag changed.',
 			toolClass: 'destructive',
-			parameters: { type: 'object', properties: { content, expectedEtag: { type: 'string' }, resource_id: resource }, required: ['content', 'expectedEtag'], additionalProperties: false },
+			parameters: { type: 'object', properties: { content, expectedEtag: { type: 'string' }, resource_id: resource, edit_kind: { type: 'string', enum: [...UPDATE_EDIT_KINDS] } }, required: ['content', 'expectedEtag'], additionalProperties: false },
 			run: (args, c) => host.write(writeArguments('nc_update_text_file', args), c, args.resource_id),
 		}),
 	]

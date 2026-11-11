@@ -92,5 +92,12 @@ OC.L10N.register("fadenstack_agent", {
   "Saved: {name}": "Gespeichert: {name}",
   "Saved in Nextcloud. Open the changed resource to see it.": "In Nextcloud gespeichert. Öffnen Sie die geänderte Ressource, um sie anzuzeigen.",
   "Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.": "In Nextcloud gespeichert. Aktualisieren Sie die Ansicht, nachdem Sie Ihre Änderungen gespeichert oder verworfen haben.",
-  "Dismiss activity": "Aktivität schließen"
+  "Dismiss activity": "Aktivität schließen",
+  "No new AI mark was required by the agent's marking policy.": "Die Kennzeichnungsrichtlinie des Agenten erforderte keine neue KI-Kennzeichnung.",
+  "Marked as AI-generated in the file's metadata and its front matter.": "Als KI-generiert gekennzeichnet, in den Metadaten der Datei und in ihrem Front Matter.",
+  "Marked as AI-generated in the file's metadata.": "Als KI-generiert gekennzeichnet, in den Metadaten der Datei.",
+  "Marked as AI-generated in its front matter only: Nextcloud did not keep the file's metadata.": "Nur im Front Matter als KI-generiert gekennzeichnet: Nextcloud hat die Metadaten der Datei nicht behalten.",
+  "Saved without an AI mark: the provenance service could not sign a record.": "Ohne KI-Kennzeichnung gespeichert: Der Herkunftsdienst konnte keinen Nachweis signieren.",
+  "Saved without an AI mark: Nextcloud did not keep it.": "Ohne KI-Kennzeichnung gespeichert: Nextcloud hat sie nicht behalten.",
+  "Saved without an AI mark: translations, corrections and short labels need none.": "Ohne KI-Kennzeichnung gespeichert: Übersetzungen, Korrekturen und kurze Bezeichnungen brauchen keine."
 }, "nplurals=2; plural=(n != 1);");

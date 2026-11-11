@@ -2,6 +2,8 @@ import { FadenstackClient, AgentTokenProvider, MemoryTokenStore, loginWithPasswo
 import { FadenstackAgent, MemorySessionStore, MemoryApprovalStore, StageOrder, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
 import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore, type ToolCallPart } from '@fadenstack/ui'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
+import { nativeProvenanceSummary, type ProvenanceSummary } from '../integrations/nextcloud/provenance.ts'
+import { readerTextSha256 } from '@fadenstack/provenance'
 import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
@@ -134,6 +136,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #proposalResources = new Map<string, unknown>()
 	readonly #proposalParents = new Map<string, number>()
 	readonly #toolResults = new Map<string, ToolViewResults>()
+	readonly #placements = new Map<string, ProvenanceSummary>()
 	readonly #sessionSources = new Map<string, SourceLedger>()
 	#sources = new SourceLedger()
 	#scope: TurnScope | undefined
@@ -499,7 +502,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 							await this.#scope.assertMovement(sources, destination, signal)
 							this.#sources.assertMovement(this.#scope.policy, destination.audience)
 						}
-						const proposal = await files.propose(target.id, writeArguments(request.toolName, request.arguments), signal)
+						const args = writeArguments(request.toolName, request.arguments)
+						const filename = args.filename ?? target.file.name
+						const readerHash = config.fileProvenanceEnabled ? await readerTextSha256(args.content, /\.md$/i.test(filename) ? 'text/markdown' : 'text/plain') : undefined
+						const proposal = await files.propose(target.id, { ...args, ...(readerHash ? { readerTextSha256: readerHash } : {}) }, signal)
 						this.#proposals.set(request.callId, proposal)
 						this.#proposalParents.set(request.callId, target.parentId)
 						this.#proposalResources.set(request.callId, request.arguments.resource_id)
@@ -514,6 +520,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if (expanded) this.#expandedPreviews.set(request.callId, canonical(request.arguments))
 					const result = await this.approvals.request(request, signal)
 					if (!result.approved) {
+						const fileProposal = this.#proposals.get(request.callId)
+						if (fileProposal) await files.cancelProposal?.(fileProposal.id).catch(() => {})
 						const native = this.#extendedProposals.get(request.callId)?.native
 						if (native) this.files.fileOperations?.cancel(native).catch(() => {})
 						const folder = this.#folderCreateProposals.get(request.callId)
@@ -668,7 +676,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const result = await this.files.history.execute(preview, call.signal)
 			const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, result, call.signal) : undefined
 			this.history.items = this.history.items.map(item => item.id === preview.actionId ? { ...item, state: result.state, eligible: result.state === 'undone' ? 'redo' : result.state === 'applied' ? 'undo' : 'none' } : item)
-			return activity ? { ...result, view: activity.view } : result
+			const visible = result.provenance ? { ...result, provenance: nativeProvenanceSummary(result.provenance) } : result
+			return activity ? { ...visible, view: activity.view } : visible
 		} catch (error) {
 			this.#writeBlocked = true
 			if (generation !== undefined) this.workspace!.failed(call.callId, generation, preview.target, error, direction)
@@ -749,6 +758,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		return sessionId && turnId ? this.#toolResults.get(this.resultKey({ sessionId, turnId, callId: part.callId })) : undefined
 	}
 
+	placement(part: ToolCallPart): ProvenanceSummary | undefined {
+		const sessionId = this.chat.currentSessionId
+		const turnId = this.chat.turns.find(turn => turn.parts.includes(part))?.id
+		return sessionId && turnId ? this.#placements.get(this.resultKey({ sessionId, turnId, callId: part.callId })) : undefined
+	}
+
 	async addSearchContext(id: string): Promise<void> {
 		await this.discovery.metadata(id, this.#stop.signal)
 		const context = await this.selection.select(resourceId(id))
@@ -776,12 +791,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		if (!proposal) throw new Error('No individually approved proposal exists for this tool call.')
 		// A module may transform arguments after the SDK requested approval. Never silently
 		// substitute those values, or dispatch content different from the reviewed proposal.
-		if (resourceId !== this.#proposalResources.get(call.callId) || args.operation !== proposal.operation || args.content !== proposal.content || (args.filename ?? '') !== (proposal.operation === 'create' ? proposal.filename ?? '' : '') || (args.expectedEtag ?? '') !== (proposal.expectedEtag ?? '')) {
+		if (resourceId !== this.#proposalResources.get(call.callId) || args.operation !== proposal.operation || args.content !== (proposal.originalContent ?? proposal.content) || (args.editKind ?? (args.operation === 'create' ? 'generated' : 'rewritten')) !== (proposal.editKind ?? (proposal.operation === 'create' ? 'generated' : 'rewritten')) || (args.filename ?? '') !== (proposal.operation === 'create' ? proposal.filename ?? '' : '') || (args.expectedEtag ?? '') !== (proposal.expectedEtag ?? '')) {
 			this.#writeBlocked = true
 			this.#proposals.delete(call.callId)
 			this.#proposalViews.delete(call.callId)
 			this.#proposalResources.delete(call.callId)
 			this.#proposalParents.delete(call.callId)
+			await this.files.cancelProposal?.(proposal.id).catch(() => {})
 			throw new Error('The proposed arguments changed after approval. Review a new proposal.')
 		}
 		this.#proposals.delete(call.callId)
@@ -800,6 +816,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const generation = binding ? this.workspace!.begin(call.callId, binding) : undefined
 		try {
 			const result = await this.files.commit(proposal.id, call.signal)
+			if (result.provenance) {
+				this.#placements.set(this.resultKey(call), nativeProvenanceSummary(result.provenance))
+				while (this.#placements.size > 100) this.#placements.delete(this.#placements.keys().next().value!)
+			}
 			const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, result, call.signal) : undefined
 			if (!call.signal.aborted) {
 				try { this.discovery.remember(result.file); await this.rememberSource(`nextcloud:files:${result.file.id}`, call.signal) } catch { this.#providerCompletion = 'Nextcloud confirmed the file save. Start a new conversation; its current disclosure could not be safely checked.' }
@@ -814,7 +834,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					}
 				} catch { this.offerSelection() }
 			}
-			return activity ? { ...result, view: activity.view } : result
+			const visible = result.provenance ? { ...result, provenance: nativeProvenanceSummary(result.provenance) } : result
+			return activity ? { ...visible, view: activity.view } : visible
 		} catch (error) {
 			this.#writeBlocked = true
 			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.filename ?? '', error)
@@ -2838,7 +2859,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#scope?.invalidate()
 		this.#scope = undefined
 		this.#active = undefined
-		this.#proposals.clear()
+		this.cancelFileProposals()
 		this.#folderCreateProposals.clear()
 		this.#folderCreateInputs.clear()
 		this.#folderCreatePreviews.clear()
@@ -2859,6 +2880,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	stop(): void {
+		this.cancelFileProposals()
 		for (const p of this.#communicationProposals.values()) this.files.nativeProviders?.communicationCancel?.(p).catch(() => {})
 		for (const p of [...this.#tablesProposals.values(), ...this.#deckProposals.values()]) if (p.native) this.files.nativeProviders?.structuredCancel?.(p.native).catch(() => {})
 		this.cancelFileOperations()
@@ -2874,6 +2896,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 
 	async dispose(): Promise<void> {
 		if (this.#closed) return
+		this.cancelFileProposals()
 		this.cancelFileOperations()
 		this.#closed = true
 		for (const proposal of this.#folderCreateProposals.values()) {
@@ -2888,6 +2911,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.selection.clear()
 		this.discovery.clear()
 		this.#toolResults.clear()
+		this.#placements.clear()
 		this.#sources.clear()
 		this.#sessionSources.clear()
 		this.#providerReads?.dispose()
@@ -2913,6 +2937,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#proposalParents.clear()
 		await this.tokens.signOut()
 		await this.agent.dispose()
+	}
+
+	private cancelFileProposals(): void {
+		for (const proposal of this.#proposals.values()) this.files.cancelProposal?.(proposal.id).catch(() => {})
+		this.#proposals.clear()
 	}
 
 	private cancelFileOperations(): void {

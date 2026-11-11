@@ -14,6 +14,7 @@ import { DECK_MUTATIONS } from '../integrations/nextcloud/deck.ts'
 import { MAIL_MUTATIONS, TALK_MUTATIONS } from '../integrations/nextcloud/mailTalk.ts'
 import type { FileContext, SearchViewResults } from '../integrations/nextcloud/types.ts'
 import NextcloudApproval from './NextcloudApproval.vue'
+import ProvenanceNote from './ProvenanceNote.vue'
 import { CONTENT_MUTATIONS } from '../providers/contentTools.ts'
 import SearchResultsCard from './SearchResultsCard.vue'
 import FolderResultsCard from './FolderResultsCard.vue'
@@ -104,6 +105,8 @@ const renderers: PartRenderer[] = [
 			return h(NextcloudApproval, { part, strings, host: props.host })
 		}
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
+			const placement = props.host.placement(part)
+			if (placement) return [h(ToolCallView, { part, strings }), h(ProvenanceNote, { summary: placement })]
 			const result = props.host.toolResult(part)
 			if (result) {
 				if (result.kind === 'nextcloud-agentfile-result') {

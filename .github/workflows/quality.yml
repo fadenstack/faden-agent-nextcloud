@@ -39,6 +39,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           tools: composer:v2
+          extensions: intl
       - run: composer validate --strict
       - run: composer install --no-interaction --no-progress
       - run: find lib appinfo templates tests -name '*.php' -print0 | xargs -0 -n1 php -l

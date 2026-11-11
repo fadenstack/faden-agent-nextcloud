@@ -45,6 +45,30 @@
   around other installed apps' hooks.
 - Folder output is bounded, but Nextcloud materializes the underlying directory.
 - Primary German elements are translated; server/profile/error text can remain English.
+  The AI-mark line under a write is translated into German, French, Spanish and
+  Simplified Chinese; the app's other texts have German only.
+- Historical carrier measurements on 31.0.14 and 35.0.1 found metadata surviving rename,
+  move, copy (the app's listener, also in a copied folder), new versions, Text's
+  saves, shares and the trash. A recipient of a single-file share does not see it
+  over WebDAV (Nextcloud lists no metadata on a share's own root; inside a shared
+  folder it does); the record is still the file's. A downloaded `.txt` carries no
+  metadata mark in its bytes; this native path does not attest a model watermark.
+  A `.md` keeps its front matter.
+  Copies made outside Nextcloud (download and upload) lose the metadata. Text adds a
+  blank line after the front matter on its first save; the mark stays.
+- The 0.1.16 native path signs normalized hashes and prepares final marked bytes
+  before approval. Changed corrections are conservatively marked; explicit
+  policy exemptions do not create a new record. Unsupported visible-label and
+  strict long-text watermark requirements fail before dispatch. An unavailable
+  signer also blocks dispatch. These are stricter limits than the old prototype's
+  post-approval SDK placement and unsigned fallback.
+- Metadata records origin history. It can survive later manual edits and text
+  Undo/Redo; its presence alone does not prove that today's text matches its signed
+  hash. Text History restores exact recorded bytes, including any front matter;
+  it does not reverse the public signature or other native version side effects.
+- Signatures prepared for abandoned/expired previews can remain without a confirmed
+  placement. Deny/Stop remove pending native authority and attempt a not-written
+  report. A report outage never causes a repeated native save or claims delivery.
 - Production npm audit passes. Inherited developer tooling has remaining transitive
   advisories; no forced major downgrade of Nextcloud tooling was applied.
 

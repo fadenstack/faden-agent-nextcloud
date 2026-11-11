@@ -8,6 +8,7 @@ import { APP_UI } from '../../src/agent/appUi.ts'
 import contract from '../../contracts/nextcloud-pilot.json'
 import { SelectedContext } from '../../src/integrations/nextcloud/context.ts'
 import { writeArguments } from '../../src/integrations/nextcloud/tools.ts'
+import { withFrontMatter, readerTextSha256 } from '@fadenstack/provenance'
 import { installViewerIntegration } from '../../src/integrations/nextcloud/viewer.ts'
 import type { FileApi, FileContext, Identity, Proposal } from '../../src/integrations/nextcloud/types.ts'
 import type { ScopePolicy } from '../../src/platform/scope.ts'
@@ -53,6 +54,35 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('SDK integration and file boundary', () => {
+	it('approves final native-marked bytes and computes the shared reader digest before any commit', async () => {
+		const content = '# Native draft\n\nSynthetic content.'
+		const marked = withFrontMatter(content, '5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1')
+		let round = 0
+		const { host, files, gateway } = fixture({ model: () => ++round === 1
+			? { toolCalls: [{ id: 'create', name: 'nc_create_text_file', arguments: { filename: 'Draft.md', content } }] }
+			: { text: 'Completed.' } }, { ...identity, fileProvenanceEnabled: true }, {
+			propose: vi.fn(async (contextId, args) => ({ ...args, id: 'marked-proposal', contextId, target: '/Draft.md', before: null,
+				content: marked, originalContent: args.content, editKind: 'generated' })),
+			commit: vi.fn(async () => ({ operation: 'create', file: { ...selected.file, id: 3, name: 'Draft.md' }, provenance: {
+				metadata: JSON.stringify({ record: { id: '5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1' }, signature: 'native-only-signature' }),
+				frontMatter: marked, recordId: '5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1', exempt: null,
+			} })),
+		})
+		try {
+			await host.signIn('alice', 'test')
+			host.offerSelection(await host.selection.select(2))
+			const work = host.send('Create the native draft')
+			const part = await pending(host)
+			expect(part.request.arguments.content).toBe(marked)
+			expect(files.propose).toHaveBeenCalledWith(selected.id, expect.objectContaining({ content, readerTextSha256: await readerTextSha256(content, 'text/markdown') }), expect.any(AbortSignal))
+			expect(files.commit).not.toHaveBeenCalled()
+			await host.approve(part); await work
+			expect(files.commit).toHaveBeenCalledWith('marked-proposal', expect.any(AbortSignal))
+			const messages = JSON.stringify(gateway.modelCalls.at(-1)?.messages)
+			expect(messages).toContain('nextcloud-metadata')
+			expect(messages).not.toContain('native-only-signature')
+		} finally { host.stop(); await host.dispose() }
+	})
 	it.each([true, false])('routes an included Whiteboard through its governed native capability (available=%s)', async available => {
 		const policy: ScopePolicy = { version: 'native-board-context', gatewayOrigin: identity.serverUrl, sources: [{ kind: 'user-files' }], destinations: [], tools: ['nc_whiteboard_read'], sourceClasses: ['standard'], downstreamPolicy: 'unverified', destinationAudiences: [], movements: [], developmentLoopback: true }
 		const file = { ...selected.file, name: 'Canvas.whiteboard', path: '/Canvas.whiteboard', mime: 'application/x-whiteboard' }

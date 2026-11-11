@@ -31,6 +31,7 @@ class FileService {
 	public const MAX_WRITE_BYTES = 262144;
 	private const KEY = 'fadenstack_agent.state';
 	private ?VerifiedCloudPrincipal $principal = null;
+	private string $cloudToken = '';
 
 	public function __construct(
 		private IRootFolder $root,
@@ -45,12 +46,13 @@ class FileService {
 		private IAppManager $apps,
 		private IManager $shares,
 		private ServerVersion $version,
+		private FileProvenance $fileProvenance,
 	) {
 	}
 
 	public function journalIdentity(): JournalIdentity {
 		$state = $this->state();
-		$binding = hash('sha256', json_encode([$state['binding'], $this->config->get(), $this->scope->configStamp(), $this->config->historyEnabled()], JSON_THROW_ON_ERROR));
+		$binding = hash('sha256', json_encode([$state['binding'], $this->config->get(), $this->scope->configStamp(), $this->config->historyEnabled(), $this->config->fileProvenanceEnabled()], JSON_THROW_ON_ERROR));
 		return $this->principal === null ? new JournalIdentity($this->uid(), JournalIdentity::nativeScope(), $binding)
 			: $this->pairedHistoryIdentity($this->principal);
 	}
@@ -60,12 +62,16 @@ class FileService {
 		$this->principal = $principal;
 	}
 
+	public function bindCloudToken(#[\SensitiveParameter] string $token): void {
+		$this->cloudToken = $token;
+	}
+
 	public function pairedHistoryIdentity(VerifiedCloudPrincipal $principal): JournalIdentity {
 		$state = $this->state();
 		// Durable private history survives app/policy upgrades. Current native policy
 		// and configuration still invalidate tickets and previews, not ownership.
 		$scope = hash('sha256', 'nextcloud-files-paired-history-v1');
-		$binding = hash('sha256', json_encode([$state['binding'], $this->config->get(), $this->scope->configStamp(), $this->config->historyEnabled()], JSON_THROW_ON_ERROR));
+		$binding = hash('sha256', json_encode([$state['binding'], $this->config->get(), $this->scope->configStamp(), $this->config->historyEnabled(), $this->config->fileProvenanceEnabled()], JSON_THROW_ON_ERROR));
 		return JournalIdentity::forPrincipal($this->uid(), $scope, $binding, $principal);
 	}
 
@@ -124,7 +130,7 @@ class FileService {
 		$s = $this->state();
 		$config = $this->config->get();
 		$policy = $config['enabled'] && $config['agent'] && $config['serverUrl'] ? $this->scope->getPolicy($s['user'], $config['serverUrl']) : null;
-		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'historyEnabled' => $this->config->historyEnabled(), 'filesReadsEnabled' => $this->config->filesReadsEnabled(), 'folderCreateEnabled' => $this->config->folderCreateEnabled(), 'providerReadsEnabled' => $this->config->providerReadsEnabled(), 'filesMutationsEnabled' => $this->config->filesMutationsEnabled()];
+		return ['userId' => $s['user'], 'binding' => $s['binding'], ...$config, 'scopePolicy' => $policy, 'fileProvenanceEnabled' => $this->config->fileProvenanceEnabled(), 'historyEnabled' => $this->config->historyEnabled(), 'filesReadsEnabled' => $this->config->filesReadsEnabled(), 'folderCreateEnabled' => $this->config->folderCreateEnabled(), 'providerReadsEnabled' => $this->config->providerReadsEnabled(), 'filesMutationsEnabled' => $this->config->filesMutationsEnabled()];
 	}
 
 	public function check(string $binding): void {
@@ -395,6 +401,7 @@ class FileService {
 		$this->selected($contextId); // detect changes during the read
 		$s = $this->state();
 		$s['contexts'][$contextId]['readEtag'] = $n->getEtag();
+		$s['contexts'][$contextId]['readStorageEtag'] = $n->getStorage()->getETag($n->getInternalPath());
 		$this->session->set(self::KEY, $s);
 		$length = mb_strlen($text, 'UTF-8');
 		return ['file' => $this->metadata($n), 'text' => mb_substr($text, 0, 50000, 'UTF-8'),
@@ -605,7 +612,7 @@ class FileService {
 		}
 	}
 
-	public function propose(string $contextId, string $operation, string $filename, string $content, string $expectedEtag): array {
+	public function propose(string $contextId, string $operation, string $filename, string $content, string $expectedEtag, string $editKind = '', string $readerTextSha256 = ''): array {
 		if (strlen($content) > self::MAX_WRITE_BYTES || !mb_check_encoding($content, 'UTF-8') || str_contains($content, "\0")) {
 			throw new Problem('The replacement must be UTF-8 text of at most 256 KiB.', 413);
 		}
@@ -640,8 +647,29 @@ class FileService {
 		} else {
 			throw new Problem('Unsupported operation.');
 		}
+		$rawContent = $content;
+		$kind = $editKind !== '' ? $editKind : ($operation === 'create' ? 'generated' : 'rewritten');
+		$allowed = $operation === 'create' ? ['generated', 'summarised', 'translated'] : ['rewritten', 'corrected', 'summarised', 'translated'];
+		if (!in_array($kind, $allowed, true)) {
+			throw new Problem('Unsupported file edit kind.');
+		}
+		$mark = null;
+		if ($this->config->fileProvenanceEnabled()) {
+			if ($this->principal === null || $this->cloudToken === '') {
+				throw new Problem('Reload the page and sign in before preparing a marked file.', 401);
+			}
+			// Native classification is deliberately conservative until a certified
+			// shared classifier is available here: a changed correction stays marked.
+			$effectiveKind = $kind === 'corrected' && $content !== $before ? 'rewritten' : $kind;
+			$mark = $this->fileProvenance->prepare($content, $filename, $effectiveKind, $this->cloudToken, $readerTextSha256 !== '' ? $readerTextSha256 : null);
+			$mark['filename'] = $filename;
+			$mark['tool'] = $operation === 'create' ? 'nc_create_text_file' : 'nc_update_text_file';
+			$content = $mark['content'];
+		}
 		$p = ['id' => bin2hex(random_bytes(24)), 'contextId' => $contextId, 'operation' => $operation,
 			'filename' => $filename, 'content' => $content, 'before' => $before, 'expectedEtag' => $expectedEtag,
+			'originalContent' => $rawContent, 'editKind' => $kind, 'provenancePlan' => $mark,
+			'expectedStorageEtag' => $operation === 'update' ? ($c['readStorageEtag'] ?? null) : null,
 			'folderId' => $folder->getId(), 'target' => rtrim($this->root->getUserFolder($this->uid())->getRelativePath($folder->getPath()), '/') . '/' . $filename,
 			'expires' => time() + 600, 'approved' => false];
 		$identity = $this->journalIdentity();
@@ -663,6 +691,18 @@ class FileService {
 			throw new Problem('The proposal expired or was already consumed.', 410);
 		}
 		return $p;
+	}
+
+	/** Own native session only. Never retracts or relabels a consumed/dispatched proposal. */
+	public function cancel(string $id, #[\SensitiveParameter] string $token = ''): array {
+		$s = $this->state();
+		$p = $s['proposals'][$id] ?? null;
+		unset($s['proposals'][$id]);
+		$this->session->set(self::KEY, $s);
+		if (isset($p['provenancePlan'])) {
+			$this->fileProvenance->notWritten($p['provenancePlan'], $token);
+		}
+		return ['cancelled' => true];
 	}
 
 	public function approve(string $id): array {
@@ -687,6 +727,9 @@ class FileService {
 		$s = $this->state();
 		unset($s['proposals'][$id]); // one attempt, including failed attempts
 		$this->session->set(self::KEY, $s);
+		if (isset($p['provenancePlan'])) {
+			$this->fileProvenance->assertCurrent($p['provenancePlan'], $this->cloudToken);
+		}
 		$n = $this->selected($p['contextId']);
 		$folder = $this->node($p['folderId']);
 		if (!$folder instanceof Folder || ($n instanceof File && $n->getParent()->getId() !== $folder->getId())) {
@@ -710,6 +753,7 @@ class FileService {
 				throw new Problem('Too many unfinished creations. Wait for them to expire.', 429);
 			}
 			$s['receipts'][$p['id']] = ['folderId' => $folder->getId(), 'folderPath' => $parent['path'], 'filename' => $p['filename'],
+				'provenancePlan' => $p['provenancePlan'] ?? null,
 				'hash' => hash('sha256', $p['content']), 'expires' => time() + 600, 'journal' => $journal,
 				'identityScope' => $p['identityScope'], 'identitySession' => $p['identitySession']];
 			$this->session->set(self::KEY, $s);
@@ -735,7 +779,7 @@ class FileService {
 				}
 				try {
 					$etag = $n->getStorage()->getETag($n->getInternalPath());
-					if ($etag !== $p['expectedEtag']) {
+					if ($this->node($n->getId())->getEtag() !== $p['expectedEtag'] || $etag !== ($p['expectedStorageEtag'] ?? $p['expectedEtag'])) {
 						throw new Problem('Another user changed the file. Read it again; no changes were saved.', 409);
 					}
 					if (!stream_get_meta_data($stream)['seekable'] || !rewind($stream)) {
@@ -785,7 +829,8 @@ class FileService {
 			}
 			$this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'verified', new VerifiedReadback($result->getStorage()->getETag($result->getInternalPath())));
 		}
-		return ['operation' => $p['operation'], 'file' => $this->metadata($this->node($result->getId()), 'write'), 'actionId' => $journal['id'],
+		$marks = isset($p['provenancePlan']) ? $this->fileProvenance->saved($p['provenancePlan'], $result->getId(), $p['content'], $this->cloudToken) : null;
+		return ['operation' => $p['operation'], 'file' => $this->metadata($this->node($result->getId()), 'write'), 'actionId' => $journal['id'], 'provenance' => $marks,
 			'provider' => ['app' => 'files', 'collectionId' => (string)$result->getParent()->getId(), 'filename' => $result->getName()]];
 	}
 
@@ -809,7 +854,8 @@ class FileService {
 		}
 		$resource = new JournalResource('files', 'parent:' . $folder->getId() . '/name:' . $r['filename'], 'file:' . $file->getId());
 		$this->journal->finish($this->journalIdentity(), $r['journal']['id'], $r['journal']['ticket'], 'verified', new VerifiedReadback($file->getStorage()->getETag($file->getInternalPath()), $resource));
-		return ['operation' => 'create', 'file' => $this->metadata($file, 'write'), 'actionId' => $r['journal']['id'],
+		$marks = isset($r['provenancePlan']) ? $this->fileProvenance->saved($r['provenancePlan'], $file->getId(), $this->bytes($file, self::MAX_WRITE_BYTES), $this->cloudToken) : null;
+		return ['operation' => 'create', 'file' => $this->metadata($file, 'write'), 'actionId' => $r['journal']['id'], 'provenance' => $marks,
 			'provider' => ['app' => 'files', 'collectionId' => (string)$file->getParent()->getId(), 'filename' => $file->getName()]];
 	}
 

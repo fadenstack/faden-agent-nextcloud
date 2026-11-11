@@ -70,6 +70,17 @@ complete target and content on the approval card, then choose **Allow once** or
 read and matching revision. Save editor changes before attaching: context comes
 from the saved file, not the unsaved editor buffer.
 
+Files the assistant writes are marked as AI-generated: Nextcloud keeps a signed
+record with the file, also on copies, and a Markdown file shows `ai-generated` and
+`ai-record-id` in a front matter box at its top in Text. A line under the write says
+how the saved file is marked, or whether the server's policy exempted this output.
+The exact front matter is included in the approval preview. Changed corrections
+are conservatively marked by the native path. Keep these marks when editing.
+Metadata records origin history: a later manual edit or text Undo does not prove
+that its current contents still match an earlier signed record.
+
+![The note in Nextcloud Text with the FRONT MATTER box holding ai-generated: true and the ai-record-id](screenshots/live-markdown-front-matter-dark.jpg)
+
 ## Deutsch
 
 Öffne Dateien und klicke auf das Fadenstack-Maskottchen in der oberen Leiste oder
@@ -111,3 +122,13 @@ Ziel und vollständigen Inhalt in der Freigabekarte, bevor du einmalig erlaubst
 oder ablehnst. Vorhandene Dateien werden beim Erstellen nicht überschrieben.
 Änderungen setzen das Lesen der aktuellen Revision voraus. Speichere Änderungen
 im Editor vor dem Anhängen; der Assistent verwendet die gespeicherte Datei.
+
+Vom Assistenten geschriebene Dateien werden als KI-generiert gekennzeichnet:
+Nextcloud speichert einen signierten Nachweis mit der Datei, auch bei Kopien, und
+eine Markdown-Datei zeigt in Text oben einen Front-Matter-Kasten mit `ai-generated`
+und `ai-record-id`. Eine Zeile unter dem Schreibvorgang sagt, wie die Datei
+gekennzeichnet ist oder ob die Richtlinie diese Ausgabe ausnimmt. Geänderte
+Korrekturen werden vorsorglich gekennzeichnet. Der vollständige markierte Text
+steht vor der Freigabe in der Vorschau. Behalte die Kennzeichnungen beim Bearbeiten bei.
+
+![Die Notiz in Nextcloud Text mit dem Kasten FRONT MATTER, der ai-generated: true und die ai-record-id enthält](screenshots/live-markdown-front-matter-dark.jpg)

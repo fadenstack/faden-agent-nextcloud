@@ -23,7 +23,7 @@ final class CloudApi {
 		$config = $this->configuration->get();
 		$origin = Configuration::origin($config['serverUrl'], $config['development']);
 		if (!preg_match('/^[A-Za-z0-9_-]{1,100}$/D', $config['agent'])
-			|| !in_array($route, ['profile', 'tools/check', 'provenance/records', 'provenance/anchors'], true) || in_array($route, ['profile', 'provenance/anchors'], true) !== ($payload === null)) {
+			|| !in_array($route, ['profile', 'tools/check', 'provenance/records', 'provenance/anchors', 'provenance/policy', 'provenance/placements'], true) || in_array($route, ['profile', 'provenance/anchors', 'provenance/policy'], true) !== ($payload === null)) {
 			throw new Problem('The configured Fadenstack request is invalid.', 503);
 		}
 		if (!preg_match('/^[A-Za-z0-9._~+\/=\-]{16,8192}$/D', $accessToken)) {
@@ -56,7 +56,7 @@ final class CloudApi {
 			if ($status === 409) {
 				throw new Problem('The Fadenstack command or policy changed. Review it again.', 409);
 			}
-			if ($status !== 200 || !preg_match('/^application\/json(?:\s*;|$)/iD', $response->getHeader('Content-Type'))) {
+			if ($status !== ($route === 'provenance/placements' ? 202 : 200) || !preg_match('/^application\/json(?:\s*;|$)/iD', $response->getHeader('Content-Type'))) {
 				throw new Problem('The configured Fadenstack service returned an invalid response.', 503);
 			}
 			$length = $response->getHeader('Content-Length');

@@ -13,6 +13,7 @@ export interface Identity extends AppConfig {
 	locale?: string
 	scopePolicy?: ScopePolicy | null
 	historyEnabled?: boolean
+	fileProvenanceEnabled?: boolean
 	filesReadsEnabled?: boolean
 	folderCreateEnabled?: boolean
 	providerReadsEnabled?: boolean
@@ -69,14 +70,21 @@ export interface WriteArguments {
 	filename?: string
 	content: string
 	expectedEtag?: string
+	editKind?: string
+	/** SDK-derived reader-text digest, computed by the host, never a model argument. */
+	readerTextSha256?: string
 }
 export interface Proposal extends WriteArguments {
 	id: string
 	target: string
 	before: string | null
 	contextId: string
+	originalContent?: string
+	editKind?: string
 }
-export interface WriteResult { operation: string; file: FileMetadata; actionId?: string; provider?: { app: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'spreed' | 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'flow' | 'windmill' | 'n8n'; collectionId: string; filename: string; date?: string; mailboxId?: number } }
+export interface FileMarks { key: string; metadata: string | null; frontMatter: string | null; exempt?: string | null; recordId?: string | null }
+export interface WriteMark { content: string; provenance?: string }
+export interface WriteResult { provenance?: FileMarks | null; operation: string; file: FileMetadata; actionId?: string; provider?: { app: 'files' | 'calendar' | 'tasks' | 'contacts' | 'tables' | 'deck' | 'mail' | 'spreed' | 'collectives' | 'forms' | 'notes' | 'bookmarks' | 'flow' | 'windmill' | 'n8n'; collectionId: string; filename: string; date?: string; mailboxId?: number } }
 
 export interface FileOperationProposal {
 	id: string; digest: string; operation: 'copy' | 'move' | 'share_readonly'; toolName: string; target: string
@@ -662,6 +670,7 @@ export interface FileApi {
 	pdf(contextId: string, signal?: AbortSignal): Promise<Uint8Array>
 	list(contextId: string, signal?: AbortSignal): Promise<Listing>
 	propose(contextId: string, args: WriteArguments, signal?: AbortSignal): Promise<Proposal>
+	cancelProposal?(id: string): Promise<void>
 	approve(id: string, signal?: AbortSignal): Promise<void>
 	commit(id: string, signal?: AbortSignal): Promise<WriteResult>
 	scopeResource?(resourceId: string, purpose: ResourcePurpose, signal: AbortSignal): Promise<NativeResource>

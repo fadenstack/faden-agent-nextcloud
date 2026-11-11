@@ -125,6 +125,16 @@ SDK internals nor model-produced JSON drive the cards. See [search](search.md).
 
 ## Validation
 
+File provenance is prepared natively before approval. The broker sends the
+normalized content hash to the configured agent's signer, verifies the publisher
+leaf against that installation's anchors, and places the record ID in Markdown
+front matter. The stored proposal owns the complete final bytes, record and
+policy snapshot. Commit accepts no alternative content or signature, rechecks
+policy, and journals the approved bytes under the existing lock/identity/scope
+guards. Metadata storage and reporting happen only after verified native save;
+their failure never causes a second write. Marking is an origin signal, not a
+native permission or proof that later manual edits still match a signed record.
+
 Each phase is implemented as a vertical slice. Automated SDK simulation tests are
 distinct from actual Nextcloud HTTP/permission tests and from a live model pilot.
 The mandatory PDF → streamed summary → approved Markdown scenario must be recorded

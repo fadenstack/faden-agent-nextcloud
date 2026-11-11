@@ -42,6 +42,7 @@ class FilesController extends Controller {
 				$token = $this->request->getHeader('X-Fadenstack-Agent-Token');
 				if ($token !== '' || $this->configuration->historyEnabled()) {
 					$this->files->bindCloudPrincipal($this->cloud->verify($token));
+					$this->files->bindCloudToken($token);
 				}
 			}
 			$result = $operation();
@@ -55,7 +56,7 @@ class FilesController extends Controller {
 		} catch (\OCP\Files\NotPermittedException $e) {
 			$response = new DataResponse(['message' => 'Permission denied.'], 403);
 		} catch (\OCP\Lock\LockedException $e) {
-			$response = new DataResponse(['message' => 'The file is busy. Try again.'], 409);
+			$response = new DataResponse(['message' => 'The file is busy. Try again.'], 423);
 		} catch (\Throwable $e) {
 			$this->logger->error('Native Files runtime failure ({class} at {file}:{line}).', [
 				'app' => 'fadenstack_agent', 'class' => get_class($e), 'file' => basename($e->getFile()), 'line' => $e->getLine(),
@@ -123,13 +124,18 @@ class FilesController extends Controller {
 	}
 	#[NoAdminRequired]
 	#[UseSession]
-	public function propose(string $contextId, string $operation, string $filename = '', string $content = '', string $expectedEtag = ''): Response {
-		return $this->run(fn () => $this->files->propose($contextId, $operation, $filename, $content, $expectedEtag), true);
+	public function propose(string $contextId, string $operation, string $filename = '', string $content = '', string $expectedEtag = '', string $editKind = '', string $readerTextSha256 = ''): Response {
+		return $this->run(fn () => $this->files->propose($contextId, $operation, $filename, $content, $expectedEtag, $editKind, $readerTextSha256), true);
 	}
 	#[NoAdminRequired]
 	#[UseSession]
 	public function approve(string $id): Response {
 		return $this->run(fn () => $this->files->approve($id), true);
+	}
+	#[NoAdminRequired]
+	#[UseSession]
+	public function cancel(string $id): Response {
+		return $this->run(fn () => $this->files->cancel($id, $this->request->getHeader('X-Fadenstack-Agent-Token')), false, true);
 	}
 	#[NoAdminRequired]
 	#[UseSession]

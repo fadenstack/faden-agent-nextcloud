@@ -15,12 +15,18 @@ final class EngineProvenance {
 	}
 	public function sign(string $provider, string $source, #[\SensitiveParameter] string $token): array {
 		$media = $provider === 'windmill' ? 'application/vnd.windmill.flow+json' : 'application/vnd.n8n.workflow+json';
-		$result = $this->cloud->request($token, 'provenance/records', ['content_sha256' => hash('sha256', $source), 'media_type' => $media, 'edit_kind' => 'generated']);
+		return $this->signContent($media, $source, 'generated', $token);
+	}
+
+	/** Caller supplies canonical text, or original engine JSON. Only its digest leaves Nextcloud. */
+	public function signContent(string $media, string $source, string $kind, #[\SensitiveParameter] string $token, ?string $readerSha256 = null): array {
+		$result = $this->cloud->request($token, 'provenance/records', ['content_sha256' => hash('sha256', $source), 'media_type' => $media, 'edit_kind' => $kind,
+			...($readerSha256 !== null ? ['text_sha256' => $readerSha256] : [])]);
 		$value = $result['value'];
 		$record = $value['record'] ?? null;
 		if (!$record instanceof \stdClass || ($record->contract ?? null) !== 'provenance/v1'
 			|| !is_string($record->id ?? null) || strlen($record->id) > 100 || $record->id === ''
-			|| ($record->media_type ?? null) !== $media || ($record->edit_kind ?? null) !== 'generated'
+			|| ($record->media_type ?? null) !== $media || ($record->edit_kind ?? null) !== $kind
 			|| !is_string($value['signature'] ?? null) || strlen($value['signature']) < 32 || strlen($value['signature']) > 20000) {
 			throw new Problem('A signed origin record could not be obtained. No engine action was dispatched.', 503);
 		}

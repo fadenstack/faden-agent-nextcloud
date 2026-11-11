@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-11-11
+
+### Added
+
+- Signed file origin metadata and Markdown front matter, prepared before the
+  individual approval and recorded as the exact saved bytes in encrypted History.
+- Publisher-pinned signature verification, hash-only signing, native readback and
+  a file-mark status under successful writes. Copies retain origin metadata.
+- Coherent published SDK 0.3.0-rc.2 provenance helpers; no SDK source changes.
+
+### Fixed
+
+- Compare copied files' cached and storage revisions against their own read-time
+  values. Preserve guarded writes, content verification and native cache refresh.
+- Refuse late marked-content substitution and changes to the marking policy
+  while a proposal waits. Surface native lock errors as HTTP 423.
+
 ## [0.1.14] - 2026-11-07
 
 ### Added
@@ -53,6 +70,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the language in its settings (Automatic is their Nextcloud language), kept per user in
   the browser.
 - Esc closes the panel's menus or stops an answer without also closing the drawer.
+- A file operation Nextcloud refuses comes back in its own words ("The file is busy. Try
+  again.") instead of "Request failed with status code 409", with a name for what failed
+  (`NextcloudLocked`, `NextcloudConflict`, ...) that a write refused after its record was
+  signed reports to the server as its failure. A file another app holds locked (Text
+  while it is open) is answered 423 Locked instead of 409.
+- An approved update brings Nextcloud's file cache up to date: the file's ETag, size and
+  time change with the write, so sync clients fetch it and the agent's next read in the
+  same chat sees the new text (before, it kept the old ETag and the agent was told the
+  file was unchanged).
 
 ### Added
 

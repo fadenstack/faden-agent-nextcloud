@@ -16,12 +16,14 @@ use OCA\FadenstackAgent\History\FilesAccessResolver;
 use OCA\FadenstackAgent\History\StructuredAccessResolver;
 use OCA\FadenstackAgent\History\TasksAccessResolver;
 use OCA\FadenstackAgent\History\WorkflowAccessResolver;
+use OCA\FadenstackAgent\Listener\CopyListener;
 use OCA\FadenstackAgent\Listener\ShellListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\AppFramework\Http\Events\BeforeTemplateRenderedEvent;
+use OCP\Files\Events\Node\NodeCopiedEvent;
 
 class Application extends App implements IBootstrap {
 	public const APP_ID = 'fadenstack_agent';
@@ -34,6 +36,7 @@ class Application extends App implements IBootstrap {
 	public function register(IRegistrationContext $context): void {
 		$context->registerEventListener(BeforeTemplateRenderedEvent::class, ShellListener::class);
 		$context->registerEventListener(SabrePluginAddEvent::class, SabrePluginListener::class);
+		$context->registerEventListener(NodeCopiedEvent::class, CopyListener::class);
 		$context->registerService(AccessResolverRegistry::class, static function (\Psr\Container\ContainerInterface $container): AccessResolverRegistry {
 			$registry = new AccessResolverRegistry();
 			$registry->register('files', $container->get(FilesAccessResolver::class));

@@ -93,6 +93,7 @@ return ['routes' => [
 	['name' => 'files#finishFolder', 'url' => '/files/folder/finish', 'verb' => 'POST'],
 	['name' => 'files#propose', 'url' => '/proposals', 'verb' => 'POST'],
 	['name' => 'files#approve', 'url' => '/proposals/{id}/approve', 'verb' => 'POST'],
+	['name' => 'files#cancel', 'url' => '/proposals/{id}/cancel', 'verb' => 'POST'],
 	['name' => 'files#commit', 'url' => '/proposals/{id}/commit', 'verb' => 'POST'],
 	['name' => 'files#finishCreate', 'url' => '/creations/finish', 'verb' => 'POST'],
 	['name' => 'history#listing', 'url' => '/history/list', 'verb' => 'POST'],
