@@ -35,6 +35,15 @@ Each engine connection enforces current native token authority throughout its li
 - **n8n Community broad keys**: Native keys may have instance-wide access, including other users' workflows. This agent adds a personal-owner boundary: discovery omits workflows without one verified matching personal owner, and direct reads, copies and runs refuse them. Team/shared projects are outside this supported subset. Native key permissions themselves remain broad.
 - **Opaque API keys**: An unverifiable key provides no agent workflow read, draft or execution capability. Disconnect it or replace it with a current verifiable native user key. The native editor still has its own login.
 
+Windmill **1.841.0** can continue accepting a recently used token after remote
+deletion or short expiry because its native authorization is cached. Our warm
+token test observed acceptance more than 90 seconds after deletion; the pinned
+[native cache](https://github.com/windmill-labs/windmill/blob/v1.841.0/backend/windmill-api-auth/src/auth.rs)
+uses 120 seconds. Choose **Disconnect** here to stop this agent's future access
+without waiting for native cache expiry. Disconnect changes the local vault
+generation; it cannot retract an already-dispatched request. Remote revocation
+and local removal are separate controls.
+
 ![Windmill read-only refusal](screenshots/engine-windmill-readonly-refusal.png)
 
 ![Windmill revoked token disconnect](screenshots/engine-windmill-revoked-token-disconnect.png)
