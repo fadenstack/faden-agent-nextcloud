@@ -110,11 +110,12 @@ class SearchAccessService {
 		}
 		// Native Folder search removes its root after applying the database limit.
 		// Exclude it in the predicate so it cannot consume a page/overflow slot.
-		// Resolve also checks the descendant path. Avoid NOT tiers: tested NC35/PostgreSQL
+		// Native file IDs are non-null and support equality, not numeric ordering.
+		// Resolve also checks the descendant path. Avoid NOT name tiers: tested NC35/PostgreSQL
 		// SearchDAV returns empty results for those predicates. The client merges
 		// bounded exact/prefix/substring tiers and removes duplicate file IDs.
 		$conditions = [self::comparison('gte', 'oc:size', '0'),
-			'<d:or>' . self::comparison('lt', 'oc:fileid', (string)$scope['id']) . self::comparison('gt', 'oc:fileid', (string)$scope['id']) . '</d:or>'];
+			'<d:not>' . self::comparison('eq', 'oc:fileid', (string)$scope['id']) . '</d:not>'];
 		foreach (['modified_after' => ['gte', 'd:getlastmodified'], 'modified_before' => ['lte', 'd:getlastmodified'], 'created_after' => ['gte', 'd:creationdate'], 'min_size' => ['gte', 'oc:size'], 'max_size' => ['lte', 'oc:size']] as $key => [$op, $property]) {
 			if (isset($f[$key])) {
 				$conditions[] = self::comparison($op, $property, (string)$f[$key]);

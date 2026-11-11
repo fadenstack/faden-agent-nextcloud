@@ -24,10 +24,10 @@ class SearchValidationTest extends TestCase {
 		$xpath = new \DOMXPath($xml);
 		$xpath->registerNamespace('d', 'DAV:');
 		$xpath->registerNamespace('oc', 'http://owncloud.org/ns');
-		self::assertSame('42', $xpath->evaluate('string(//d:where/d:and/d:or/d:lt[d:prop/oc:fileid]/d:literal)'));
-		self::assertSame('42', $xpath->evaluate('string(//d:where/d:and/d:or/d:gt[d:prop/oc:fileid]/d:literal)'));
+		self::assertSame('42', $xpath->evaluate('string(//d:where/d:and/d:not/d:eq[d:prop/oc:fileid]/d:literal)'));
+		self::assertSame(0, $xpath->query('//d:lt[d:prop/oc:fileid] | //d:gt[d:prop/oc:fileid]')->length);
 		self::assertSame('2', $xpath->evaluate('string(//d:limit/d:nresults)'));
-		self::assertSame(0, $xpath->query('//d:not')->length);
+		self::assertSame(1, $xpath->query('//d:not')->length);
 	}
 	public function testQueryEncodingAndRelevanceTiers(): void {
 		$files = $this->createMock(FileService::class);
@@ -36,7 +36,8 @@ class SearchValidationTest extends TestCase {
 		self::assertCount(3, $plan['queries']);
 		self::assertStringContainsString('Überblick &amp; &lt;Plan&gt;', $plan['queries'][0]);
 		self::assertStringContainsString('<d:nresults>21</d:nresults>', $plan['queries'][0]);
-		self::assertStringNotContainsString('<d:not>', implode('', $plan['queries']));
+		self::assertStringNotContainsString('<d:not><d:eq><d:prop><d:displayname', implode('', $plan['queries']));
+		self::assertStringContainsString('<d:not><d:eq><d:prop><oc:fileid', $plan['queries'][0]);
 		self::assertStringContainsString('<d:descending/>', $plan['queries'][0]);
 	}
 	public function testInvalidScope(): void {
