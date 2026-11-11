@@ -98,6 +98,16 @@ assert.equal((await search({query:'Überblick & <Plan>',scope})).results.length,
 assert.equal((await search({query:'nonexistent',scope})).results.length,0); checks++
 assert.equal((await search({scope,limit:1})).results.length,1); checks++
 const limited = await search({scope,limit:1})
+if (!limited.partial) {
+  const plan = await alice.api('/search/plan',{filters:{scope,limit:1}})
+  const pages = []
+  for (const xml of plan.queries) {
+    const response = await alice.request('/remote.php/dav/',{method:'SEARCH',body:xml,headers:{'Content-Type':'text/xml'}})
+    const doc = new DOMParser().parseFromString(await response.text(),'application/xml')
+    pages.push({status:response.status,ids:[...doc.getElementsByTagNameNS('http://owncloud.org/ns','fileid')].map(node=>node.textContent)})
+  }
+  console.log('Synthetic bounded-search diagnostic:',JSON.stringify({filters:plan.filters,pages,resultCount:limited.results.length,partial:limited.partial}))
+}
 assert.equal(limited.partial,true); checks++
 const privateResult = await new NextcloudSearchService(bob.files()).search({query:root},new AbortController().signal)
 assert.equal(privateResult.results.length,0)

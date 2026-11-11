@@ -49,6 +49,7 @@ jobs:
   nextcloud:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - service: nextcloud
