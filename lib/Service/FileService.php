@@ -318,7 +318,10 @@ class FileService {
 		// SearchDAV treats a relative scope as an already-decoded native tree path.
 		// An absolute DAV URI uses Sabre's canonical URI decoder, including spaces,
 		// Unicode and deployments below a webroot.
-		return ['href' => rtrim($this->urls->linkToRemote('dav'), '/') . '/files/' . rawurlencode($this->uid()) . implode('/', array_map('rawurlencode', explode('/', $path))), 'id' => $id,
+		// linkToRemote was introduced in Nextcloud 34. These public URL methods
+		// also support our Nextcloud 31 baseline and installations below a webroot.
+		$dav = $this->urls->getAbsoluteURL($this->urls->getWebroot() . '/remote.php/dav');
+		return ['href' => rtrim($dav, '/') . '/files/' . rawurlencode($this->uid()) . implode('/', array_map('rawurlencode', explode('/', $path))), 'id' => $id,
 			'can_page' => count($this->mounts->findIn(rtrim($folder->getPath(), '/') . '/')) === 0];
 	}
 

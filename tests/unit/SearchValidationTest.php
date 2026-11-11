@@ -14,6 +14,21 @@ use OCP\FullTextSearch\Model\ISearchResult;
 use PHPUnit\Framework\TestCase;
 
 class SearchValidationTest extends TestCase {
+	public function testScopeRootCannotConsumeTheNativeOverflowSlot(): void {
+		$files = $this->createMock(FileService::class);
+		$files->method('searchScope')->willReturn(['href' => '/files/alice/Engineering', 'id' => 42]);
+		$plan = (new SearchAccessService($files, $this->createMock(IAppManager::class), $this->createMock(IFullTextSearchManager::class)))->plan(['limit' => 1]);
+		self::assertCount(1, $plan['queries']);
+		$xml = new \DOMDocument();
+		self::assertTrue($xml->loadXML($plan['queries'][0]));
+		$xpath = new \DOMXPath($xml);
+		$xpath->registerNamespace('d', 'DAV:');
+		$xpath->registerNamespace('oc', 'http://owncloud.org/ns');
+		self::assertSame('42', $xpath->evaluate('string(//d:where/d:and/d:or/d:lt[d:prop/oc:fileid]/d:literal)'));
+		self::assertSame('42', $xpath->evaluate('string(//d:where/d:and/d:or/d:gt[d:prop/oc:fileid]/d:literal)'));
+		self::assertSame('2', $xpath->evaluate('string(//d:limit/d:nresults)'));
+		self::assertSame(0, $xpath->query('//d:not')->length);
+	}
 	public function testQueryEncodingAndRelevanceTiers(): void {
 		$files = $this->createMock(FileService::class);
 		$files->method('searchScope')->willReturn(['href' => '/files/alice/Engineering', 'id' => 42]);
