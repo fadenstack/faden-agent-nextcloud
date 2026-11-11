@@ -13,7 +13,9 @@ use OCP\Migration\SimpleMigrationStep;
 class Version000112Date20261031220000 extends SimpleMigrationStep {
 	public function changeSchema(IOutput $output, \Closure $schemaClosure, array $options): ?ISchemaWrapper {
 		$schema = $schemaClosure();
-		if ($schema->hasTable('fdn_provider_tickets')) return null;
+		if ($schema->hasTable('fdn_provider_tickets')) {
+			return null;
+		}
 		$table = $schema->createTable('fdn_provider_tickets');
 		$table->addColumn('ticket_id', Types::STRING, ['notnull' => true, 'length' => 48]);
 		$table->addColumn('owner_hash', Types::STRING, ['notnull' => true, 'length' => 64]);

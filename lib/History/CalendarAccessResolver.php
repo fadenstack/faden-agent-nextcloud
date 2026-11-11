@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\FadenstackAgent\History;
 
-use OCA\FadenstackAgent\Providers\ProviderPolicy;
 use OCA\FadenstackAgent\Providers\ProviderAuthority;
+use OCA\FadenstackAgent\Providers\ProviderPolicy;
 use OCP\IUserSession;
 
 final class CalendarAccessResolver implements AccessResolver {

@@ -88,7 +88,9 @@ final class NativeApiBridge {
 			if (!is_string($raw) || strlen($raw) > self::MAX_BYTES) {
 				throw new Problem('Narrow the native provider request.', 413);
 			}
-			if ($status === 304 && $raw !== '') throw new Problem('Malformed empty native Talk history.', 503);
+			if ($status === 304 && $raw !== '') {
+				throw new Problem('Malformed empty native Talk history.', 503);
+			}
 			if ($this->users->getUser()?->getUID() !== $actor || $this->session->getId() !== $binding || $this->base() !== $base) {
 				throw new Problem('The native account or provider connection changed.', 409);
 			}

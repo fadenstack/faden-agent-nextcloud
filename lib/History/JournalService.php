@@ -169,8 +169,11 @@ final class JournalService {
 	public function checkpointEffect(JournalIdentity $identity, string $id, string $ticket, string $step, string $phase, array $facts = []): array {
 		// Known in-flight observations must survive a native permission loss or
 		// concurrent Stop. Neither can grant another dispatch or clear uncertainty.
-		if ($phase === 'observed') $this->owned($identity, $id);
-		else $this->authorized($identity, $id, 'dispatch');
+		if ($phase === 'observed') {
+			$this->owned($identity, $id);
+		} else {
+			$this->authorized($identity, $id, 'dispatch');
+		}
 		return $this->store->atomic(function () use ($identity, $id, $ticket, $step, $phase, $facts): array {
 			$this->store->lockOwner($identity->ownerHash);
 			$this->assertWritable($identity->ownerHash);
@@ -178,7 +181,9 @@ final class JournalService {
 			$this->ticket($identity, $row, $ticket);
 			$this->requireSnapshot($row);
 			if (!in_array($row['state'], $phase === 'observed' ? ['dispatching', 'needs_reconciliation'] : ['dispatching'], true)
-				|| $row['direction'] !== 'apply') throw new JournalException('state_conflict');
+				|| $row['direction'] !== 'apply') {
+				throw new JournalException('state_conflict');
+			}
 			$payload = $this->cipher->decrypt($row);
 			$payload['forward']['effects'] = EffectProgress::advance($row['operation'], $payload['forward']['effects'] ?? [], $step, $phase, $facts);
 			$updated = $row;

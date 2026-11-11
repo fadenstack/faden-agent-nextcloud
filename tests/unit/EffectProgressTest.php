@@ -19,8 +19,12 @@ final class EffectProgressTest extends TestCase {
 	}
 	public function testFormsCannotSkipAnUncertainStepOrExceedItsBound(): void {
 		foreach (['form_001', 'form_152', 'form_0', 'create_share'] as $step) {
-			try { EffectProgress::advance('nc_forms_create_form', [], $step, 'dispatched'); self::fail('Accepted an unplanned Forms step.'); }
-			catch (JournalException) { self::assertTrue(true); }
+			try {
+				EffectProgress::advance('nc_forms_create_form', [], $step, 'dispatched');
+				self::fail('Accepted an unplanned Forms step.');
+			} catch (JournalException) {
+				self::assertTrue(true);
+			}
 		}
 	}
 	public function testCompoundSavePreservesNativeIdentifiersAndDispatchOrder(): void {

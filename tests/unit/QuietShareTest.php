@@ -13,13 +13,19 @@ use PHPUnit\Framework\TestCase;
 
 final class QuietShareTest extends TestCase {
 	public function testConcurrentExistingShareCannotRestoreItsOldMailFlag(): void {
-		$requested = $this->share('bob'); $existing = $this->share('bob'); $unrelated = $this->share('charlie');
+		$requested = $this->share('bob');
+		$existing = $this->share('bob');
+		$unrelated = $this->share('charlie');
 		$requested->expects(self::atLeastOnce())->method('setMailSend')->with(false);
 		$existing->expects(self::once())->method('setMailSend')->with(false);
 		$existing->expects(self::never())->method('setPermissions');
 		$unrelated->expects(self::never())->method('setMailSend');
-		$events = $this->createMock(IEventDispatcher::class); $listener = null;
-		$events->expects(self::once())->method('addListener')->with(ShareCreatedEvent::class, self::callback(static function ($callback) use (&$listener): bool { $listener = $callback; return true; }), PHP_INT_MIN);
+		$events = $this->createMock(IEventDispatcher::class);
+		$listener = null;
+		$events->expects(self::once())->method('addListener')->with(ShareCreatedEvent::class, self::callback(static function ($callback) use (&$listener): bool {
+			$listener = $callback;
+			return true;
+		}), PHP_INT_MIN);
 		$events->expects(self::once())->method('removeListener')->with(ShareCreatedEvent::class, self::callback(static fn ($callback): bool => is_callable($callback)));
 		$manager = $this->createMock(IManager::class);
 		$manager->expects(self::once())->method('createShare')->with($requested)->willReturnCallback(static function () use (&$listener, $existing, $unrelated): IShare {

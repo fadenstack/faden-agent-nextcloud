@@ -21,9 +21,9 @@ use OCP\Files\Node;
 use OCP\ISession;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
+use OCP\ServerVersion;
 use OCP\Share\IManager;
 use OCP\Share\IShare;
-use OCP\ServerVersion;
 
 class FileService {
 	public const MAX_TEXT_BYTES = 2097152;
@@ -182,46 +182,89 @@ class FileService {
 	}
 
 	public function boundedContentEnabled(): bool {
-		if (!$this->config->boundedContentEnabled() || $this->version->getMajorVersion() !== 35) return false;
+		if (!$this->config->boundedContentEnabled() || $this->version->getMajorVersion() !== 35) {
+			return false;
+		}
 		try {
 			$home = $this->root->getUserFolder($this->uid());
 			$reference = $this->scope->searchScope();
 			$folder = $reference === 'all' ? $home : $this->node((int)substr($reference, 16));
 			if (!$folder instanceof Folder || !$folder->getStorage()->isLocal() || $folder->getStorage()->getId() !== $home->getStorage()->getId()
-				|| ($folder->getId() !== $home->getId() && $this->mounts->findIn(rtrim($folder->getPath(), '/') . '/'))) return false;
+				|| ($folder->getId() !== $home->getId() && $this->mounts->findIn(rtrim($folder->getPath(), '/') . '/'))) {
+				return false;
+			}
 			$this->scope->describeNode($folder, 'read', false);
 			return true;
-		} catch (\Throwable) { return false; }
+		} catch (\Throwable) {
+			return false;
+		}
 	}
 
 	/** Local UTF-8 text only. No saved selection/context and no broader-scope index query. */
 	public function boundedContent(string $query, int $limit, int $page): array {
-		if (!$this->config->boundedContentEnabled()) throw new Problem('Bounded native text search is disabled.', 403);
-		if ($this->version->getMajorVersion() !== 35) throw new Problem('Bounded native text search is unavailable on this Nextcloud version.', 422);
-		if ($page !== 1) throw new Problem('Bounded text search has one partial page. Narrow the configured source folder.', 422);
+		if (!$this->config->boundedContentEnabled()) {
+			throw new Problem('Bounded native text search is disabled.', 403);
+		}
+		if ($this->version->getMajorVersion() !== 35) {
+			throw new Problem('Bounded native text search is unavailable on this Nextcloud version.', 422);
+		}
+		if ($page !== 1) {
+			throw new Problem('Bounded text search has one partial page. Narrow the configured source folder.', 422);
+		}
 		$home = $this->root->getUserFolder($this->uid());
 		$reference = $this->scope->searchScope();
 		$folder = $reference === 'all' ? $home : $this->node((int)substr($reference, 16));
-		if (!$folder instanceof Folder || !$folder->getStorage()->isLocal() || $folder->getStorage()->getId() !== $home->getStorage()->getId()) throw new Problem('Bounded text search requires a configured local home folder.', 422);
+		if (!$folder instanceof Folder || !$folder->getStorage()->isLocal() || $folder->getStorage()->getId() !== $home->getStorage()->getId()) {
+			throw new Problem('Bounded text search requires a configured local home folder.', 422);
+		}
 		$this->scope->describeNode($folder, 'read', false);
-		if ($folder->getId() !== $home->getId() && $this->mounts->findIn(rtrim($folder->getPath(), '/') . '/')) throw new Problem('Bounded text search requires a local folder without nested mounts.', 422);
+		if ($folder->getId() !== $home->getId() && $this->mounts->findIn(rtrim($folder->getPath(), '/') . '/')) {
+			throw new Problem('Bounded text search requires a local folder without nested mounts.', 422);
+		}
 		$candidates = $folder->search(new \OCA\FadenstackAgent\Files\BoundedTextQuery($this->users->getUser(), $folder->getId() === $home->getId()));
-		$results = []; $bytes = 0; $examined = 0; $partial = count($candidates) > 100;
+		$results = [];
+		$bytes = 0;
+		$examined = 0;
+		$partial = count($candidates) > 100;
 		foreach ($candidates as $node) {
-			if (++$examined > 100 || count($results) >= $limit) { $partial = true; break; }
+			if (++$examined > 100 || count($results) >= $limit) {
+				$partial = true;
+				break;
+			}
 			try {
-				if (!$node instanceof File || $node->getSize() > 1048576 || !$node->getStorage()->isLocal() || $node->getStorage()->getId() !== $home->getStorage()->getId()) { $partial = true; continue; }
-				if ($bytes + $node->getSize() > 4194304) { $partial = true; break; }
+				if (!$node instanceof File || $node->getSize() > 1048576 || !$node->getStorage()->isLocal() || $node->getStorage()->getId() !== $home->getStorage()->getId()) {
+					$partial = true;
+					continue;
+				}
+				if ($bytes + $node->getSize() > 4194304) {
+					$partial = true;
+					break;
+				}
 				$this->scope->describeNode($node, 'read');
 				$etag = $node->getEtag();
 				$stream = $node->fopen('rb');
-				if (!is_resource($stream)) { $partial = true; continue; }
-				try { $body = stream_get_contents($stream, 1048577); } finally { fclose($stream); }
-				if (!is_string($body) || strlen($body) > 1048576 || !mb_check_encoding($body, 'UTF-8') || str_contains($body, "\0") || $node->getEtag() !== $etag) { $partial = true; continue; }
+				if (!is_resource($stream)) {
+					$partial = true;
+					continue;
+				}
+				try {
+					$body = stream_get_contents($stream, 1048577);
+				} finally {
+					fclose($stream);
+				}
+				if (!is_string($body) || strlen($body) > 1048576 || !mb_check_encoding($body, 'UTF-8') || str_contains($body, "\0") || $node->getEtag() !== $etag) {
+					$partial = true;
+					continue;
+				}
 				$bytes += strlen($body);
 				$position = mb_stripos($body, $query);
-				if ($position !== false) $results[] = ['file' => $this->metadata($node, 'read'), 'excerpt' => mb_substr($body, max(0, $position - 100), 600)];
-			} catch (\OCP\Files\NotFoundException|\OCP\Files\ForbiddenException|\OCP\Files\NotPermittedException|Problem) { $partial = true; continue; }
+				if ($position !== false) {
+					$results[] = ['file' => $this->metadata($node, 'read'), 'excerpt' => mb_substr($body, max(0, $position - 100), 600)];
+				}
+			} catch (\OCP\Files\NotFoundException|\OCP\Files\ForbiddenException|\OCP\Files\NotPermittedException|Problem) {
+				$partial = true;
+				continue;
+			}
 		}
 		return ['available' => true, 'provider' => 'nextcloud-bounded-text', 'results' => $results, 'partial' => $partial, 'next_page' => null,
 			'explanation' => 'Literal content matches in up to 100 authorized local UTF-8 text files (1 MiB each, 4 MiB total). PDFs, Office files, shared/external mounts, larger files and additional candidates are outside this scan. No ranked index or complete inventory is claimed.'];
@@ -1042,7 +1085,9 @@ class FileService {
 		}
 		$this->assertProposalIdentity($r);
 		$created = $this->node($createdId);
-		if (!$created instanceof Folder || !isset($r['journal'])) throw new Problem('The folder audit could not be confirmed.', 409);
+		if (!$created instanceof Folder || !isset($r['journal'])) {
+			throw new Problem('The folder audit could not be confirmed.', 409);
+		}
 		$this->journal->finish($this->journalIdentity(), $r['journal']['id'], $r['journal']['ticket'], 'verified',
 			new VerifiedReadback($created->getEtag(), new JournalResource('files', 'parent:' . $r['folderId'] . '/name:' . $r['name'], 'folder:' . $createdId)));
 		$s['folderReceipts'][$id]['dispatchState'] = 'executed';
@@ -1057,7 +1102,12 @@ class FileService {
 		$s = $this->state();
 		if (($s['folderReceipts'][$id]['dispatchState'] ?? '') !== 'executed') {
 			$journal = $s['folderReceipts'][$id]['journal'] ?? null;
-			if ($journal) { try { $this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'unknown'); } catch (\Throwable) { /* Keep durable uncertain intent. */ } }
+			if ($journal) {
+				try {
+					$this->journal->finish($this->journalIdentity(), $journal['id'], $journal['ticket'], 'unknown');
+				} catch (\Throwable) { /* Keep durable uncertain intent. */
+				}
+			}
 			unset($s['folderReceipts'][$id]);
 			$this->session->set(self::KEY, $s);
 		}
@@ -1065,13 +1115,17 @@ class FileService {
 
 	/** Called after the ticket guard has rechecked the real locked native parent. */
 	public function markFolderDispatched(string $id): void {
-		$s = $this->state(); $r = $s['folderReceipts'][$id] ?? null;
-		if (!$r || $r['dispatchState'] !== 'claimed' || isset($r['journal'])) throw new Problem('The folder attempt was consumed.', 410);
+		$s = $this->state();
+		$r = $s['folderReceipts'][$id] ?? null;
+		if (!$r || $r['dispatchState'] !== 'claimed' || isset($r['journal'])) {
+			throw new Problem('The folder attempt was consumed.', 410);
+		}
 		$parent = $this->node($r['folderId']);
 		$grant = $this->scope->describeNode($parent, 'write');
 		$journal = $this->journal->prepare($this->journalIdentity(), new JournalResource('files', 'parent:' . $r['folderId'] . '/name:' . $r['name'], 'folder:' . $r['folderId']),
 			'nc_files_create_folder', ['operation' => 'create_folder', 'name' => $r['name'], 'sourceClass' => $grant['sourceClass']], [], ['parentId' => $r['folderId'], 'parentEtag' => $r['parentEtag']]);
-		$s['folderReceipts'][$id]['journal'] = $journal; $this->session->set(self::KEY, $s);
+		$s['folderReceipts'][$id]['journal'] = $journal;
+		$this->session->set(self::KEY, $s);
 		$this->journal->markDispatched($this->journalIdentity(), $journal['id'], $journal['ticket']);
 	}
 }

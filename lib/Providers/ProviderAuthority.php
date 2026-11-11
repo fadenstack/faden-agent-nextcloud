@@ -9,13 +9,18 @@ use OCA\FadenstackAgent\Service\Problem;
 
 /** Fresh native authority, including when the dispatch gate is disabled. No saved credentials. */
 final class ProviderAuthority {
-	public function __construct(private NativeApiBridge $bridge, private ProviderPolicy $policy) {
+	public function __construct(
+		private NativeApiBridge $bridge,
+		private ProviderPolicy $policy,
+	) {
 	}
 
 	public function target(JournalResource $resource): array {
 		$provider = $resource->provider;
 		$prefix = $provider === 'contacts' ? 'book:' : 'collection:';
-		$kind = match ($provider) { 'calendar' => 'event:', 'tasks' => 'task:', 'contacts' => 'contact:', default => throw new Problem('Unavailable provider action.', 404) };
+		$kind = match ($provider) {
+			'calendar' => 'event:', 'tasks' => 'task:', 'contacts' => 'contact:', default => throw new Problem('Unavailable provider action.', 404)
+		};
 		if (!str_starts_with($resource->authorityReference, $prefix) || !str_starts_with($resource->reference, $resource->authorityReference . '/' . $kind)) {
 			throw new Problem('Unavailable provider action.', 404);
 		}

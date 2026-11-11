@@ -11,7 +11,11 @@ use OCP\Share\IShare;
 
 /** Preserve native sharing checks while suppressing core mail on this request only. */
 final class QuietShare {
-	public function __construct(private IManager $shares, private IEventDispatcher $events) {}
+	public function __construct(
+		private IManager $shares,
+		private IEventDispatcher $events,
+	) {
+	}
 	public function create(IShare $requested): IShare {
 		$requested->setMailSend(false);
 		// NC35 can reuse an existing share created concurrently, including its
@@ -21,10 +25,15 @@ final class QuietShare {
 		$quiet = static function (ShareCreatedEvent $event) use ($requested): void {
 			$share = $event->getShare();
 			if ($share->getNodeId() === $requested->getNodeId() && $share->getShareType() === IShare::TYPE_USER
-				&& $share->getSharedBy() === $requested->getSharedBy() && $share->getSharedWith() === $requested->getSharedWith()) $share->setMailSend(false);
+				&& $share->getSharedBy() === $requested->getSharedBy() && $share->getSharedWith() === $requested->getSharedWith()) {
+				$share->setMailSend(false);
+			}
 		};
 		$this->events->addListener(ShareCreatedEvent::class, $quiet, PHP_INT_MIN);
-		try { return $this->shares->createShare($requested); }
-		finally { $this->events->removeListener(ShareCreatedEvent::class, $quiet); }
+		try {
+			return $this->shares->createShare($requested);
+		} finally {
+			$this->events->removeListener(ShareCreatedEvent::class, $quiet);
+		}
 	}
 }

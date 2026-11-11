@@ -13,8 +13,13 @@ use OCP\IUserSession;
 
 /** Native-owner audit only. Does not impersonate a cloud principal or expose saved bodies. */
 final class ProviderAuditService {
-	public function __construct(private JournalService $journal, private ProviderAuthority $authority,
-		private ProviderPolicy $policy, private IUserSession $users, private ISession $session) {
+	public function __construct(
+		private JournalService $journal,
+		private ProviderAuthority $authority,
+		private ProviderPolicy $policy,
+		private IUserSession $users,
+		private ISession $session,
+	) {
 	}
 
 	private function identity(): JournalIdentity {

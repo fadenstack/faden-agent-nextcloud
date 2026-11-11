@@ -212,7 +212,9 @@ class SearchAccessService {
 			throw new Problem('Use a search phrase of 1–200 characters, limit 1–50 and page 1–100.');
 		}
 		$status = $this->capabilities();
-		if ($status['bounded_content_search']) return $this->files->boundedContent($query, $limit, $page);
+		if ($status['bounded_content_search']) {
+			return $this->files->boundedContent($query, $limit, $page);
+		}
 		if (!$status['indexed_content_search']) {
 			return ['available' => false, ...$status, 'results' => []];
 		}

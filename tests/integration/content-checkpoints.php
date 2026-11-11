@@ -122,9 +122,9 @@ $denied('Expired compound actions cannot resume', fn () => $step('form_001', 'ob
 $max = $journal->prepare($identity, new JournalResource('forms', 'collection:personal/checkpoint:' . bin2hex(random_bytes(12)), 'collection:personal'), 'nc_forms_create_form', ['proposal' => $proposal, 'effects' => []], [], [], 600);
 $journal->markDispatched($identity, $max['id'], $max['ticket']);
 for ($i = 0; $i < 152; $i++) {
-    $name = sprintf('form_%03d', $i);
-    $journal->checkpointEffect($identity, $max['id'], $max['ticket'], $name, 'dispatched');
-    $journal->checkpointEffect($identity, $max['id'], $max['ticket'], $name, 'observed', ['nativeId' => $i + 100]);
+	$name = sprintf('form_%03d', $i);
+	$journal->checkpointEffect($identity, $max['id'], $max['ticket'], $name, 'dispatched');
+	$journal->checkpointEffect($identity, $max['id'], $max['ticket'], $name, 'observed', ['nativeId' => $i + 100]);
 }
 $saved = $journal->preview($identity, $max['id'])['snapshot']['forward']['effects'];
 $assert('All 152 bounded Forms checkpoints survive native PostgreSQL and ICrypto', count($saved) === 152 && $saved[151]['facts']['nativeId'] === 251);
