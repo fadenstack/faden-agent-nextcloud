@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, markRaw, nextTick } from 'vue'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { ToolCallPart } from '@fadenstack/ui'
 import AgentChat from '../../src/components/AgentChat.vue'
 import FolderResultsCard from '../../src/components/FolderResultsCard.vue'

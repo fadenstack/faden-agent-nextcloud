@@ -46,7 +46,7 @@ import type {
 	DavContact,
 } from '../../src/integrations/nextcloud/types.ts'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { ApprovalPart } from '@fadenstack/ui'
 
 const hostIdentity: Identity = {

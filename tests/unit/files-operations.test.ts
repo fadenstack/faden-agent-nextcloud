@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
 import { fileOperationsApi } from '../../src/integrations/nextcloud/fileOperations.ts'
 import { filesMutationTools } from '../../src/integrations/nextcloud/filesExtended.ts'

@@ -1,3 +1,4 @@
+import { NO_TOOL_SERVICES } from '@fadenstack/agents'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	whiteboardTools,
@@ -47,7 +48,7 @@ import type {
 	BookmarksApi,
 } from '../../src/integrations/nextcloud/types.ts'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { ApprovalPart } from '@fadenstack/ui'
 
 const hostIdentity: Identity = {
@@ -307,11 +308,11 @@ describe('Workflow tool execution and approval', () => {
 		const notesReadTool = nTools.find(t => t.name === 'nc_notes_read')!
 		const bookmarksReadTool = bTools.find(t => t.name === 'nc_bookmarks_read')!
 
-		const nResult = await notesReadTool.invoke({ category: 'Dev' }, { callId: 'call-nr', signal: new AbortController().signal, sessionId: 's1', turnId: 't1' })
+		const nResult = await notesReadTool.invoke({ category: 'Dev' }, { callId: 'call-nr', signal: new AbortController().signal, sessionId: 's1', turnId: 't1', services: NO_TOOL_SERVICES })
 		expect(nResult).toHaveProperty('notes')
 		expect(files.notes!.readNotes).toHaveBeenCalledWith('Dev', expect.anything())
 
-		const bResult = await bookmarksReadTool.invoke({ query: 'docs' }, { callId: 'call-br', signal: new AbortController().signal, sessionId: 's1', turnId: 't1' })
+		const bResult = await bookmarksReadTool.invoke({ query: 'docs' }, { callId: 'call-br', signal: new AbortController().signal, sessionId: 's1', turnId: 't1', services: NO_TOOL_SERVICES })
 		expect(bResult).toHaveProperty('bookmarks')
 		expect(files.bookmarks!.searchBookmarks).toHaveBeenCalledWith('docs', expect.anything())
 	})
@@ -322,7 +323,7 @@ describe('Workflow tool execution and approval', () => {
 		const tools = agentfileTool(mockHost)
 		const tool = tools[0]
 
-		const result = await tool.invoke({ pathOrContent: 'Agentfile.json' }, { callId: 'call-af', signal: new AbortController().signal, sessionId: 's1', turnId: 't1' })
+		const result = await tool.invoke({ pathOrContent: 'Agentfile.json' }, { callId: 'call-af', signal: new AbortController().signal, sessionId: 's1', turnId: 't1', services: NO_TOOL_SERVICES })
 		expect(result).toHaveProperty('name', 'TestAgent')
 		expect(files.agentfile!.readManifest).toHaveBeenCalledWith('Agentfile.json', expect.anything())
 	})

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FakeGateway, lastToolResults } from '@fadenstack/testing'
+import { lastToolResults } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { ApprovalPart } from '@fadenstack/ui'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
 import { ProviderReadRuntime } from '../../src/providers/readRuntime.ts'
@@ -156,7 +157,7 @@ describe('Native DAV closeout through the published SDK using captured native DT
 
 	})
 
-	it('ordinary DAV chat and approval do not require the explicit-command principal/policy endpoint', async () => {
+	it('refuses an ordinary DAV model call when the fresh central profile loses its principal', async () => {
 		const api = native(), seen: string[] = []
 		let round = 0, stripped = false
 		const gw = gateway(() => ++round === 1 ? { toolCalls: [{ id: 'create', name: 'nc_calendar_create', arguments: {
@@ -178,9 +179,9 @@ describe('Native DAV closeout through the published SDK using captured native DT
 		expect(stripped).toBe(true)
 		expect(host.agent.profile.principal).toBeUndefined()
 		expect(host.chat.turns[0].state).toBe('completed')
-		expect(api.calendarApprove).toHaveBeenCalledTimes(1)
-		expect(api.calendarCommit).toHaveBeenCalledTimes(1)
-		expect(seen.some(url => url.includes('/tools/check'))).toBe(false)
+		expect(api.calendarApprove).not.toHaveBeenCalled()
+		expect(api.calendarCommit).not.toHaveBeenCalled()
+		expect(seen.some(url => url.includes('/tools/check'))).toBe(true)
 	})
 
 	it('a read then verified edit rebases only its own revision and completes the chat follow-up', async () => {

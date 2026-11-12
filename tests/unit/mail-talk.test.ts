@@ -1,3 +1,4 @@
+import { NO_TOOL_SERVICES } from '@fadenstack/agents'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	mailTools,
@@ -25,7 +26,7 @@ import type {
 	TalkMessage,
 } from '../../src/integrations/nextcloud/types.ts'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { ApprovalPart } from '@fadenstack/ui'
 
 const hostIdentity: Identity = {
@@ -247,7 +248,7 @@ describe('Mail and Talk agent execution and approval', () => {
 		const tools = mailTools(mockHost)
 		const readTool = tools.find(t => t.name === 'nc_mail_read')!
 
-		const result = await readTool.invoke({ query: 'urgent' }, { callId: 'call-m1', signal: new AbortController().signal, sessionId: 's1', turnId: 't1' })
+		const result = await readTool.invoke({ query: 'urgent' }, { callId: 'call-m1', signal: new AbortController().signal, sessionId: 's1', turnId: 't1', services: NO_TOOL_SERVICES })
 		expect(result).toHaveProperty('messages')
 		expect(files.mail!.readMail).toHaveBeenCalledWith('urgent', undefined, expect.anything())
 	})
@@ -261,7 +262,7 @@ describe('Mail and Talk agent execution and approval', () => {
 		const tools = talkTools(mockHost)
 		const readTool = tools.find(t => t.name === 'nc_talk_read')!
 
-		const result = await readTool.invoke({ roomToken: 'room-123' }, { callId: 'call-t1', signal: new AbortController().signal, sessionId: 's1', turnId: 't1' })
+		const result = await readTool.invoke({ roomToken: 'room-123' }, { callId: 'call-t1', signal: new AbortController().signal, sessionId: 's1', turnId: 't1', services: NO_TOOL_SERVICES })
 		expect(result).toHaveProperty('room')
 		expect(result).toHaveProperty('history')
 		expect(files.talk!.readContext).toHaveBeenCalledWith('room-123', expect.anything())

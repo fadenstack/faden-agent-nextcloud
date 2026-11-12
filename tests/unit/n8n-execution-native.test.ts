@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApprovalPart } from '@fadenstack/ui'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { createApp, markRaw } from 'vue'
 import AgentChat from '../../src/components/AgentChat.vue'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'

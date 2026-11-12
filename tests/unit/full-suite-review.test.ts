@@ -1,3 +1,4 @@
+import { NO_TOOL_SERVICES } from '@fadenstack/agents'
 import { describe, expect, it, vi } from 'vitest'
 import { NextcloudFiles } from '../../src/integrations/nextcloud/files.ts'
 import { mailTools, talkTools, validateMailDraftArgs, validateTalkSendMessageArgs } from '../../src/integrations/nextcloud/mailTalk.ts'
@@ -6,7 +7,7 @@ import { flowTools, whiteboardTools, windmillTools, n8nTools, notesTools, bookma
 import { TOOL_ROLLOUT } from '../../src/platform/catalog.ts'
 import type { FileApi, Identity } from '../../src/integrations/nextcloud/types.ts'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
 
 vi.mock('@nextcloud/axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
@@ -15,7 +16,7 @@ vi.mock('@nextcloud/auth', () => ({ getRequestToken: () => 'native-test-token' }
 vi.mock('@nextcloud/l10n', () => ({ t: (_app: string, text: string) => text }))
 
 const identity: Identity = { userId: 'alice', binding: 'native-binding', enabled: true, serverUrl: 'https://faden.test', agent: 'review', development: true }
-const call = () => ({ callId: 'review-call', sessionId: 'session', turnId: 'turn', signal: new AbortController().signal })
+const call = () => ({ callId: 'review-call', sessionId: 'session', turnId: 'turn', services: NO_TOOL_SERVICES, signal: new AbortController().signal })
 
 describe('independent full-suite runtime review', () => {
 

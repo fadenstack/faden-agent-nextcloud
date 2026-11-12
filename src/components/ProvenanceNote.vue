@@ -5,7 +5,7 @@ import { provenanceNote, type ProvenanceSummary } from '../integrations/nextclou
 
 // Under a file write: whether the file is marked as AI-generated, and where, as the read-back after the write found
 // it -- or why it is not.
-const props = defineProps<{ summary: ProvenanceSummary }>()
+const props = defineProps<{ summary: ProvenanceSummary; showExempt?: boolean }>()
 const text = computed(() => {
 	switch (provenanceNote(props.summary)) {
 	case 'metadata-and-front-matter': return t('fadenstack_agent', 'Marked as AI-generated in the file\'s metadata and its front matter.')
@@ -19,7 +19,10 @@ const text = computed(() => {
 </script>
 
 <template>
-	<p class="fdn-provenance-note fdn-muted" role="status" dir="auto">
+	<p v-if="!summary.exempt || showExempt"
+		class="fdn-provenance-note fdn-muted"
+		role="status"
+		dir="auto">
 		{{ text }}
 	</p>
 </template>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { ApprovalPart } from '@fadenstack/ui'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
 import { HISTORY_CAPABILITIES, FILE_CAPABILITIES } from '../../src/platform/catalog.ts'
@@ -8,9 +8,9 @@ import type { FileApi, HistoryPreview, Identity } from '../../src/integrations/n
 const action = 'a'.repeat(32)
 const preview: HistoryPreview = { id: 'b'.repeat(48), digest: 'c'.repeat(64), actionId: action, direction: 'undo',
 	target: '/draft.md', before: 'Generated content', content: 'Original content', expires: 9999999999 }
-function fixture(historyEnabled = true) {
+function fixture(historyEnabled = true, principal = true) {
 	let round = 0
-	const gateway = new FakeGateway({ agents: [{ slug: 'nc', version: 1, contract: [{ name: 'nc_actions_undo', risk: 'destructive' }, { name: 'nc_actions_redo', risk: 'destructive' }] }],
+	const gateway = new FakeGateway({ principal, agents: [{ slug: 'nc', version: 1, contract: [{ name: 'nc_actions_undo', risk: 'destructive' }, { name: 'nc_actions_redo', risk: 'destructive' }] }],
 		users: [{ email: 'alice', password: 'test', agents: ['nc'] }],
 		model: () => ++round === 1 ? { toolCalls: [{ id: 'inverse', name: 'nc_actions_undo', arguments: { action_id: action } }] } : { text: 'Finished' } })
 	const identity: Identity = { userId: 'alice', binding: 'native-binding', enabled: true, serverUrl: gateway.serverUrl, agent: 'nc', development: false, historyEnabled }
@@ -108,7 +108,7 @@ describe('governed history integration', () => {
 		await host.dispose()
 	})
 	it.each([false, true])('keeps explicit controls unavailable without an authenticated server principal (native History=%s)', async enabled => {
-		const { host, files, gateway } = fixture(enabled)
+		const { host, files, gateway } = fixture(enabled, false)
 		await host.signIn('alice', 'test')
 		expect(typeof host.chat.invokeTool).toBe('function')
 		expect(host.historyCommandsAvailable).toBe(false)

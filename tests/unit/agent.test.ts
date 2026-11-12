@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
+import { FakeGateway as LegacyGateway } from '@fadenstack/testing'
 import { ApprovalPart } from '@fadenstack/ui'
 import { createApp, markRaw, nextTick } from 'vue'
 import AgentChat from '../../src/components/AgentChat.vue'
@@ -54,6 +55,57 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('SDK integration and file boundary', () => {
+	it('requires the fresh core dispatch capability rather than silently using an older gateway', async () => {
+		const legacy = new LegacyGateway({ agents: [{ slug: 'nc', version: 1 }], users: [{ email: 'alice', password: 'test', agents: ['nc'] }] })
+		const { host: unused, files } = fixture()
+		await unused.dispose()
+		const host = new NextcloudAgent(identity, files, legacy.fetch)
+		try { await expect(host.signIn('alice', 'test')).rejects.toThrow(/fresh central host-tool dispatch checks/) }
+		finally { await host.dispose() }
+	})
+	it('refuses native dispatch when central policy denies the already approved model call', async () => {
+		let round = 0
+		const { host, files, gateway } = fixture({ model: () => ++round === 1
+			? { toolCalls: [{ id: 'blocked-create', name: 'nc_create_text_file', arguments: { filename: 'Draft.md', content: 'Synthetic draft' } }] }
+			: { text: 'No file was saved.' } })
+		gateway.denyDispatch = true
+		try {
+			await host.signIn('alice', 'test'); host.offerSelection(await host.selection.select(2))
+			const work = host.send('Create a draft'); const part = await pending(host)
+			await host.approve(part); await work
+			expect(gateway.dispatchChecks.filter(c => c.name === 'nc_create_text_file').map(c => c.phase)).toEqual(['prepare', 'dispatch'])
+			expect(files.commit).not.toHaveBeenCalled()
+		} finally { host.stop(); await host.dispose() }
+	})
+	it('pairing signs in the existing token provider without submitting a password', async () => {
+		const { host, gateway, files } = fixture({ pairing: true }, { ...identity, fileProvenanceEnabled: true }, { setCloudIdentity: vi.fn() })
+		try {
+			const start = await host.startPairing(); gateway.approvePairing('alice', start.userCode)
+			await host.completePairing(start)
+			expect(host.chat.isReady).toBe(true)
+			expect(host.tokens.deviceId).toBeTruthy()
+			expect(files.setCloudIdentity).toHaveBeenCalled()
+			expect(gateway.requests.some(r => r.path.endsWith('/api/auth/jwt/login'))).toBe(false)
+		} finally { await host.dispose() }
+	}, 15000)
+	it('cancelled pairing cannot initialize a native agent or dispatch a tool', async () => {
+		const { host, gateway, files } = fixture({ pairing: true })
+		try {
+			const start = await host.startPairing(); const stop = new AbortController(); stop.abort()
+			await expect(host.completePairing(start, stop.signal)).rejects.toThrow()
+			expect(host.chat.isReady).toBe(false)
+			expect(gateway.modelCalls).toHaveLength(0)
+			expect(files.commit).not.toHaveBeenCalled()
+		} finally { await host.dispose() }
+	})
+	it('revokes its cloud sign-in after native disposal has stopped content-bearing requests', async () => {
+		const { host, gateway, files } = fixture()
+		await host.signIn('alice', 'test')
+		vi.mocked(files.assertIdentity).mockRejectedValue(new Error('Native session changed'))
+		await host.dispose()
+		expect(gateway.requests.filter(r => r.path === '/api/agent-tokens/revoke')).toHaveLength(1)
+		expect(gateway.modelCalls).toHaveLength(0)
+	})
 	it('approves final native-marked bytes and computes the shared reader digest before any commit', async () => {
 		const content = '# Native draft\n\nSynthetic content.'
 		const marked = withFrontMatter(content, '5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1')

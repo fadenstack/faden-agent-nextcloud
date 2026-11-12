@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { createApp, h, nextTick, ref } from 'vue'
+import ProvenanceNote from '../../src/components/ProvenanceNote.vue'
 import { frontMatterMark, withFrontMatter } from '@fadenstack/provenance'
 import { nativeProvenanceSummary, provenanceNote } from '../../src/integrations/nextcloud/provenance.ts'
 import { writeArguments } from '../../src/integrations/nextcloud/tools.ts'
 import vectors from '../fixtures/provenance/front-matter.json'
+vi.mock('@nextcloud/l10n', () => ({ t: (_app: string, text: string) => text }))
 
 describe('Shared front-matter format', () => {
  for (const vector of vectors.vectors) it(vector.name, () => {
@@ -10,6 +13,18 @@ describe('Shared front-matter format', () => {
  })
 })
 describe('Truthful native mark summaries', () => {
+ it('hides routine exemption notices by default and supports the shared SDK opt-in', async () => {
+  const show = ref(false), target = document.createElement('div')
+  const app = createApp({ render: () => h(ProvenanceNote, { summary: { record_id: null, marks: [], missing: [], exempt: 'edit-kind' }, showExempt: show.value }) })
+  try {
+   app.mount(target)
+   expect(target.textContent).toBe('')
+   show.value = true; await nextTick()
+   expect(target.textContent).toContain('No new AI mark was required')
+   show.value = false; await nextTick()
+   expect(target.textContent).toBe('')
+  } finally { app.unmount() }
+ })
  const id = '5a0e2b5c-7f3e-4a51-9a40-6a1c55e1d3f1'
  const front = withFrontMatter('Draft', id)
  const metadata = JSON.stringify({ record: { id } })

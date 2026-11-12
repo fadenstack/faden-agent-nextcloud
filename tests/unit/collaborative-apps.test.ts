@@ -1,3 +1,4 @@
+import { NO_TOOL_SERVICES } from '@fadenstack/agents'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	collectivesTools,
@@ -25,7 +26,7 @@ import type {
 	FormDefinition,
 } from '../../src/integrations/nextcloud/types.ts'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { ApprovalPart } from '@fadenstack/ui'
 
 const hostIdentity: Identity = {
@@ -242,7 +243,7 @@ describe('Collectives and Forms tool execution and approval', () => {
 		const tools = collectivesTools(mockHost)
 		const readTool = tools.find(t => t.name === 'nc_collectives_read')!
 
-		const result = await readTool.invoke({ collectiveId: 1 }, { callId: 'call-c1', signal: new AbortController().signal, sessionId: 's1', turnId: 't1' })
+		const result = await readTool.invoke({ collectiveId: 1 }, { callId: 'call-c1', signal: new AbortController().signal, sessionId: 's1', turnId: 't1', services: NO_TOOL_SERVICES })
 		expect(result).toHaveProperty('collectives')
 		expect(result).toHaveProperty('pages')
 		expect(files.collectives!.readHierarchy).toHaveBeenCalledWith(1, expect.anything())
@@ -257,7 +258,7 @@ describe('Collectives and Forms tool execution and approval', () => {
 		const tools = formsTools(mockHost)
 		const readTool = tools.find(t => t.name === 'nc_forms_read')!
 
-		const result = await readTool.invoke({ formId: 42 }, { callId: 'call-f1', signal: new AbortController().signal, sessionId: 's1', turnId: 't1' })
+		const result = await readTool.invoke({ formId: 42 }, { callId: 'call-f1', signal: new AbortController().signal, sessionId: 's1', turnId: 't1', services: NO_TOOL_SERVICES })
 		expect(result).toHaveProperty('forms')
 		expect(files.forms!.readForm).toHaveBeenCalledWith(42, expect.anything())
 	})

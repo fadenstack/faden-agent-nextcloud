@@ -1,2 +1,3 @@
 # Match the PHP formatter on Windows and Linux checkouts.
 *.php text eol=lf
+*.pdf binary

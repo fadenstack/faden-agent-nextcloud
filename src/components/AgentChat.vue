@@ -106,7 +106,7 @@ const renderers: PartRenderer[] = [
 		}
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
 			const placement = props.host.placement(part)
-			if (placement) return [h(ToolCallView, { part, strings }), h(ProvenanceNote, { summary: placement })]
+			if (placement) return [h(ToolCallView, { part, strings }), h(ProvenanceNote, { summary: placement, showExempt: props.host.chat.showUnmarkedNotice })]
 			const result = props.host.toolResult(part)
 			if (result) {
 				if (result.kind === 'nextcloud-agentfile-result') {

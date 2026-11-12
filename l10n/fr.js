@@ -5,5 +5,11 @@ OC.L10N.register("fadenstack_agent", {
   "Saved without an AI mark: the provenance service could not sign a record.": "Enregistré sans marquage IA : le service de provenance n’a pas pu signer d’enregistrement.",
   "Saved without an AI mark: Nextcloud did not keep it.": "Enregistré sans marquage IA : Nextcloud ne l’a pas conservé.",
   "Saved without an AI mark: translations, corrections and short labels need none.": "Enregistré sans marquage IA : les traductions, les corrections et les libellés courts n’en ont pas besoin.",
-  "No new AI mark was required by the agent's marking policy.": "La politique de marquage de l’agent n’exigeait aucune nouvelle marque d’IA."
+  "No new AI mark was required by the agent's marking policy.": "La politique de marquage de l’agent n’exigeait aucune nouvelle marque d’IA.",
+  "Sign in with a code": "Se connecter avec un code",
+  "Approve this code on the Fadenstack server. Your password stays there.": "Approuvez ce code sur le serveur Fadenstack. Votre mot de passe y reste.",
+  "Open sign-in page": "Ouvrir la page de connexion",
+  "Waiting for approval…": "En attente de validation…",
+  "The code expires at {time}.": "Le code expire à {time}.",
+  "Cancel": "Annuler"
 }, "nplurals=2; plural=(n > 1);");

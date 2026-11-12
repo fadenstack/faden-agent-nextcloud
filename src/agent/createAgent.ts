@@ -1,4 +1,4 @@
-import { FadenstackClient, AgentTokenProvider, MemoryTokenStore, loginWithPassword, type FetchLike, type ChatUpdate } from '@fadenstack/client'
+import { FadenstackClient, AgentTokenProvider, AgentPairing, MemoryTokenStore, loginWithPassword, type FetchLike, type ChatUpdate, type PairingStart } from '@fadenstack/client'
 import { FadenstackAgent, MemorySessionStore, MemoryApprovalStore, StageOrder, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
 import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore, type ToolCallPart } from '@fadenstack/ui'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
@@ -106,6 +106,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly selection: SelectedContext
 	readonly discovery: NextcloudSearchService
 	readonly tokens: AgentTokenProvider
+	readonly #pairing: AgentPairing
 	readonly agent: FadenstackAgent
 	readonly chat: AgentChatViewModel
 	readonly approvals = new ApprovalBroker()
@@ -158,9 +159,20 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.selection = new SelectedContext(files)
 		this.discovery = new NextcloudSearchService(files)
 		this.#fetch = async (input, init) => {
+			const destination = new URL(String(input))
+			if (destination.origin !== url.origin) throw new Error('The request origin is not approved.')
+			// SDK 0.3 revokes the device sign-in after local Stop/disposal. This one
+			// credential-cleanup route carries no native content and needs its own deadline.
+			if (destination.pathname === '/api/agent-tokens/revoke' && init?.method?.toUpperCase() === 'POST') {
+				return fetchImpl(input, {
+					...init,
+					credentials: 'omit',
+					redirect: 'error',
+					signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
+				})
+			}
 			const signal = init?.signal ? AbortSignal.any([init.signal, this.#stop.signal]) : this.#stop.signal
 			signal.throwIfAborted()
-			if (new URL(String(input)).origin !== new URL(config.serverUrl).origin) throw new Error('The request origin is not approved.')
 			await files.assertIdentity(signal)
 			this.#scope?.assertCurrent()
 			// Only data-bearing model requests replay native content. Sign-out and minimal reports
@@ -180,7 +192,11 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				signal,
 			})
 		}
-		this.tokens = new AgentTokenProvider({ apiUrl: config.serverUrl, agent: config.agent, store: new MemoryTokenStore(), fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
+		// Pairing and password sign-in share one ephemeral store. Neither native nor
+		// Fadenstack credentials are persisted in the browser or sent to a tool.
+		const tokenStore = new MemoryTokenStore()
+		this.tokens = new AgentTokenProvider({ apiUrl: config.serverUrl, agent: config.agent, store: tokenStore, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
+		this.#pairing = new AgentPairing({ apiUrl: config.serverUrl, store: tokenStore, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		const client = new FadenstackClient({ serverUrl: config.serverUrl, agent: config.agent, credentials: this.tokens, fetch: this.#fetch, allowInsecureHttp: this.#developmentHttp })
 		this.#reportPlacement = (report, signal) => client.agent!.provenance.reportPlacement(report, signal)
 		const experimental = experimentalAdaptersAllowed(config)
@@ -211,6 +227,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const notesEnabled = !nativeContent && experimental && config.notesEnabled === true && !!files.notes
 		const bookmarksEnabled = !nativeContent && experimental && config.bookmarksEnabled === true && !!files.bookmarks
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
+			.requireHostToolPolicyChecks()
+			.useGrantHandler(this.approvals)
+			.useStepUpHandler(this.approvals)
 			// Routine native tool work needs prompt responses. The published SDK
 			// treats this as a model preference; native approval/access checks remain mandatory.
 			.useReasoning('none')
@@ -572,7 +591,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			})
 			// What the app brings, for the agent's Apps tab: its tools, the context it offers, and the greeting and
 			// suggestions an administrator can take in, so the empty chat starts with ready questions.
-			.describeApp({ name: 'Nextcloud Files', version: '0.1.5', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
+			.describeApp({ name: 'Nextcloud Files', version: '0.1.17', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
 			.build()
 		const locale = config.locale ?? navigator.language
 		this.chat = new AgentChatViewModel(this.agent, this.approvals, {
@@ -596,7 +615,23 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.history.availability = undefined
 		const login = await loginWithPassword({ apiUrl: this.config.serverUrl, email, password, fetch: this.#fetch, signal: this.#stop.signal, allowInsecureHttp: this.#developmentHttp })
 		await this.tokens.signIn(login, 'Nextcloud Files', this.#stop.signal)
-		if (this.config.historyEnabled || this.config.providerReadsEnabled) this.files.setCloudIdentity?.(signal => this.tokens.getAccessToken(signal))
+		await this.finishSignIn()
+	}
+
+	startPairing(signal?: AbortSignal): Promise<PairingStart> {
+		return this.#pairing.start(this.config.agent, 'Nextcloud Files', { name: 'Fadenstack Nextcloud', version: '0.1.17', os: 'Browser' },
+			{ signal: signal ? AbortSignal.any([signal, this.#stop.signal]) : this.#stop.signal })
+	}
+
+	async completePairing(start: PairingStart, signal?: AbortSignal): Promise<void> {
+		const stop = signal ? AbortSignal.any([signal, this.#stop.signal]) : this.#stop.signal
+		await this.#pairing.wait(start, { signal: stop })
+		stop.throwIfAborted()
+		await this.finishSignIn()
+	}
+
+	private async finishSignIn(): Promise<void> {
+		if (this.config.historyEnabled || this.config.providerReadsEnabled || this.config.fileProvenanceEnabled) this.files.setCloudIdentity?.(signal => this.tokens.getAccessToken(signal))
 		await this.chat.initialize()
 		if (!this.chat.isReady) throw new Error(this.chat.error || 'The agent could not be initialized.')
 		if (this.agent.profile.draft || this.agent.profile.version === null) throw new Error('Use a published agent version for the Nextcloud integration.')

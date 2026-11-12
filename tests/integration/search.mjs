@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { JSDOM } from 'jsdom'
 import { NextcloudSearchService } from '../../src/integrations/nextcloud/search.ts'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -139,11 +140,10 @@ assert.equal(refreshed.cache_hit,false)
 assert.ok(refreshed.matches[0].excerpt.includes('45 days')); checks++
 await assert.rejects(service.inFile('nextcloud:files:999999999','x','terms',10,controller.signal),/returned by search/)
 await assert.rejects(service.inFile('https://evil.invalid','x','terms',10,controller.signal),/resource ID/)
-const admin = new User('pilot-admin','local-pilot-only')
-await admin.login()
-const sourcePdf = await admin.dav('Reasons to use Nextcloud.pdf','GET')
-assert.equal(sourcePdf.status,200)
-assert.equal((await alice.dav(root+'/Engineering/Reasons.pdf','PUT',new Uint8Array(await sourcePdf.arrayBuffer()),{'Content-Type':'application/pdf'})).status,201)
+// A synthetic, owned fixture works across Nextcloud skeleton/version choices
+// and needs no native administrator's credentials or private document.
+const sourcePdf = await readFile(new URL('../fixtures/search/Nextcloud-search.pdf', import.meta.url))
+assert.equal((await alice.dav(root+'/Engineering/Reasons.pdf','PUT',sourcePdf,{'Content-Type':'application/pdf'})).status,201)
 const pdfFiles = alice.files()
 let parsed = 0
 const pdfService = new NextcloudSearchService(pdfFiles,async (context,signal) => {

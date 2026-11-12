@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, shallowRef, watch, onMounted, onUnmounted } from 'vue'
+import type { PairingStart } from '@fadenstack/client'
 import { t } from '@nextcloud/l10n'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
@@ -16,6 +17,8 @@ const busy = ref(false)
 const problem = ref('')
 const selected = ref<FileContext>()
 const loadingContext = ref(false)
+const pairing = shallowRef<PairingStart>()
+let pairingStop: AbortController | undefined
 let selectionRevision = 0
 
 async function select(id?: number) {
@@ -53,8 +56,34 @@ async function signIn() {
 	} finally { busy.value = false }
 }
 const clear = () => props.runtime.clear()
+async function pair() {
+	if (busy.value) return
+	const stop = new AbortController()
+	pairingStop = stop
+	busy.value = true
+	problem.value = ''
+	password.value = ''
+	const host = props.runtime.ensure()
+	try {
+		const start = await host.startPairing(stop.signal)
+		stop.signal.throwIfAborted()
+		pairing.value = start
+		await host.completePairing(start, stop.signal)
+		stop.signal.throwIfAborted()
+		if (props.runtime.state.host !== host) throw new Error('The native session changed. Sign in again.')
+		props.runtime.connected()
+	} catch (error) {
+		if (!stop.signal.aborted) problem.value = errorMessage(error)
+		if (props.runtime.state.host === host) props.runtime.clear()
+	} finally {
+		pairing.value = undefined
+		pairingStop = undefined
+		busy.value = false
+	}
+}
+function cancelPairing() { pairingStop?.abort(new DOMException('Pairing cancelled.', 'AbortError')) }
 onMounted(() => { void props.runtime.verify() })
-onUnmounted(() => { ++selectionRevision })
+onUnmounted(() => { ++selectionRevision; cancelPairing() })
 </script>
 
 <template>
@@ -70,6 +99,23 @@ onUnmounted(() => { ++selectionRevision })
 				<div class="fadenstack-signin-destination">
 					<span>{{ t('fadenstack_agent', 'Fadenstack server') }}</span>
 					<strong>{{ runtime.config.serverUrl }}</strong>
+				</div>
+				<NcButton v-if="!pairing"
+					type="button"
+					variant="primary"
+					:disabled="busy"
+					@click="pair">
+					{{ t('fadenstack_agent', 'Sign in with a code') }}
+				</NcButton>
+				<div v-else class="fadenstack-pairing" role="status">
+					<p>{{ t('fadenstack_agent', 'Approve this code on the Fadenstack server. Your password stays there.') }}</p>
+					<output class="fadenstack-pairing-code">{{ pairing.userCode }}</output>
+					<a :href="pairing.verificationUriComplete.href" target="_blank" rel="noopener noreferrer">{{ t('fadenstack_agent', 'Open sign-in page') }}</a>
+					<p>{{ t('fadenstack_agent', 'Waiting for approval…') }}</p>
+					<p>{{ t('fadenstack_agent', 'The code expires at {time}.', { time: new Date(pairing.expiresAt).toLocaleTimeString() }) }}</p>
+					<NcButton type="button" @click="cancelPairing">
+						{{ t('fadenstack_agent', 'Cancel') }}
+					</NcButton>
 				</div>
 				<label for="fadenstack-email">{{ t('fadenstack_agent', 'Email') }}</label>
 				<input id="fadenstack-email"
@@ -127,6 +173,10 @@ onUnmounted(() => { ++selectionRevision })
 .fadenstack-signin-destination span { color: var(--color-text-maxcontrast); font-size: var(--font-size-small, 13px); }
 
 .fadenstack-signin-destination strong { font-weight: 400; }
+
+.fadenstack-pairing { display: flex; flex-direction: column; gap: 8px; }
+
+.fadenstack-pairing-code { font-family: monospace; font-size: 1.25em; letter-spacing: 0.1em; }
 
 .fadenstack-panel input:not([type=checkbox]), .fadenstack-panel textarea { width: 100%; box-sizing: border-box; }
 

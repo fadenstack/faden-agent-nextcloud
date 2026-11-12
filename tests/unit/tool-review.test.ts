@@ -1,6 +1,7 @@
+import { NO_TOOL_SERVICES } from '@fadenstack/agents'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import axios from '@nextcloud/axios'
-import { FakeGateway } from '@fadenstack/testing'
+import { FakeGateway } from '../helpers/gateway071.ts'
 import { ApprovalPart } from '@fadenstack/ui'
 import type { ToolCallContext } from '@fadenstack/agents'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
@@ -210,7 +211,7 @@ describe('exact expanded-action approval through the real pinned SDK', () => {
   await host.signIn('alice', 'test')
   const sending = host.send('Create the folder', false)
   const part = await pending(host)
-  const call: ToolCallContext = { callId: part.request.callId, turnId: 'test', sessionId: 'test', signal: new AbortController().signal }
+  const call: ToolCallContext = { callId: part.request.callId, turnId: 'test', services: NO_TOOL_SERVICES, sessionId: 'test', signal: new AbortController().signal }
   await expect(host.commitMutation('nc_files_create_folder', { name: 'Approved' }, call)).rejects.toThrow(/individual approval/i)
   expect(write).not.toHaveBeenCalled()
   host.stop()

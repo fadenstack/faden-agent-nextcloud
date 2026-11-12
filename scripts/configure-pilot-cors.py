@@ -65,6 +65,10 @@ map $uri $faden_nextcloud_sdk_path {
     /api/auth/jwt/login 1;
     /api/agent-tokens 1;
     /api/agent-tokens/refresh 1;
+    /api/agent-tokens/revoke 1;
+    /api/agent-tokens/pairings 1;
+    /api/agent-tokens/pairings/token 1;
+    /v1/provenance/anchors 1;
     ~^/v1/agents/AGENT(?:/|$) 1;
 }
 map "$faden_nextcloud_sdk_path:$http_origin" $faden_nextcloud_origin {
@@ -81,11 +85,15 @@ map $faden_nextcloud_origin $faden_nextcloud_methods {
 }
 map $faden_nextcloud_origin $faden_nextcloud_headers {
     default "";
-    ~.+ "Authorization, Content-Type, X-Faden-Tool-Mode, X-Faden-Events, X-Faden-Conversation-Id, X-Faden-Turn-Id";
+    ~.+ "Authorization, Content-Type, X-Faden-Tool-Mode, X-Faden-Events, X-Faden-Conversation-Id, X-Faden-Turn-Id, X-Faden-Client-Supports, X-Faden-Step-Up, X-Faden-Provenance";
 }
 map $faden_nextcloud_origin $faden_nextcloud_cache {
     default "";
     ~.+ 600;
+}
+map $faden_nextcloud_origin $faden_nextcloud_expose {
+    default "";
+    ~.+ "X-Faden-Provenance, X-Request-Id, Retry-After";
 }
 """.replace("AGENT", re.escape(args.agent)).replace("ORIGINS", "\n".join(f'    "1:{item}" "{item}";' for item in allowed))
     changes["nextcloud-cors-headers.conf"] = """# Merge preserves inherited HSTS, CSP and other security headers.
@@ -94,6 +102,7 @@ add_header Access-Control-Allow-Origin $faden_nextcloud_origin always;
 add_header Access-Control-Allow-Methods $faden_nextcloud_methods always;
 add_header Access-Control-Allow-Headers $faden_nextcloud_headers always;
 add_header Access-Control-Max-Age $faden_nextcloud_cache always;
+add_header Access-Control-Expose-Headers $faden_nextcloud_expose always;
 add_header Vary "Origin" always;
 # Deliberately no Access-Control-Allow-Credentials: the SDK omits cookies.
 if ($faden_nextcloud_preflight) {

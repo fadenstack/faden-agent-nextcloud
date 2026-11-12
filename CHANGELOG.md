@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.17 — local SDK/core candidate (unreleased)
+
+- Consume the owner's coherent local TypeScript SDK 0.3.0-sync.2 tarballs and
+  require core host-tool prepare/dispatch checks; preserve native per-action approval.
+- Add password-free pairing against the configured server, sharing the token
+  provider's in-memory store. Connect SDK grant/second-sign-in handlers and allow
+  sign-in revocation after the native runtime stops.
+- Use the shared preference for routine unmarked notices; keep actual marking
+  failures visible. Extend scoped browser CORS setup for pairing, revoke and SDK headers.
+- Remove the integration search test's dependency on an administrator's default
+  PDF: use a small owned two-page fixture instead.
+- Local-only dependencies and build: no npm release or publication. See
+  [local SDK setup](docs/sdk-local.md).
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
