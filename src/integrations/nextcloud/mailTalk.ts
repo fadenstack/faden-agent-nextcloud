@@ -122,7 +122,7 @@ export function mailTools(host: MailTalkHost) {
 				properties: {
 					accountRef: { type: 'string', description: 'Account ID or reference.' },
 					draftId: { type: 'integer', minimum: 1, description: 'Optional existing draft ID to update.' },
-					expectedRevision: { type: 'string', description: 'Required original MIME revision when updating a persisted draft.' },
+					expectedRevision: { type: 'string', description: 'For a persisted draft, use the exact content.revision returned by nc_mail_read with its messageId. This is the MIME revision, not resource.revision.' },
 					subject: { type: 'string', minLength: 1, maxLength: 255 },
 					body: { type: 'string', minLength: 1, maxLength: 65536 },
 					recipients: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 50 },
@@ -151,7 +151,7 @@ export function mailTools(host: MailTalkHost) {
 				type: 'object',
 				properties: {
 					draftId: { type: 'integer', minimum: 1, description: 'The resolved server draft ID.' },
-					expectedRevision: { type: 'string', minLength: 1, maxLength: 128, description: 'Server draft revision token.' },
+					expectedRevision: { type: 'string', minLength: 1, maxLength: 128, description: 'Exact content.revision returned by nc_mail_read for this draft messageId. Use the MIME revision, not resource.revision; read the draft again if it changed.' },
 				},
 				required: ['draftId', 'expectedRevision'],
 				additionalProperties: false,
