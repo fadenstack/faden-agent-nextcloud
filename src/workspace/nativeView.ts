@@ -11,7 +11,8 @@ export class NativeViewGuard {
 		const ElementType = this.page.defaultView?.Element
 		const element = ElementType && event.target instanceof ElementType ? event.target as Element : undefined
 		if (!element || element.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity, #fadenstack-agent-header')) return
-		if (!element.closest('.message-composer') && (element.matches('input[type="search"]') || element.closest('[role="search"]') || element.matches('.app-collectives input[name="pageFilter"], .app-bookmarks .inline-search input, .app-notes .content-list__search input'))) return
+		const notesSearch = /\/apps\/notes(?:\/|$)/.test(this.page.location.pathname) && element.matches('#app-content .content-list__search input, #app-content-vue .content-list__search input')
+		if (!element.closest('.message-composer') && (element.matches('input[type="search"]') || element.closest('[role="search"]') || notesSearch || element.matches('.app-collectives input[name="pageFilter"], .app-bookmarks .inline-search input'))) return
 		if (element.matches('input[type="checkbox"]') && element.closest('.files-list__row, .files-list__thead')) return
 		if (element.closest('#app-content, #app-content-vue, #viewer, .message-composer')) this.#dirty = true
 	}
@@ -40,7 +41,8 @@ export class NativeViewGuard {
 			|| /\/(?:edit|new|submit)(?:\/|$)/.test(url.pathname)
 			|| !!this.page.querySelector('#app-content iframe, #app-content-vue iframe')
 			|| [...this.page.querySelectorAll<HTMLInputElement>('#app-content input, #app-content-vue input')].some(input =>
-				!input.disabled && !input.readOnly && !input.matches('.app-bookmarks .inline-search input, .app-notes .content-list__search input')
+				!input.disabled && !input.readOnly && !input.matches('.app-bookmarks .inline-search input')
+				&& !(app === 'notes' && input.matches('#app-content .content-list__search input, #app-content-vue .content-list__search input'))
 				&& !(app === 'bookmarks' && input.matches('.app-bookmarks .empty-content input.import[type="file"]') && input.files?.length === 0)
 				&& !(collectiveReadView && input.matches('input[type="file"][data-text-el="attachment-file-input"]') && input.getClientRects().length === 0)
 				&& !input.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity') && !['checkbox', 'radio', 'hidden', 'button', 'submit', 'search'].includes(input.type)))

@@ -66,6 +66,21 @@ describe('Native editor protection', () => {
 		document.querySelector('input')!.dispatchEvent(new Event('input', { bubbles: true }))
 		expect(guard.snapshot().editState).toBe('clean')
 	})
+	it('recognizes the Notes 6 search without an app-notes wrapper while retaining native editing protection', () => {
+		history.replaceState(null, '', '/apps/notes/')
+		document.body.innerHTML = '<main id="app-content-vue"><div class="content-list__search"><input type="text" class="input-field__input"></div></main>'
+		const guard = new NativeViewGuard(); guards.push(guard)
+		const search = document.querySelector('input')!
+		expect(guard.snapshot().editState).toBe('clean')
+		search.dispatchEvent(new Event('input', { bubbles: true }))
+		expect(guard.snapshot().editState).toBe('clean')
+		document.querySelector('main')!.insertAdjacentHTML('beforeend', '<input class="note-title"><div contenteditable="true">Native body</div>')
+		expect(guard.snapshot().editState).toBe('unknown')
+		document.querySelector('.note-title')!.dispatchEvent(new Event('input', { bubbles: true }))
+		document.querySelector('.note-title')!.remove()
+		document.querySelector('[contenteditable]')!.remove()
+		expect(guard.snapshot().editState).toBe('dirty')
+	})
 	it.each(['subject', 'recipient', 'body'])('protects Mail portal %s edits outside app content, even after its removal', async field => {
 		history.replaceState(null, '', '/apps/mail/box/1')
 		document.body.innerHTML = '<main id="app-content"></main><section class="floating-composer"><div class="message-composer"><input class="subject"><input type="search" class="recipient"><div class="body" contenteditable="true"></div></div></section>'
