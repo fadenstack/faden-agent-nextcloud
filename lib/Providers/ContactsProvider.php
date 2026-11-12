@@ -300,6 +300,10 @@ final class ContactsProvider {
 		if (!in_array($operation, ['create', 'patch', 'delete'], true)) {
 			throw new Problem('Unsupported contacts operation.', 400);
 		}
+		if ($operation !== 'delete') {
+			$this->assertPrivateContact($vcardData);
+			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($vcardData, $policy['sourceClass']));
+		}
 
 		$identity = $this->journalIdentity($policy);
 		$this->authority->mutation('contacts', $bookId, $operation);
@@ -315,7 +319,6 @@ final class ContactsProvider {
 					throw $probe;
 				}
 			}
-			$this->assertPrivateContact($vcardData);
 			$expectedEtag = null;
 		} elseif ($operation === 'patch') {
 			if ($expectedEtag === null || $expectedEtag === '' || str_starts_with(trim($expectedEtag), 'W/') || str_starts_with(trim($expectedEtag), 'w/')) {
@@ -332,7 +335,6 @@ final class ContactsProvider {
 			}
 			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($current['body'], $policy['sourceClass']));
 			$this->assertPrivateContact($current['body']);
-			$this->assertPrivateContact($vcardData);
 		} else { // delete
 			if ($expectedEtag === null || $expectedEtag === '' || str_starts_with(trim($expectedEtag), 'W/') || str_starts_with(trim($expectedEtag), 'w/')) {
 				throw new Problem('A strong native expectedEtag is required.', 400);

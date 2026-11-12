@@ -274,6 +274,10 @@ final class TasksProvider {
 		if (!in_array($operation, ['create', 'patch', 'delete'], true)) {
 			throw new Problem('Unsupported task operation.', 400);
 		}
+		if ($operation !== 'delete') {
+			$this->assertPrivateTask($icsData);
+			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($icsData, $policy['sourceClass']));
+		}
 
 		$identity = $this->journalIdentity($policy);
 		$this->authority->mutation('tasks', $collectionId, $operation);
@@ -289,7 +293,6 @@ final class TasksProvider {
 					throw $probe;
 				}
 			}
-			$this->assertPrivateTask($icsData);
 			$expectedEtag = null;
 		} elseif ($operation === 'patch') {
 			if ($expectedEtag === null || $expectedEtag === '' || str_starts_with(trim($expectedEtag), 'W/') || str_starts_with(trim($expectedEtag), 'w/')) {
@@ -306,7 +309,6 @@ final class TasksProvider {
 			}
 			$this->policy->assertDisclosure($policy, CalendarClassification::sourceClass($current['body'], $policy['sourceClass']));
 			$this->assertPrivateTask($current['body']);
-			$this->assertPrivateTask($icsData);
 		} else { // delete
 			if ($expectedEtag === null || $expectedEtag === '' || str_starts_with(trim($expectedEtag), 'W/') || str_starts_with(trim($expectedEtag), 'w/')) {
 				throw new Problem('A strong native expectedEtag is required.', 400);

@@ -50,7 +50,7 @@ export class NativeViewGuard {
 			|| (app === 'contacts' && [...this.page.querySelectorAll('.contact-details, #contact-details, .contact-details-wrapper')]
 				.some(node => !node.closest('.contact-details-wrapper-read-only, .display-contact-details')))
 			|| [...this.page.querySelectorAll<HTMLInputElement>('#app-content input, #app-content-vue input')].some(input =>
-				!input.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity') && !['checkbox', 'radio', 'hidden', 'button', 'submit', 'search'].includes(input.type) && input.value.trim() !== ''))
+				!input.disabled && !input.readOnly && !input.closest('#fadenstack-agent-drawer, #fadenstack-agent-activity') && !['checkbox', 'radio', 'hidden', 'button', 'submit', 'search'].includes(input.type) && input.value.trim() !== ''))
 		const ready = !!this.page.querySelector('#app-content, #app-content-vue') && !this.page.querySelector('#app-content [aria-busy="true"], #app-content-vue [aria-busy="true"]')
 		const clean = !viewer && !dialog && !editor && !nativeEditor && !mailEditor && !contentEditor && (app === 'files'
 			? !!this.page.querySelector('.files-list, .files-list__row')

@@ -128,6 +128,22 @@ describe('Native editor protection', () => {
 		document.querySelector('#app-content-vue')!.insertAdjacentHTML('beforeend', '<div class="editor-container"><div contenteditable="true">Inline native description</div></div>')
 		expect(guard.snapshot().editState).toBe('unknown')
 	})
+	it('allows the native Contacts readonly value field without losing editing or dirty protection', () => {
+		const guard = nativeGuard()
+		history.replaceState(null, '', '/apps/contacts/')
+		document.querySelector('#app-content-vue')!.insertAdjacentHTML('beforeend', '<div class="contact-details-wrapper contact-details-wrapper-read-only"><section class="contact-details"><input class="native-value" readonly value="Saved contact"><input disabled value="Disabled value"></section></div>')
+		const value = document.querySelector<HTMLInputElement>('.native-value')!
+		expect(guard.snapshot().editState).toBe('clean')
+		value.readOnly = false
+		expect(guard.snapshot().editState).toBe('unknown')
+		value.dispatchEvent(new Event('input', { bubbles: true }))
+		value.readOnly = true
+		expect(guard.snapshot().editState).toBe('dirty')
+		guard.acknowledgeNavigation()
+		expect(guard.snapshot().editState).toBe('clean')
+		document.querySelector('.contact-details-wrapper')!.classList.remove('contact-details-wrapper-read-only')
+		expect(guard.snapshot().editState).toBe('unknown')
+	})
 	it('does not interpret native selection or chat typing as a native draft', () => {
 		const guard = nativeGuard()
 		expect(guard.snapshot().editState).toBe('clean')
