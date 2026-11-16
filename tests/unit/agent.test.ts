@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { FakeGateway } from '../helpers/gateway071.ts'
 import { FakeGateway as LegacyGateway } from '@fadenstack/testing'
+import { MemoryAuditLog } from '@fadenstack/agents'
 import { ApprovalPart } from '@fadenstack/ui'
 import { createApp, markRaw, nextTick } from 'vue'
 import AgentChat from '../../src/components/AgentChat.vue'
@@ -96,6 +97,78 @@ describe('SDK integration and file boundary', () => {
 			expect(host.chat.isReady).toBe(false)
 			expect(gateway.modelCalls).toHaveLength(0)
 			expect(files.commit).not.toHaveBeenCalled()
+		} finally { await host.dispose() }
+	})
+	it('an agent the organisation turned off says so in the chat, asks no model and writes nothing, until Check again finds it on', async () => {
+		const { host, gateway, files } = fixture({ model: () => ({ toolCalls: [{ id: 'create', name: 'nc_create_text_file', arguments: { filename: 'Draft.md', content: 'Synthetic' } }] }) })
+		try {
+			await host.signIn('alice', 'test'); host.offerSelection(await host.selection.select(2))
+			gateway.turnOff()
+			await host.send('Create a draft')
+			expect(host.chat.isAgentOff).toBe(true)
+			expect(host.chat.agentOffText).toBe('Your organisation turned this agent off.')
+			expect(host.chat.isInputEnabled).toBe(false)
+			const refused = gateway.refusedWhileOff(gateway.offAt).length
+			await host.send('Try once more')
+			expect(gateway.refusedWhileOff(gateway.offAt)).toHaveLength(refused)
+			expect(gateway.modelCalls).toHaveLength(0)
+			expect(files.propose).not.toHaveBeenCalled()
+			expect(files.commit).not.toHaveBeenCalled()
+			gateway.turnOn()
+			await host.chat.checkAgain()
+			expect(host.chat.isAgentOff).toBe(false)
+		} finally { host.stop(); await host.dispose() }
+	})
+	it('signs in to an agent that is turned off and shows the notice instead of failing the sign-in', async () => {
+		const { host, gateway } = fixture()
+		gateway.turnOff()
+		try {
+			await host.signIn('alice', 'test')
+			expect(host.chat.isReady).toBe(true)
+			expect(host.chat.isAgentOff).toBe(true)
+		} finally { await host.dispose() }
+	})
+	it('Stop everything cancels the waiting native proposal, stops the turn and says what it did', async () => {
+		const { host, files } = fixture({ model: () => ({ toolCalls: [{ id: 'create', name: 'nc_create_text_file', arguments: { filename: 'Draft.md', content: 'Synthetic draft' } }] }) },
+			identity, { cancelProposal: vi.fn(async () => {}) })
+		try {
+			await host.signIn('alice', 'test'); host.offerSelection(await host.selection.select(2))
+			const work = host.send('Create a draft'); const part = await pending(host)
+			await host.stopEverything.stop(); await work
+			expect(files.cancelProposal).toHaveBeenCalledWith('proposal')
+			expect(part.isPending).toBe(false)
+			expect(host.chat.isBusy).toBe(false)
+			expect(files.commit).not.toHaveBeenCalled()
+			expect(host.stopEverything.resultText).not.toBe('')
+		} finally { host.stop(); await host.dispose() }
+	})
+	it('keeps the record of tool calls in memory and opens no browser database for it', async () => {
+		const opened: string[] = []
+		vi.stubGlobal('indexedDB', { open: (name: string) => { opened.push(name); throw new DOMException('Not in this test.', 'SecurityError') } })
+		let round = 0
+		const { host } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ id: 'read', name: 'nc_get_selected_file', arguments: {} }] } : { text: 'Done.' } })
+		try {
+			await host.signIn('alice', 'test'); host.offerSelection(await host.selection.select(2))
+			await host.send('What is selected?')
+			expect(opened.filter(name => name.includes('audit'))).toEqual([])
+			const audit = (host.agent as unknown as { audit: unknown }).audit
+			expect(audit).toBeInstanceOf(MemoryAuditLog)
+			expect((audit as MemoryAuditLog).entries.map(entry => entry.tool)).toContain('nc_get_selected_file')
+		} finally { host.stop(); await host.dispose(); vi.unstubAllGlobals() }
+	})
+	it('marks an answer copied out of the chat with a record the server signed, from its hash only', async () => {
+		const { host, gateway } = fixture()
+		try {
+			await host.signIn('alice', 'test')
+			const copy = await host.agent.markCopy({ text: 'A synthetic answer.', html: '<p>A synthetic answer.</p>' })
+			expect(copy.marked).toBe(true)
+			expect(copy.recordId).toBeTruthy()
+			expect(copy.html).toContain(copy.recordId!)
+			expect(copy.text).toBe('A synthetic answer.')
+			expect(gateway.provenanceRecords.map(record => record.signed.record.id)).toContain(copy.recordId)
+			const sent = gateway.requests.filter(r => r.path.endsWith('/provenance/records')).map(r => JSON.stringify(r.body))
+			expect(sent).toHaveLength(1)
+			expect(sent[0]).not.toContain('synthetic answer')
 		} finally { await host.dispose() }
 	})
 	it('revokes its cloud sign-in after native disposal has stopped content-bearing requests', async () => {
@@ -609,6 +682,8 @@ describe('The SDK panel in Nextcloud', () => {
 		app.mount(root)
 		let sending: Promise<void> | undefined
 		try {
+			// The emergency stop sits in the panel's header, red, with no confirmation (release plan 8.11).
+			expect(root.querySelector('.fdn-header .fdn-stop-everything-button')?.getAttribute('aria-label')).toBe('Stop everything')
 			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('Next message')
 			expect(root.querySelector('.fadenstack-context')?.textContent).toContain('source.md')
 			expect(host.turnContext).toBeUndefined()

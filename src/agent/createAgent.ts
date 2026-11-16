@@ -1,10 +1,10 @@
 import { FadenstackClient, AgentTokenProvider, AgentPairing, MemoryTokenStore, loginWithPassword, type FetchLike, type ChatUpdate, type PairingStart } from '@fadenstack/client'
-import { FadenstackAgent, MemorySessionStore, MemoryApprovalStore, StageOrder, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
-import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore, type ToolCallPart } from '@fadenstack/ui'
+import { FadenstackAgent, MemoryAuditLog, MemorySessionStore, MemoryApprovalStore, StageOrder, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
+import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, StopEverythingViewModel, type ApprovalPart, type PreferenceStore, type ToolCallPart } from '@fadenstack/ui'
 import { browserChatServices } from '@fadenstack/ui-web'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nativeProvenanceSummary, type ProvenanceSummary } from '../integrations/nextcloud/provenance.ts'
-import { readerTextSha256 } from '@fadenstack/provenance'
+import { markStringsFor, provenanceModule, readerTextSha256 } from '@fadenstack/provenance'
 import { nextcloudLanguages } from './strings.ts'
 import { APP_UI } from './appUi.ts'
 import { nextcloudTools, WRITE_TOOLS, writeArguments, historyTools, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
@@ -110,6 +110,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly #pairing: AgentPairing
 	readonly agent: FadenstackAgent
 	readonly chat: AgentChatViewModel
+	/** "Stop everything" in the panel's header (release plan 8.11): every running turn, then the agent's grants. */
+	readonly stopEverything: StopEverythingViewModel
 	readonly approvals = new ApprovalBroker()
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
@@ -227,6 +229,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		const agentfileEnabled = !this.#providerReads && experimental && config.agentfileEnabled === true && !!files.agentfile
 		const notesEnabled = !nativeContent && experimental && config.notesEnabled === true && !!files.notes
 		const bookmarksEnabled = !nativeContent && experimental && config.bookmarksEnabled === true && !!files.bookmarks
+		const locale = config.locale ?? navigator.language
 		this.agent = FadenstackAgent.createBuilder().useClient(client)
 			.requireHostToolPolicyChecks()
 			.useGrantHandler(this.approvals)
@@ -308,6 +311,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				},
 			})
 			.useSessionStore(new MemorySessionStore()).useApprovalStore(new MemoryApprovalStore())
+			// The SDK's record of tool calls stays in memory, like the chats and approvals: the app keeps nothing in a
+			// shared browser. The durable records are the Fadenstack server's events (with arguments_sha256) and the
+			// app's action journal in Nextcloud.
+			.useAuditLog(new MemoryAuditLog())
+			// The SDK's marking: what the person copies out of the chat carries the AI mark in its HTML, signed by the
+			// organisation's server, in the panel's language. Native writes keep their own marking below.
+			.use(provenanceModule({ strings: () => markStringsFor(this.chat.language === 'auto' ? locale : this.chat.language) }))
 			.useApprovals({
 				request: async (request, signal) => {
 					if (request.source === 'host' && this.files.fileOperations && this.config.filesMutationsEnabled && ['nc_files_copy', 'nc_files_move', 'nc_files_share_readonly'].includes(request.toolName)
@@ -594,7 +604,6 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			// suggestions an administrator can take in, so the empty chat starts with ready questions.
 			.describeApp({ name: 'Nextcloud Files', version: '0.1.17', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
 			.build()
-		const locale = config.locale ?? navigator.language
 		this.chat = new AgentChatViewModel(this.agent, this.approvals, {
 			// The browser's clipboard, link opener and file saving (SDK 0.3.0 asks the host for them); the
 			// preferences below stay the Nextcloud user's own.
@@ -611,6 +620,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			// The published command SDK shares chat approvals, Stop and the native turn lifecycle.
 			beforeCommand: async (_command, signal) => { this.history.active = true; this.history.target = ''; this.workspace?.prepare('files'); await this.#prepare(signal, true) },
 			afterCommand: () => this.#finish(true),
+		})
+		this.stopEverything = new StopEverythingViewModel({
+			agents: () => [this.agent],
+			strings: () => this.chat.strings,
+			// The native proposals waiting in Nextcloud are cancelled first, as the panel's own Stop does; then the SDK
+			// stops the turns and ends the agent's grants. No confirmation: it is the emergency stop.
+			stop: agents => { this.#cancelNative(); return FadenstackAgent.stopAll(agents) },
 		})
 	}
 
@@ -2919,6 +2935,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	stop(): void {
+		this.#cancelNative()
+		this.chat.stop()
+	}
+
+	/** Cancels every native proposal and operation this page holds in Nextcloud; the turn's end clears the rest. */
+	#cancelNative(): void {
 		this.cancelFileProposals()
 		for (const p of this.#communicationProposals.values()) this.files.nativeProviders?.communicationCancel?.(p).catch(() => {})
 		for (const p of [...this.#tablesProposals.values(), ...this.#deckProposals.values()]) if (p.native) this.files.nativeProviders?.structuredCancel?.(p.native).catch(() => {})
@@ -2930,7 +2952,6 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#folderCreateInputs.clear()
 		this.#folderCreatePreviews.clear()
 		this.#proposalViews.clear()
-		this.chat.stop()
 	}
 
 	async dispose(): Promise<void> {

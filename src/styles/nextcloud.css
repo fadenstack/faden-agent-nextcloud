@@ -288,3 +288,8 @@
 		min-height: var(--clickable-area-small, 24px);
 	}
 }
+
+/* "Stop everything" in the panel header: its result line stays short, so the agent's name keeps its room. */
+.fadenstack-panel .fdn-header .fdn-stop-everything { height: auto; min-width: 0; background: transparent; }
+
+.fadenstack-panel .fdn-header .fdn-stop-everything-result { max-width: 140px; font-size: var(--font-size-small, 12px); }

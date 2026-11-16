@@ -2,7 +2,7 @@
 import { computed, h, nextTick, ref, watch } from 'vue'
 import { t } from '@nextcloud/l10n'
 import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
-import { AgentAvatar, ChatPanel, Icon, ToolCallView, type ChatTheme, type PartRenderer } from '@fadenstack/ui-vue'
+import { AgentAvatar, ChatPanel, Icon, StopEverythingButton, ToolCallView, type ChatTheme, type PartRenderer } from '@fadenstack/ui-vue'
 import '@fadenstack/ui-web/styles.css'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { useObservable } from '../agent/useObservable.ts'
@@ -159,6 +159,7 @@ function signOut() {
 			:part-renderers="renderers"
 			@keydown="escape">
 			<template #header-extra>
+				<StopEverythingButton :stop="host.stopEverything" :theme="theme" />
 				<button v-if="host.historyAvailable"
 					type="button"
 					class="fdn-icon-button"

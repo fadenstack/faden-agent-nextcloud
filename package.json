@@ -19,12 +19,12 @@
     "extends @nextcloud/browserslist-config"
   ],
   "dependencies": {
-    "@fadenstack/agents": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-agents-0.3.0-standalone.9.tgz",
-    "@fadenstack/client": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-client-0.3.0-standalone.9.tgz",
-    "@fadenstack/provenance": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-provenance-0.3.0-standalone.9.tgz",
-    "@fadenstack/ui": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-0.3.0-standalone.9.tgz",
-    "@fadenstack/ui-vue": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-vue-0.3.0-standalone.9.tgz",
-    "@fadenstack/ui-web": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-web-0.3.0-standalone.9.tgz",
+    "@fadenstack/agents": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-agents-0.3.0-standalone.10.tgz",
+    "@fadenstack/client": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-client-0.3.0-standalone.10.tgz",
+    "@fadenstack/provenance": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-provenance-0.3.0-standalone.10.tgz",
+    "@fadenstack/ui": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-0.3.0-standalone.10.tgz",
+    "@fadenstack/ui-vue": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-vue-0.3.0-standalone.10.tgz",
+    "@fadenstack/ui-web": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-web-0.3.0-standalone.10.tgz",
     "@nextcloud/auth": "^2.5.0",
     "@nextcloud/axios": "^2.5.0",
     "@nextcloud/event-bus": "^3.3.2",
@@ -40,7 +40,7 @@
     "vue": "^3.5.42"
   },
   "devDependencies": {
-    "@fadenstack/testing": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-testing-0.3.0-standalone.9.tgz",
+    "@fadenstack/testing": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-testing-0.3.0-standalone.10.tgz",
     "@nextcloud/browserslist-config": "^3.1.2",
     "@nextcloud/eslint-config": "^8.4.2",
     "@nextcloud/stylelint-config": "^3.1.1",
@@ -63,13 +63,13 @@
       "minimatch": "^11.0.1",
       "fast-xml-parser": "^5.12.0"
     },
-    "@fadenstack/client": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-client-0.3.0-standalone.9.tgz",
-    "@fadenstack/agents": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-agents-0.3.0-standalone.9.tgz",
-    "@fadenstack/ui": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-0.3.0-standalone.9.tgz",
-    "@fadenstack/ui-web": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-web-0.3.0-standalone.9.tgz",
-    "@fadenstack/ui-vue": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-vue-0.3.0-standalone.9.tgz",
-    "@fadenstack/ui-react": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-react-0.3.0-standalone.9.tgz",
-    "@fadenstack/testing": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-testing-0.3.0-standalone.9.tgz",
-    "@fadenstack/provenance": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-provenance-0.3.0-standalone.9.tgz"
+    "@fadenstack/client": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-client-0.3.0-standalone.10.tgz",
+    "@fadenstack/agents": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-agents-0.3.0-standalone.10.tgz",
+    "@fadenstack/ui": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-0.3.0-standalone.10.tgz",
+    "@fadenstack/ui-web": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-web-0.3.0-standalone.10.tgz",
+    "@fadenstack/ui-vue": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-vue-0.3.0-standalone.10.tgz",
+    "@fadenstack/ui-react": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-ui-react-0.3.0-standalone.10.tgz",
+    "@fadenstack/testing": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-testing-0.3.0-standalone.10.tgz",
+    "@fadenstack/provenance": "file:C:/00_Code/80_llm.port/fadenstack/.local/ts-feed/fadenstack-provenance-0.3.0-standalone.10.tgz"
   }
 }

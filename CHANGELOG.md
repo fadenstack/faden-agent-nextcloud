@@ -23,7 +23,16 @@ only with a Fadenstack server (governed mode). See
   server. Pairing and password sign-in share one in-memory token store.
 - When an organisation turns the agent off (Fadenstack 0.7.1), the app stops its
   reads and writes in Nextcloud and says "Your organisation turned this agent off."
-  in the person's language. It does not try again.
+  in the person's language. It does not try again. The chat shows the same words
+  with "Check again", and asks the model nothing until the agent is on again.
+- "Stop everything" in the panel's header: one press, with no confirmation, stops
+  the running answer, cancels the changes waiting for approval in Nextcloud, and
+  ends the agent's grants on the Fadenstack server. What the person allowed
+  "always" stays.
+- An answer copied out of the chat carries the AI mark in its HTML: a record the
+  organisation's Fadenstack server signs from the text's hash. The plain text is
+  copied as it is; code is not marked. When the organisation's policy requires the
+  mark and it cannot be made, nothing is copied and the chat says so.
 - `SECURITY.md`: how to report a vulnerability. Version 0.2 gets security fixes
   until 8 December 2031.
 - The release package carries `SECURITY.md` and `CHANGELOG.md`, and its
@@ -31,7 +40,7 @@ only with a Fadenstack server (governed mode). See
 
 ### Changed
 
-- The Fadenstack TypeScript SDK 0.3.0 (the `0.3.0-standalone.9` pre-release, as
+- The Fadenstack TypeScript SDK 0.3.0 (the `0.3.0-standalone.10` pre-release, as
   local packages until the SDK's registry release). The chat's copy, link and
   file-saving services come from `@fadenstack/ui-web`.
 - Every app tool call the model makes is checked by the Fadenstack server before
@@ -70,12 +79,20 @@ of this release.
 | Added | Host tool check: `name`, `arguments` (the tool's full arguments; for a write, the text to be written), `tool_mode`, `origin`, `call_id`, `phase`, `schema_sha256`; headers `x-faden-conversation-id`, `x-faden-turn-id` | Sent from the browser to the organisation's Fadenstack server, `POST /v1/agents/{agent}/tools/check`, before each app tool call the model makes. In 0.1.16 only the person's own history commands were checked | G | The server's policy allows, asks for or refuses each call before the app runs it | On; no one can switch it off | Per the server's policy decision records | Yes |
 | Added | Pairing: `agent`, `device_label` ("Nextcloud Files"), `client` (`name` "Fadenstack Nextcloud", `version`, `os` "Browser") | Sent to the organisation's Fadenstack server, `POST /api/agent-tokens/pairings` | G | Sign in without typing the Fadenstack password into Nextcloud | Used when the person chooses pairing; the person | Per the server's sign-in records | Yes |
 | Changed | Header `X-Fadenstack-Agent-Token` (the short-lived Fadenstack access token) | Sent from the browser to the organisation's own Nextcloud server with each approved write; Nextcloud checks it with the Fadenstack server (`GET .../profile`) and never stores it | G | The Fadenstack server signs the AI mark under the person's own sign-in | Was: only with history or provider reads on. Now also whenever marking is on, which is always in production; only the experimental development mode can turn marking off | Not stored | No |
+| Added | Copy record: `content_sha256`, `text_sha256`, `media_type`, `edit_kind` ("generated"), `receipt_id`, `model`; then the placement report (tool `copy`, sink `clipboard`, which marks held; never the copied text). The copied HTML carries the record's id | Sent to the organisation's Fadenstack server, `POST /v1/agents/{agent}/provenance/records` and `.../provenance/placements`, each time the person copies an answer out of the chat | G | The AI mark on what leaves the chat (AI Act Art. 50(2)) | On; the organisation's marking policy decides whether a copy that cannot be marked is refused; the person cannot switch it off | Per the server's provenance records | Yes |
+| Added | Manifest `device` block: `os` (the browser's platform name, such as "Windows"), `app_version`, `plugins` and `mcp_programs` (both empty in this app) | Sent to the organisation's Fadenstack server, `PUT /v1/agents/{agent}/manifest`, when the agent starts | G | The console's list of devices per person | On; no one | Per the server's manifest records | Yes |
+| Added | `arguments_sha256` (the SHA-256 of a tool call's arguments, not the arguments) in the `tool.executed` and `approval.decided` events | Sent to the organisation's Fadenstack server, `POST /v1/agents/{agent}/events`, when the server's profile asks for it (Fadenstack 0.7.1 does) | G | Ties the server's record of each call to the arguments that were checked | On with Fadenstack 0.7.1; no one | Per the server's event records | Yes |
 | Changed | App manifest `version` | Sent to the organisation's Fadenstack server, `PUT /v1/agents/{agent}/manifest` | G | Now the app's own version; before, a fixed "0.1.5" | On; no one | Per the server's manifest records | No |
 
-**Not determined:** the fields the Fadenstack SDK 0.3.0 itself adds or changes
-(its events, the manifest, approval answers, data on the device). The SDK has no
-"Data fields" section yet. Its rows that reach this app's users are added here
-when the app takes the SDK's release pack.
+**Kept on the device: nothing new.** The SDK's record of tool calls (time, chat,
+tool, decision and the arguments' hash) stays in the page's memory and is gone
+when the page closes; the app opens no browser database for it. Chats and
+approvals stay in memory as before.
+
+**Not determined:** the SDK's other fields (its remaining events and approval
+answers). The SDK has no "Data fields" section yet; the rows above were read from
+its code. Its own rows that reach this app's users are added here when the app
+takes the SDK's release pack.
 
 ## [0.1.16] - 2026-11-11
 
