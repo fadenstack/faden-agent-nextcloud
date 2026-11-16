@@ -11,7 +11,7 @@ import { currentEngineSurface } from '../workspace/engineSurface.ts'
 /** One runtime per authenticated page, retained when Files unmounts a tab. */
 export function createRuntime(config: Identity) {
 	const native = new NativeWorkspace()
-	const workspace = new WorkspaceCoordinator({ guard: native, prepareProvider: app => native.prepare(app), refresh: (result, signal) => result.provider ? native.refresh(result, signal) : refreshFiles(result, signal) })
+	const workspace = new WorkspaceCoordinator({ guard: native, prepareProvider: (app, signal) => native.prepare(app, signal), refresh: (result, signal) => result.provider ? native.refresh(result, signal) : refreshFiles(result, signal) })
 	const files = new NextcloudFiles(config)
 	const state = shallowReactive({ host: undefined as NextcloudAgent | undefined, signedIn: false, checking: false, error: '' })
 	const ensure = () => {

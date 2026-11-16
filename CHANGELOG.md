@@ -62,6 +62,14 @@ only with a Fadenstack server (governed mode). See
 
 ### Fixed
 
+- The off-switch's sentence is in the person's language wherever it shows. When
+  Nextcloud notices the switch before the chat does, the chat shows its notice
+  with "Check again" once, instead of an error line.
+- While the agent is off, the Actions dialog says so instead of listing only the
+  entries that still load.
+- The first change of a session waits up to a minute for the app's view to load
+  (it was 15 seconds, which a busy server exceeded). If the view does not load,
+  the chat says so in words and nothing is changed; Stop ends the wait.
 - `appinfo/info.xml` validates against the App Store's schema.
 - A sign-in revocation is no longer cut off when the person stops the agent.
 - Shell scripts and the development containers' files are checked out with LF

@@ -15,7 +15,8 @@
     "Cancel": "Cancelar",
     "Experimental: development mode": "Experimental: modo de desarrollo",
     "Mail, Talk and the workflow engines are untested in this mode and send content to other people. It also allows HTTP on localhost. Use it for testing only, never in production.": "Mail, Talk y los motores de flujos de trabajo no están probados en este modo y envían contenido a otras personas. Además, permite HTTP en localhost. Úselo solo para pruebas, nunca en producción.",
-    "Your organisation turned this agent off.": "Su organización apagó este agente."
+    "Your organisation turned this agent off.": "Su organización apagó este agente.",
+    "The native view did not finish loading. Nothing was changed. Try again.": "La vista de la aplicación no terminó de cargarse. No se cambió nada. Inténtelo de nuevo."
   },
   "pluralForm": "nplurals=2; plural=(n != 1);"
 }

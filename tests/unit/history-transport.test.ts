@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import axios from '@nextcloud/axios'
-import { AGENT_DISABLED, errorMessage, NextcloudFiles } from '../../src/integrations/nextcloud/files.ts'
+import { AGENT_DISABLED, errorMessage, isAgentDisabled, nextcloudError, NextcloudFiles } from '../../src/integrations/nextcloud/files.ts'
 import type { HistoryPreview, Identity } from '../../src/integrations/nextcloud/types.ts'
 
 vi.mock('@nextcloud/axios', () => ({ default: { get: vi.fn() } }))
@@ -73,7 +73,20 @@ describe('native cloud-token transport', () => {
 		const error = await files.history.execute(preview, new AbortController().signal).catch(error => error)
 		expect(error).toMatchObject({ response: { status: 403 } })
 		expect(errorMessage(error)).toBe('fadenstack_agent:Your organisation turned this agent off.')
+		// What the chat shows is the error's own message: translated at the source (rc21 live run, German showed English).
+		expect(error.message).toBe('fadenstack_agent:Your organisation turned this agent off.')
+		expect(isAgentDisabled(error)).toBe(true)
 		expect(fetcher).toHaveBeenCalledTimes(1)
 		expect(errorMessage(new Error('Your organisation turned this agent off'))).toBe('Your organisation turned this agent off')
+	})
+	it('recognises the off-switch only from a 403 with the console words, also when wrapped', async () => {
+		const { files, fetcher } = fixture()
+		fetcher.mockResolvedValue(new Response(JSON.stringify({ message: 'Sign in to Fadenstack again or check your agent access.' }), { status: 403 }))
+		const other = await files.history.execute(preview, new AbortController().signal).catch(error => error)
+		expect(isAgentDisabled(other)).toBe(false)
+		expect(isAgentDisabled(new Error(AGENT_DISABLED))).toBe(false)
+		const native = { response: { status: 403, data: { message: AGENT_DISABLED } } }
+		expect(isAgentDisabled(nextcloudError(native))).toBe(true)
+		expect(isAgentDisabled({ response: { status: 409, data: { message: AGENT_DISABLED } } })).toBe(false)
 	})
 })

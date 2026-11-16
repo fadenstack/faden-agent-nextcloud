@@ -36,6 +36,21 @@ async function pending(host: NextcloudAgent): Promise<ApprovalPart> {
 }
 
 describe('governed history integration', () => {
+	it('says the organisation turned the agent off instead of listing the actions that still load (rc21 live run)', async () => {
+		const { host, files, gateway } = fixture()
+		const off = Object.assign(new Error('Your organisation turned this agent off.'), { response: { status: 403, data: { message: 'Your organisation turned this agent off.' } } })
+		const development = new NextcloudAgent({ ...host.config, development: true }, {
+			...files, history: { ...files.history!, list: vi.fn(async () => { throw off }) },
+			nativeProviders: { actions: vi.fn(async () => [{ id: 'provider-action', createdAt: 1, provider: 'tables', auditOnly: true }]) } as unknown as FileApi['nativeProviders'],
+		}, gateway.fetch)
+		await host.dispose()
+		try {
+			await development.signIn('alice', 'test')
+			await development.refreshHistory(new AbortController().signal)
+			expect(development.history.error).toBe('Your organisation turned this agent off.')
+			expect(development.history.items).toEqual([])
+		} finally { await development.dispose() }
+	})
 	it('loads only coarse availability notices alongside the active history', async () => {
 		const { host, files } = fixture()
 		await host.signIn('alice', 'test')

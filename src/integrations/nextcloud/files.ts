@@ -442,8 +442,10 @@ export class NextcloudFiles implements FileApi {
 		if (!response.ok) {
 			const message = response.status === 409 && typeof data.code === 'string' && typeof HISTORY_CONFLICTS[data.code] === 'string'
 				? HISTORY_CONFLICTS[data.code]!
-				: typeof data.message === 'string' ? data.message : 'The Nextcloud operation could not be confirmed.'
-			throw Object.assign(new Error(message), { response: { status: response.status, data: { ...data, message } } })
+				: typeof data.message === 'string' ? serverMessage(data.message) : 'The Nextcloud operation could not be confirmed.'
+			// The person reads the translated words; the off-switch stays recognisable by its flag.
+			const off = response.status === 403 && data.message === AGENT_DISABLED
+			throw Object.assign(new Error(message), { response: { status: response.status, data: { ...data, message } }, ...(off ? { agentDisabled: true } : {}) })
 		}
 		return data
 	}
@@ -827,7 +829,22 @@ export function errorMessage(error: unknown): string {
 	const message = typeof response?.data?.message === 'string'
 		? response.data.message
 		: error instanceof Error ? error.message : 'The operation failed.'
+	return serverMessage(message)
+}
+/** A message from the app's PHP, in the person's language where it is one the app translates. */
+function serverMessage(message: string): string {
 	return message === AGENT_DISABLED ? t('fadenstack_agent', 'Your organisation turned this agent off.') : message
+}
+/** The error is Nextcloud's refusal because the organisation turned the agent off (PHP 403 `CloudApi::AGENT_DISABLED`). */
+export function isAgentDisabled(error: unknown): boolean {
+	let current = error
+	for (let depth = 0; current && typeof current === 'object' && depth < 4; depth++) {
+		if ((current as { agentDisabled?: unknown }).agentDisabled === true) return true
+		const response = (current as { response?: { status?: unknown, data?: { message?: unknown } } }).response
+		if (response?.status === 403 && response.data?.message === AGENT_DISABLED) return true
+		current = (current as { cause?: unknown }).cause
+	}
+	return false
 }
 
 function parseXmlDoc(raw: string): Document | null {

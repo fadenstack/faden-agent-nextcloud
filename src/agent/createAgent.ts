@@ -92,7 +92,7 @@ import { interruptibleRead } from '../platform/cancellation.ts'
 import { SourceLedger } from '../platform/sourceLedger.ts'
 import { shallowReactive } from 'vue'
 import { commandChat } from './commands.ts'
-import { errorMessage } from '../integrations/nextcloud/files.ts'
+import { errorMessage, isAgentDisabled } from '../integrations/nextcloud/files.ts'
 import { folderProposal, folderOutcome } from '../integrations/nextcloud/folderCreate.ts'
 import { ProviderReadRuntime, nativeCalendarReadTools, nativeTasksTools, nativeContactsTools } from '../providers/readRuntime.ts'
 import type { ProviderResource } from '../providers/scope.ts'
@@ -341,7 +341,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					}
 					if (HISTORY_TOOLS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked || !files.history || typeof request.arguments.action_id !== 'string' || !/^[a-f0-9]{32}$/.test(request.arguments.action_id)) throw new Error('A valid, available history action is required.')
-						const binding = await this.workspace?.prepareProvider('files')
+						const binding = await this.workspace?.prepareProvider('files', signal)
 						const direction = request.toolName === 'nc_actions_undo' ? 'undo' : request.toolName === 'nc_actions_redo' ? 'redo' : request.toolName === 'nc_actions_revalidate' ? 'revalidate' : 'reconcile'
 						const preview = await files.history.prepare(request.arguments.action_id, direction, signal)
 						this.history.target = preview.target
@@ -359,7 +359,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if (request.toolName === 'nc_files_create_folder' && request.source === 'host' && files.proposeFolderCreate) {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						this.#folderCreateInputs.set(request.callId, canonical(request.arguments))
-						const binding = await this.workspace?.prepareProvider('files')
+						const binding = await this.workspace?.prepareProvider('files', signal)
 						const plan = await this.planFolderCreateMutation(request.arguments, signal)
 						this.#folderCreateProposals.set(request.callId, plan)
 						if (binding) this.#proposalViews.set(request.callId, binding)
@@ -372,7 +372,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						this.#folderCreatePreviews.set(request.callId, canonical(request.arguments))
 					} else if (EXTENDED_FILES_MUTATIONS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-						const binding = this.files.fileOperations && this.config.filesMutationsEnabled ? await this.workspace?.prepareProvider('files') : this.workspace?.prepare('files')
+						const binding = this.files.fileOperations && this.config.filesMutationsEnabled ? await this.workspace?.prepareProvider('files', signal) : this.workspace?.prepare('files')
 						const plan = await this.planExtendedMutation(request.toolName, request.arguments, signal)
 						this.#extendedProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
@@ -385,7 +385,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					}
 					if (TABLES_MUTATIONS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-						const binding = this.files.nativeProviders?.structuredPropose ? await this.workspace?.prepareProvider('tables') : this.workspace?.prepare('tables')
+						const binding = this.files.nativeProviders?.structuredPropose ? await this.workspace?.prepareProvider('tables', signal) : this.workspace?.prepare('tables')
 						const plan = await this.planTablesMutation(request.toolName, request.arguments, signal)
 						this.#tablesProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
@@ -398,7 +398,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					}
 					if (DECK_MUTATIONS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-						const binding = this.files.nativeProviders?.structuredPropose ? await this.workspace?.prepareProvider('deck') : this.workspace?.prepare('deck')
+						const binding = this.files.nativeProviders?.structuredPropose ? await this.workspace?.prepareProvider('deck', signal) : this.workspace?.prepare('deck')
 						const plan = await this.planDeckMutation(request.toolName, request.arguments, signal)
 						this.#deckProposals.set(request.callId, structuredClone(plan))
 						if (binding) this.#proposalViews.set(request.callId, binding)
@@ -412,7 +412,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					if ((CALENDAR_MUTATIONS.has(request.toolName) || TASKS_MUTATIONS.has(request.toolName) || CONTACTS_MUTATIONS.has(request.toolName)) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
 						const appName = CALENDAR_MUTATIONS.has(request.toolName) ? 'calendar' : TASKS_MUTATIONS.has(request.toolName) ? 'tasks' : 'contacts'
-						const binding = await this.workspace?.prepareProvider(appName)
+						const binding = await this.workspace?.prepareProvider(appName, signal)
 						let plan: DavProposal
 						if (CALENDAR_MUTATIONS.has(request.toolName)) {
 							plan = await this.planCalendarMutation(request.toolName, request.arguments, signal)
@@ -432,7 +432,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					}
 					if ((MAIL_MUTATIONS.has(request.toolName) || TALK_MUTATIONS.has(request.toolName)) && request.source === 'host' && files.nativeProviders?.communicationPropose && this.#providerReads) {
 						if (this.#writeBlocked || !this.#providerReads.offeredTools.includes(request.toolName)) throw new Error('This native communications operation is unavailable.')
-						const binding = await this.workspace?.prepareProvider(MAIL_MUTATIONS.has(request.toolName) ? 'mail' : 'spreed')
+						const binding = await this.workspace?.prepareProvider(MAIL_MUTATIONS.has(request.toolName) ? 'mail' : 'spreed', signal)
 						await this.#providerReads.assertProcessing(signal)
 						const plan = await files.nativeProviders.communicationPropose(request.toolName, request.arguments, signal)
 						this.#communicationProposals.set(request.callId, plan)
@@ -469,7 +469,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						if (this.#writeBlocked || !this.#providerReads!.offeredTools.includes(request.toolName)) throw new Error('This native content operation is unavailable.')
 						const provider = fileCapability(request.toolName)!.subsystem as ContentProviderId
 						if (['windmill', 'n8n'].includes(provider)) this.assertEngineTarget(provider, request.arguments, request.toolName)
-						const binding = await this.workspace?.prepareProvider(provider === 'whiteboard' ? 'files' : provider)
+						const binding = await this.workspace?.prepareProvider(provider === 'whiteboard' ? 'files' : provider, signal)
 						await this.#providerReads!.assertProcessing(signal)
 						const plan = await files.nativeProviders!.contentPropose!(request.toolName, request.arguments, signal)
 						this.#contentProposals.set(request.callId, plan)
@@ -524,7 +524,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					}
 					if (WRITE_TOOLS.has(request.toolName) && request.source === 'host') {
 						if (this.#writeBlocked) throw new Error('A previous change did not complete. Start a new request after inspecting the resource.')
-						const binding = await this.workspace?.prepareProvider('files')
+						const binding = await this.workspace?.prepareProvider('files', signal)
 						const target = await this.writeContext(request.toolName, request.arguments.resource_id, signal)
 						if (this.#scope) {
 							const destination = await this.#scope.bindDestination(`nextcloud:files:${request.toolName === 'nc_create_text_file' ? target.parentId : target.file.id}`, signal)
@@ -615,10 +615,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			preferences: userPreferences(config.userId),
 			// Every message, from the composer, a suggestion or Retry, first checks the Nextcloud session and
 			// takes the file context it includes; the turn's tools read that context until it ends.
-			beforeSend: (_message, signal) => this.#prepare(signal),
+			beforeSend: (_message, signal) => this.#prepare(signal).catch(error => this.#refused(error, signal)),
 			afterSend: () => this.#finish(),
 			// The published command SDK shares chat approvals, Stop and the native turn lifecycle.
-			beforeCommand: async (_command, signal) => { this.history.active = true; this.history.target = ''; this.workspace?.prepare('files'); await this.#prepare(signal, true) },
+			beforeCommand: async (_command, signal) => { this.history.active = true; this.history.target = ''; this.workspace?.prepare('files'); await this.#prepare(signal, true).catch(error => this.#refused(error, signal)) },
 			afterCommand: () => this.#finish(true),
 		})
 		this.stopEverything = new StopEverythingViewModel({
@@ -681,6 +681,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 				this.config.development && this.files.fileOperations?.actions ? this.files.fileOperations.actions(signal) : Promise.resolve([]),
 			])
 			signal.throwIfAborted()
+			// The organisation turned the agent off: say so and list nothing, rather than the entries that still load.
+			const off = [fileResult, nativeResult, filesAudit].find(result => result.status === 'rejected' && isAgentDisabled(result.reason))
+			if (off?.status === 'rejected') throw off.reason
 			const items: HistoryItem[] = fileResult.status === 'fulfilled' ? [...fileResult.value[0]] : []
 			if (nativeResult.status === 'fulfilled') items.push(...nativeResult.value)
 			if (filesAudit.status === 'fulfilled') items.push(...filesAudit.value)
@@ -2897,6 +2900,16 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			this.#prepareError = error
 			throw error
 		}
+	}
+
+	/**
+	 * A message or command Nextcloud refused before it started. When the refusal is the organisation's off-switch and the
+	 * agent's profile confirms it, the SDK takes over: its notice with "Check again", the composer closed, no further
+	 * requests. The send then ends without a second copy of the same words; any other refusal is shown as it is.
+	 */
+	async #refused(error: unknown, signal: AbortSignal): Promise<never> {
+		if (isAgentDisabled(error) && await this.agent.checkAgain(signal).catch(() => false)) throw new Error('')
+		throw error
 	}
 
 	/** After the turn: its file context and any proposals it left are gone. */

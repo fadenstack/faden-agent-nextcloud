@@ -1,3 +1,4 @@
+import { t } from '@nextcloud/l10n'
 import { generateUrl } from '@nextcloud/router'
 import { NativeViewGuard, type NativeView } from './nativeView.ts'
 import type { WriteResult } from '../integrations/nextcloud/types.ts'
@@ -6,6 +7,11 @@ import { currentEngineSurface } from './engineSurface.ts'
 
 const APPS = ['files', 'calendar', 'tasks', 'contacts', 'tables', 'deck', 'mail', 'spreed', 'collectives', 'forms', 'notes', 'bookmarks', 'flow'] as const
 type NativeApp = typeof APPS[number]
+/**
+ * How long a native app may take to load in the workspace frame before its first write. Files needed 18 to 27 s on a busy
+ * test server (rc21 live run, 16 Nov), where the earlier 15 s failed the first write of a session; Stop ends the wait sooner.
+ */
+export const NATIVE_LOAD_MS = 60_000
 
 /** Own only the native child. Original DOM, parent chat and token memory remain mounted. */
 export class NativeWorkspace {
@@ -45,7 +51,7 @@ export class NativeWorkspace {
 		}
 	}
 
-	async prepare(app: string): Promise<void> {
+	async prepare(app: string, signal?: AbortSignal): Promise<void> {
 		if (!APPS.includes(app as NativeApp)) return
 		const current = this.snapshot()
 		if (current.app !== app) return // An off-screen change retains an honest not-visible receipt.
@@ -96,7 +102,7 @@ export class NativeWorkspace {
 			element.classList.add('fadenstack-native-masked')
 		}
 		this.page.body.append(root)
-		try { await this.ready(AbortSignal.timeout(15000)) } finally { root.inert = false }
+		try { await this.ready(loadSignal(signal)) } catch (error) { throw loadError(error) } finally { root.inert = false }
 	}
 
 	private async ready(signal: AbortSignal): Promise<void> {
@@ -193,7 +199,7 @@ export class NativeWorkspace {
 		if (!this.#frame) return
 		this.#child?.acknowledgeNavigation()
 		if (this.snapshot().editState !== 'clean') throw new Error('Close the native editor after saving or cancelling before refreshing.')
-		await this.reload(new URL(this.#frame.contentDocument!.location.href), AbortSignal.timeout(15000))
+		try { await this.reload(new URL(this.#frame.contentDocument!.location.href), loadSignal()) } catch (error) { throw loadError(error) }
 	}
 
 	dispose(): void {
@@ -205,4 +211,16 @@ export class NativeWorkspace {
 		this.#frame = undefined
 	}
 
+}
+
+/** The wait for the native frame: the load limit, ended sooner by the turn's Stop. */
+function loadSignal(signal?: AbortSignal): AbortSignal {
+	const limit = AbortSignal.timeout(NATIVE_LOAD_MS)
+	return signal ? AbortSignal.any([signal, limit]) : limit
+}
+/** The load limit in words the person can act on, instead of "signal timed out"; Stop and other errors stay as they are. */
+function loadError(error: unknown): unknown {
+	return error instanceof DOMException && error.name === 'TimeoutError'
+		? new Error(t('fadenstack_agent', 'The native view did not finish loading. Nothing was changed. Try again.'), { cause: error })
+		: error
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NativeViewGuard, type NativeView } from '../../src/workspace/nativeView.ts'
 import { WorkspaceCoordinator } from '../../src/workspace/coordinator.ts'
-import { NativeWorkspace } from '../../src/workspace/nativeWorkspace.ts'
+import { NATIVE_LOAD_MS, NativeWorkspace } from '../../src/workspace/nativeWorkspace.ts'
 
 const file = { id: 12, name: 'summary.md', path: '/Project/summary.md', mime: 'text/markdown', size: 8, etag: 'after', folder: false, permissions: 31, url: '/f/12' }
 const initial: NativeView = { app: 'files', key: '/apps/files/files/1', epoch: 1, editState: 'clean', reason: 'Finish editing first.' }
@@ -17,6 +17,24 @@ function nativeGuard() {
 }
 
 describe('Native editor protection', () => {
+	it('gives the native frame a minute to load, says so in words when it does not, and lets Stop end the wait (rc21 live run)', async () => {
+		nativeGuard()
+		const limit = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => AbortSignal.abort(new DOMException('signal timed out', 'TimeoutError')))
+		const slow = new NativeWorkspace()
+		try {
+			await expect(slow.prepare('files')).rejects.toThrow('The native view did not finish loading. Nothing was changed. Try again.')
+			expect(limit).toHaveBeenCalledWith(NATIVE_LOAD_MS)
+			expect(NATIVE_LOAD_MS).toBeGreaterThanOrEqual(60_000)
+		} finally { slow.dispose(); limit.mockRestore() }
+		nativeGuard()
+		const stopped = new NativeWorkspace()
+		const stop = new AbortController()
+		try {
+			const waiting = stopped.prepare('files', stop.signal)
+			stop.abort(new DOMException('Stopped', 'AbortError'))
+			await expect(waiting).rejects.toThrow('Stopped')
+		} finally { stopped.dispose() }
+	})
 	it('allows the unused native Bookmarks empty-view import launcher while protecting selected files and changes', () => {
 		history.replaceState(null, '', '/apps/bookmarks/')
 		document.body.innerHTML = '<div class="app-bookmarks"><main id="app-content-vue"><div class="empty-content"><input class="import" type="file"></div></main></div>'

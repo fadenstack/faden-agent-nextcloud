@@ -12,6 +12,7 @@ import { SelectedContext } from '../../src/integrations/nextcloud/context.ts'
 import { writeArguments } from '../../src/integrations/nextcloud/tools.ts'
 import { withFrontMatter, readerTextSha256 } from '@fadenstack/provenance'
 import { installViewerIntegration } from '../../src/integrations/nextcloud/viewer.ts'
+import { isAgentDisabled } from '../../src/integrations/nextcloud/files.ts'
 import type { FileApi, FileContext, Identity, Proposal } from '../../src/integrations/nextcloud/types.ts'
 import type { ScopePolicy } from '../../src/platform/scope.ts'
 
@@ -118,6 +119,27 @@ describe('SDK integration and file boundary', () => {
 			await host.chat.checkAgain()
 			expect(host.chat.isAgentOff).toBe(false)
 		} finally { host.stop(); await host.dispose() }
+	})
+	it('hands the Nextcloud off-switch refusal to the SDK, which shows its notice once and asks nothing more (rc21 live run)', async () => {
+		const off = () => Object.assign(new Error('Your organisation turned this agent off.'), { agentDisabled: true })
+		const { host, gateway, files } = fixture()
+		try {
+			await host.signIn('alice', 'test'); host.offerSelection(await host.selection.select(2))
+			// Nextcloud says off, but the profile still says on: the refusal is shown as it is.
+			// One preparation step refuses (in the live run: files/operations/capabilities); Nextcloud's other checks pass.
+			vi.mocked(files.assertIdentity).mockRejectedValueOnce(off())
+			expect(isAgentDisabled(await host.send('Before the switch reaches the server').catch(error => error))).toBe(true)
+			expect(host.chat.error).toBe('Your organisation turned this agent off.')
+			expect(host.chat.isAgentOff).toBe(false)
+			// Nextcloud says off and the profile agrees: the SDK's notice with Check again, no second copy, no model call.
+			gateway.turnOff()
+			vi.mocked(files.assertIdentity).mockRejectedValueOnce(off())
+			expect(isAgentDisabled(await host.send('After the switch').catch(error => error))).toBe(true)
+			expect(host.chat.isAgentOff).toBe(true)
+			expect(host.chat.error).toBeFalsy()
+			expect(gateway.modelCalls).toHaveLength(0)
+			expect(gateway.refusedWhileOff(gateway.offAt)).toHaveLength(0)
+		} finally { await host.dispose() }
 	})
 	it('signs in to an agent that is turned off and shows the notice instead of failing the sign-in', async () => {
 		const { host, gateway } = fixture()
