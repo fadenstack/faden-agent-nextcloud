@@ -13,5 +13,6 @@ OC.L10N.register("fadenstack_agent", {
   "The code expires at {time}.": "El código caduca a las {time}.",
   "Cancel": "Cancelar",
   "Experimental: development mode": "Experimental: modo de desarrollo",
-  "Mail, Talk and the workflow engines are untested in this mode and send content to other people. It also allows HTTP on localhost. Use it for testing only, never in production.": "Mail, Talk y los motores de flujos de trabajo no están probados en este modo y envían contenido a otras personas. Además, permite HTTP en localhost. Úselo solo para pruebas, nunca en producción."
+  "Mail, Talk and the workflow engines are untested in this mode and send content to other people. It also allows HTTP on localhost. Use it for testing only, never in production.": "Mail, Talk y los motores de flujos de trabajo no están probados en este modo y envían contenido a otras personas. Además, permite HTTP en localhost. Úselo solo para pruebas, nunca en producción.",
+  "Your organisation turned this agent off.": "Su organización apagó este agente."
 }, "nplurals=2; plural=(n != 1);");

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import axios from '@nextcloud/axios'
-import { errorMessage, NextcloudFiles } from '../../src/integrations/nextcloud/files.ts'
+import { AGENT_DISABLED, errorMessage, NextcloudFiles } from '../../src/integrations/nextcloud/files.ts'
 import type { HistoryPreview, Identity } from '../../src/integrations/nextcloud/types.ts'
 
 vi.mock('@nextcloud/axios', () => ({ default: { get: vi.fn() } }))
 vi.mock('@nextcloud/router', () => ({ generateUrl: (path: string) => path, generateRemoteUrl: () => '/remote.php/dav' }))
 vi.mock('@nextcloud/auth', () => ({ getRequestToken: () => 'native-csrf-token' }))
+vi.mock('@nextcloud/l10n', () => ({ t: (app: string, text: string) => `${app}:${text}` }))
 const identity: Identity = { userId: 'alice', binding: 'native-session', serverUrl: 'https://faden.test', agent: 'agent', enabled: true, development: false, historyEnabled: true }
 const preview: HistoryPreview = { id: 'a'.repeat(48), digest: 'b'.repeat(64), actionId: 'c'.repeat(32), direction: 'undo', before: 'Generated', content: 'Original', target: '/draft.md', expires: 9999999999 }
 function fixture() {
@@ -65,5 +66,14 @@ describe('native cloud-token transport', () => {
 		expect(errorMessage(error)).toBe('The file content does not establish whether this attempt completed. Its outcome remains unresolved. Review the file and action history before making further changes.')
 		expect(error.message).toBe(errorMessage(error))
 		expect(error.response.headers).toBeUndefined()
+	})
+	it('names an organisation\'s off-switch in the person\'s language and does not try again', async () => {
+		const { files, fetcher } = fixture()
+		fetcher.mockResolvedValue(new Response(JSON.stringify({ message: AGENT_DISABLED }), { status: 403 }))
+		const error = await files.history.execute(preview, new AbortController().signal).catch(error => error)
+		expect(error).toMatchObject({ response: { status: 403 } })
+		expect(errorMessage(error)).toBe('fadenstack_agent:Your organisation turned this agent off.')
+		expect(fetcher).toHaveBeenCalledTimes(1)
+		expect(errorMessage(new Error('Your organisation turned this agent off'))).toBe('Your organisation turned this agent off')
 	})
 })

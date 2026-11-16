@@ -11,6 +11,9 @@ use OCP\Http\Client\IClientService;
 /** Fixed authenticated agent routes. Never a caller-controlled fetch proxy. */
 final class CloudApi {
 	public const MAX_RESPONSE_BYTES = 262144;
+	/** The Fadenstack console's own words for an agent an organisation turned off (403 agent_disabled, profile enabled=false). */
+	public const AGENT_DISABLED = 'Your organisation turned this agent off.';
+	private const MAX_REFUSAL_BYTES = 4096;
 
 	public function __construct(
 		private Configuration $configuration,
@@ -51,6 +54,9 @@ final class CloudApi {
 			$body = $response->getBody();
 			$status = $response->getStatusCode();
 			if (in_array($status, [401, 403], true)) {
+				if ($status === 403 && self::agentDisabled($body)) {
+					throw new Problem(self::AGENT_DISABLED, 403);
+				}
 				throw new Problem('Sign in to Fadenstack again or check your agent access.', $status);
 			}
 			if ($status === 409) {
@@ -87,5 +93,19 @@ final class CloudApi {
 				fclose($body);
 			}
 		}
+	}
+
+	/** A bounded read of a 403 body: only the server's own off-switch code changes the message. */
+	private static function agentDisabled(mixed $body): bool {
+		$raw = is_resource($body) ? stream_get_contents($body, self::MAX_REFUSAL_BYTES) : $body;
+		if (!is_string($raw) || strlen($raw) > self::MAX_REFUSAL_BYTES) {
+			return false;
+		}
+		try {
+			$value = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
+		} catch (\JsonException) {
+			return false;
+		}
+		return is_array($value) && is_array($value['error'] ?? null) && ($value['error']['code'] ?? null) === 'agent_disabled';
 	}
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\FadenstackAgent\Tests;
 
 use OCA\FadenstackAgent\History\JournalIdentity;
+use OCA\FadenstackAgent\Identity\CloudApi;
 use OCA\FadenstackAgent\Identity\CloudIdentityVerifier;
 use OCA\FadenstackAgent\Identity\VerifiedCloudPrincipal;
 use OCA\FadenstackAgent\Service\Configuration;
@@ -166,6 +167,74 @@ class CloudIdentityTest extends TestCase {
 		self::assertNotSame($a->namespaceHash, $b->namespaceHash);
 		$this->expectException(Problem::class);
 		$verifier->verify(self::TOKEN);
+	}
+
+	public function testAnAgentTheOrganisationTurnedOffIsRefusedWithTheConsolesWords(): void {
+		$off = [...self::profile(), 'enabled' => false];
+		$on = [...self::profile(), 'enabled' => true];
+		$client = $this->createMock(IClient::class);
+		$client->method('get')->willReturnOnConsecutiveCalls(
+			$this->response(json_encode($on, JSON_THROW_ON_ERROR)), $this->response(json_encode($off, JSON_THROW_ON_ERROR)));
+		$verifier = $this->verifier($client);
+		self::assertSame('user-a', $verifier->verify(self::TOKEN)->userId, 'An agent that is on, and an older server without the key, still verify.');
+		try {
+			$verifier->verify(self::TOKEN);
+			self::fail('A profile that says the agent is off must stop every native write and read.');
+		} catch (Problem $error) {
+			self::assertSame(403, $error->status);
+			self::assertSame(CloudApi::AGENT_DISABLED, $error->getMessage());
+		}
+	}
+
+	public static function malformedSwitches(): array {
+		return [['false'], [0], [null], [[]]];
+	}
+
+	#[DataProvider('malformedSwitches')]
+	public function testAMalformedSwitchFailsClosed(mixed $enabled): void {
+		$client = $this->createMock(IClient::class);
+		$client->method('get')->willReturn($this->response(json_encode([...self::profile(), 'enabled' => $enabled], JSON_THROW_ON_ERROR)));
+		try {
+			$this->verifier($client)->verify(self::TOKEN);
+			self::fail('Only a boolean switch is accepted.');
+		} catch (Problem $error) {
+			self::assertSame(503, $error->status);
+		}
+	}
+
+	public static function refusals(): array {
+		$off = '{"error": {"type": "permission_error", "code": "agent_disabled", "message": "Your organisation turned this agent off."}}';
+		return [
+			'off-switch' => [403, $off, CloudApi::AGENT_DISABLED],
+			'off-switch as a stream' => [403, 'stream:' . $off, CloudApi::AGENT_DISABLED],
+			'not granted' => [403, '{"error": {"code": "agent_not_granted"}}', 'Sign in to Fadenstack again or check your agent access.'],
+			'retired' => [403, '{"error": {"code": "agent_retired"}}', 'Sign in to Fadenstack again or check your agent access.'],
+			'401 never reads as off' => [401, $off, 'Sign in to Fadenstack again or check your agent access.'],
+			'oversized' => [403, '{"error": {"code": "agent_disabled", "pad": "' . str_repeat('x', 5000) . '"}}', 'Sign in to Fadenstack again or check your agent access.'],
+			'not JSON' => [403, 'agent_disabled', 'Sign in to Fadenstack again or check your agent access.'],
+		];
+	}
+
+	#[DataProvider('refusals')]
+	public function testOnlyTheServersOffCodeNamesTheOffSwitch(int $status, string $body, string $message): void {
+		if (str_starts_with($body, 'stream:')) {
+			$stream = fopen('php://temp', 'w+');
+			fwrite($stream, substr($body, 7));
+			rewind($stream);
+			$body = $stream;
+		}
+		$client = $this->createMock(IClient::class);
+		$client->method('get')->willReturn($this->response($body, $status));
+		try {
+			$this->verifier($client)->verify(self::TOKEN);
+			self::fail('A refused profile must not verify.');
+		} catch (Problem $error) {
+			self::assertSame($status, $error->status);
+			self::assertSame($message, $error->getMessage());
+		}
+		if (isset($stream)) {
+			self::assertFalse(is_resource($stream));
+		}
 	}
 
 	public static function invalidPrincipals(): array {

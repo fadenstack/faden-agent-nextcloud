@@ -32,6 +32,15 @@ final class VerifiedCloudPrincipal {
 			|| !is_array($profile['tool_modes'] ?? null) || !is_array($profile['extensions'] ?? null)) {
 			throw new Problem('The configured Fadenstack server does not provide a verified published identity.', 503);
 		}
+		// From 0.7.1 the profile still answers while an organisation has turned the agent off; older servers omit the key.
+		if (array_key_exists('enabled', $profile)) {
+			if (!is_bool($profile['enabled'])) {
+				throw new Problem('The configured Fadenstack server does not provide a verified published identity.', 503);
+			}
+			if ($profile['enabled'] === false) {
+				throw new Problem(CloudApi::AGENT_DISABLED, 403);
+			}
+		}
 		foreach (['tenant_id', 'user_id', 'agent_id', 'device_id'] as $key) {
 			if (!is_string($principal[$key] ?? null) || !preg_match('/^[A-Za-z0-9_-]{1,128}$/D', $principal[$key])) {
 				throw new Problem('The Fadenstack device identity could not be verified.', 503);

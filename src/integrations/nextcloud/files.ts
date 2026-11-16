@@ -1,5 +1,6 @@
 import axios from '@nextcloud/axios'
 import { getRequestToken } from '@nextcloud/auth'
+import { t } from '@nextcloud/l10n'
 import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
 import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, DavFolderCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderCreateResult, FolderCreateProposal, FolderCreateOutcome, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, DeckApi, DeckBoardSnapshot, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact, DavCollection, ShareListing } from './types.ts'
 import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
@@ -819,11 +820,14 @@ export function nextcloudError(error: unknown): unknown {
 	const status = (error as { response?: { status?: unknown } })?.response?.status
 	return typeof status === 'number' ? new NextcloudRequestError(status, errorMessage(error), { cause: error }) : error
 }
+/** The Fadenstack console's words when an organisation turns the agent off (PHP `CloudApi::AGENT_DISABLED`). */
+export const AGENT_DISABLED = 'Your organisation turned this agent off.'
 export function errorMessage(error: unknown): string {
 	const response = (error as { response?: { data?: { message?: unknown } } })?.response
-	return typeof response?.data?.message === 'string'
+	const message = typeof response?.data?.message === 'string'
 		? response.data.message
 		: error instanceof Error ? error.message : 'The operation failed.'
+	return message === AGENT_DISABLED ? t('fadenstack_agent', 'Your organisation turned this agent off.') : message
 }
 
 function parseXmlDoc(raw: string): Document | null {
