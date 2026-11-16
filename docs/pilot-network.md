@@ -1,7 +1,7 @@
 # Pilot network deployment — 13 October 2026
 
-The app still connects directly through the published SDK to
-`https://10.250.10.61`. No certificate-validation bypass, credential proxy or
+The app still connects directly through the published SDK to the lab
+Fadenstack server (a private address). No certificate-validation bypass, credential proxy or
 cross-origin cookie support was added. The live deployment was 0.4.4rc2 during
 the first connection and 0.4.4 after the host came back online. The edge is nginx
 1.31.6. The host's hardware interruption was independent of Nextcloud.

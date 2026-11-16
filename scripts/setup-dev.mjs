@@ -8,7 +8,7 @@ function occ(args, env = []) {
 occ(['app:enable', 'fadenstack_agent'])
 // This unsigned transport fixture has no cloud identity/signer. Marking is tested
 // separately through a real scoped profile and the native approval UI.
-for (const [key, value] of Object.entries({ server_url: 'https://10.250.10.22', agent: 'nextcloud-agent', integration_enabled: '1', development: '1', file_provenance_enabled: '0' })) {
+for (const [key, value] of Object.entries({ server_url: process.env.FADENSTACK_SERVER || 'https://fadenstack.example.invalid', agent: 'nextcloud-agent', integration_enabled: '1', development: '1', file_provenance_enabled: '0' })) {
   occ(['config:app:set', 'fadenstack_agent', key, `--value=${value}`])
 }
 for (const user of ['pilot-alice', 'pilot-bob']) {

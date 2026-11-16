@@ -11,7 +11,8 @@ import { seedSearch } from '../../scripts/seed-search.mjs'
 globalThis.DOMParser = new JSDOM('').window.DOMParser
 const user = new User(process.env.NEXTCLOUD_USER || 'pilot-admin',process.env.NEXTCLOUD_PASSWORD || 'local-pilot-only')
 await user.login()
-assert.equal(user.config.serverUrl,process.env.FADENSTACK_SERVER || 'https://10.250.10.61')
+assert.ok(process.env.FADENSTACK_SERVER, 'Set FADENSTACK_SERVER to the Fadenstack origin under test.')
+assert.equal(user.config.serverUrl,process.env.FADENSTACK_SERVER)
 assert.equal(user.config.agent,process.env.FADENSTACK_AGENT || 'nextcloud-agent')
 const fixture = await seedSearch(user)
 let credentials

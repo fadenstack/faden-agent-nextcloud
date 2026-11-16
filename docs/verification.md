@@ -205,7 +205,7 @@ finished conversation was independently inspected in the existing browser tab.
 | Browser | Chrome 154 on Windows |
 | Fadenstack SDK | client/agents/ui/testing 0.2.0-rc.1 |
 | Frontend | Vue 3.5.42, Nextcloud Vue 9.13.x, Vite 7.3.6, Node 24.21.0 |
-| Supplied Fadenstack pilot | https://10.250.10.61, nextcloud-agent v1, qwen3.8-27b-fp8 |
+| Supplied Fadenstack pilot | The lab server (private address), nextcloud-agent v1, qwen3.8-27b-fp8 |
 
 The remote Fadenstack deployment was independently inspected over verified SSH:
 0.4.4rc2 before its hardware interruption, 0.4.4 after recovery, nginx 1.31.6.
@@ -281,7 +281,7 @@ that request did not apply an edit. The screenshot is retained in the gallery.
 
 ## Completed real-server browser acceptance
 
-The browser drawer signed in directly to `https://10.250.10.61` as the supplied
+The browser drawer signed in directly to the lab Fadenstack server as the supplied
 pilot user through the published SDK. Selecting **Reasons to use Nextcloud.pdf**
 (file 73) added an included composer attachment; PDF.js extracted its text in the
 browser. The real `qwen3.8-27b-fp8` model produced five substantive bullet points

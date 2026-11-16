@@ -21,7 +21,7 @@ class ValidationTest extends TestCase {
 	}
 	public function testDevelopmentDoesNotAllowRemoteHttp(): void {
 		$this->expectException(Problem::class);
-		Configuration::origin('http://10.250.10.61', true);
+		Configuration::origin('http://192.0.2.61', true);
 	}
 	public function testCredentialsCannotAppearInServerUrls(): void {
 		$this->expectException(Problem::class);

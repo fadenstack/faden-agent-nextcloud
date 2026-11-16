@@ -16,7 +16,8 @@ const local = new User(user, password)
 await local.login()
 const base = local.config.nextcloudUrl || process.env.NEXTCLOUD_URL || "http://localhost:8090"
 const config = local.config
-assert.equal(config.serverUrl, process.env.FADENSTACK_SERVER || "https://10.250.10.61")
+assert.ok(process.env.FADENSTACK_SERVER, "Set FADENSTACK_SERVER to the Fadenstack origin under test.")
+assert.equal(config.serverUrl, process.env.FADENSTACK_SERVER)
 assert.equal(config.agent, process.env.FADENSTACK_AGENT || "nextcloud-agent")
 const request = local.request.bind(local)
 const files = local.files()

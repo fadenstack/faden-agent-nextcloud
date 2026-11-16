@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
-const server = process.env.FADENSTACK_SERVER || 'https://10.250.10.61'
+const server = process.env.FADENSTACK_SERVER
+if (!server) throw new Error('Set FADENSTACK_SERVER to the Fadenstack origin under test.')
 const agent = process.env.FADENSTACK_AGENT || 'nextcloud-agent'
 let checks = 0
 const health = await fetch(`${server}/healthz`)
