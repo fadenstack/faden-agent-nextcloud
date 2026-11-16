@@ -13,7 +13,7 @@ const phpLock = JSON.parse(await readFile('composer.lock', 'utf8'))
 const phpInstalled = JSON.parse(await readFile('build/php-runtime/vendor/composer/installed.json', 'utf8'))
 if (phpInstalled.dev !== false || JSON.stringify(phpInstalled.packages.map(p => p.name).sort()) !== JSON.stringify(phpLock.packages.map(p => p.name).sort())) throw new Error('Package only the exact production PHP dependency set.')
 await cp('build/php-runtime/vendor', join(app, 'vendor'), { recursive: true })
-for (const item of ['appinfo', 'lib', 'templates', 'img', 'js', 'css', 'dist', 'l10n', 'docs', 'contracts', 'src', 'tests', 'vite.config.ts', 'vitest.config.ts', 'tsconfig.json', '.eslintrc.cjs', 'stylelint.config.cjs', '.php-cs-fixer.dist.php', 'README.md', 'LICENSE', 'composer.json', 'composer.lock', 'package.json', 'package-lock.json']) {
+for (const item of ['appinfo', 'lib', 'templates', 'img', 'js', 'css', 'dist', 'l10n', 'docs', 'contracts', 'src', 'tests', 'vite.config.ts', 'vitest.config.ts', 'tsconfig.json', '.eslintrc.cjs', 'stylelint.config.cjs', '.php-cs-fixer.dist.php', 'README.md', 'LICENSE', 'SECURITY.md', 'CHANGELOG.md', 'composer.json', 'composer.lock', 'package.json', 'package-lock.json']) {
   await cp(item, join(app, item), { recursive: true, filter: source => !source.endsWith('.map') })
 }
 await mkdir(join(app, 'scripts'))
@@ -32,7 +32,10 @@ for (const dependency of JSON.parse(await readFile('composer.lock', 'utf8')).pac
 for (const [path, metadata] of Object.entries(lock.packages)) {
   if (!path.startsWith('node_modules/') || metadata.dev || metadata.devOptional) continue
   const name = path.replaceAll('node_modules/', '').replaceAll('/', '_')
-  inventory.push(`${path}: ${metadata.version}; ${metadata.license || 'review package license'}`)
+  // The lock omits some licences; the package's own manifest then names it.
+  const declared = metadata.license || await readFile(join(path, 'package.json'), 'utf8').then(text => JSON.parse(text).license, () => undefined)
+  const license = typeof declared === 'string' ? declared : declared?.type
+  inventory.push(`${path}: ${metadata.version}; ${license || 'review package license'}`)
   for (const file of await readdir(path).catch(() => [])) {
     if (/^(license|licence|notice|copyright)(\.|$)/i.test(file)) await cp(join(path, file), join(attribution, `${name}-${file}`), { recursive: true })
   }
