@@ -22,12 +22,12 @@ scoped allowed-origin header. Existing authentication and cookie CSRF protection
 remain active. This follows the [browser CORS model](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS).
 
 `scripts/configure-pilot-cors.py` is an explicit deployment helper, never run by
-the app. On this host the installed copy is
-`/home/sachi/fadenstack/nginx/configure-nextcloud-cors.py`. Preview first:
+the app. Copy it next to the Fadenstack server's edge configuration, for example
+`<fadenstack-dir>/nginx/configure-nextcloud-cors.py`. Preview first:
 
 ```sh
 python3 configure-nextcloud-cors.py \
-  --nginx-dir /home/sachi/fadenstack/nginx \
+  --nginx-dir <fadenstack-dir>/nginx \
   --agent nextcloud-agent \
   --origin http://localhost:8090 \
   --origin http://localhost:8088 \

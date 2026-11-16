@@ -4,7 +4,7 @@
 	<id>fadenstack_agent</id>
 	<name>Fadenstack Agent</name>
 	<summary>Discover files and document passages in a governed chat drawer</summary>
-	<description>Find authorized Nextcloud files, search selected documents and continue individually approved text workflows with a published Fadenstack agent. Uses native search APIs; no additional RAG service is required.</description>
+	<description>Find authorized Nextcloud files, search selected documents and continue individually approved text workflows with a published Fadenstack agent. It needs your organisation's Fadenstack server: the text of the files you include and what the agent's tools read go to that server, and on to the AI model the server uses. Uses native search APIs; no additional RAG service is required.</description>
 	<version>0.1.17</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author homepage="https://fadenstack.com">Fadenstack</author>
@@ -22,17 +22,17 @@
 	<commands>
 		<command>OCA\FadenstackAgent\Command\JournalCheck</command>
 	</commands>
+	<settings>
+		<admin>OCA\FadenstackAgent\Settings\Admin</admin>
+	</settings>
 	<navigations>
 		<navigation>
 			<id>fadenstack_agent</id>
 			<name>Fadenstack Agent</name>
 			<route>fadenstack_agent.page.index</route>
-			<order>40</order>
 			<icon>app.svg</icon>
+			<order>40</order>
 			<type>link</type>
 		</navigation>
 	</navigations>
-	<settings>
-		<admin>OCA\FadenstackAgent\Settings\Admin</admin>
-	</settings>
 </info>

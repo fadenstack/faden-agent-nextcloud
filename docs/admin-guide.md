@@ -6,12 +6,24 @@ published agent identifier in Additional settings. Give employees individual
 Fadenstack access to that agent. Nextcloud access always comes from each user's
 own authenticated session; no administrator search credentials are configured.
 
+## The action journal (always written)
+
+The app writes an action journal into Nextcloud's database for **every approved
+text create or update and every folder it creates**, whether history is on or off.
+It holds the file's text before and after the change, encrypted with the
+instance secret (`ICrypto`), with its header sealed by an HMAC. Its rows are keyed
+by a hash of the Nextcloud user id. The text is kept for at most 7 days. The record
+without text stays 30 more days, and an unclear outcome stays until it is
+inspected. An hourly background job removes what has expired. These periods are
+fixed in code; there is no switch. Disabling or removing the app, or deleting a
+user, removes none of it before then. Include the journal tables in your backups
+and in your records of processing.
+
 ## Optional action history (0.1.7)
 
-History defaults off. The normal lockfile still uses published SDK 0.2.0-rc.2;
-its explicit history controls remain unavailable. The separately tested SDK
-0.3.0-rc.1 command build is not published or a production release dependency yet.
-For an accepted command-SDK/gateway deployment, set the app-owned flag with
+Only the undo and redo tools are optional; the journal above is written either
+way. History defaults off. For a deployment whose Fadenstack server accepts the
+prepare/dispatch checks below, set the app-owned flag with
 `occ config:app:set fadenstack_agent history_enabled --value=1` and reload Files.
 An explicit native `scope_policy.tools` must include `nc_actions_undo`,
 `nc_actions_redo`, `nc_actions_reconcile` and `nc_actions_revalidate` for all four controls; empty policy
@@ -127,8 +139,8 @@ die aktuelle Nextcloud-Sitzung des Mitarbeiters. Die neun Werkzeuge werden in
 Fadenstack erkannt und dort verwaltet; Schreibvorgänge benötigen eine individuelle
 Freigabe. Dateisuche und Suche im einzelnen Dokument benötigen keinen zusätzlichen
 RAG-Dienst. Die Volltextsuche über mehrere Dokumente ist optional und setzt einen
-verfügbaren, indizierten nativen Files-Anbieter voraus. Prüfe dessen Berechtigungen
-und Zugriffsregeln in deiner Installation. Ohne Anbieter wird die Einschränkung
+verfügbaren, indizierten nativen Files-Anbieter voraus. Prüfen Sie dessen Berechtigungen
+und Zugriffsregeln in Ihrer Installation. Ohne Anbieter wird die Einschränkung
 ausdrücklich angezeigt. Nextcloud 35 ist das primäre Testziel; die übrigen Grenzen
 stehen in der obigen Kompatibilitätstabelle und den Verifikationsunterlagen.
 
@@ -137,3 +149,15 @@ Der Fadenstack-Server signiert einen Nachweis jedes Schreibvorgangs, Nextcloud
 speichert ihn als Metadaten `fadenstack-provenance` der Datei (auch beim Kopieren),
 Markdown-Dateien tragen zusätzlich `ai-generated` und `ai-record-id` im Front Matter.
 Diese Kennzeichnungen dürfen nicht entfernt werden.
+
+Das Aktionsjournal wird **immer** geschrieben, nicht nur bei eingeschaltetem
+Verlauf: für jede freigegebene Textdatei, die der Agent anlegt oder ändert, und für
+jeden Ordner, den er anlegt. Es enthält den Text vor und nach der Änderung,
+verschlüsselt mit dem Instanzgeheimnis (`ICrypto`), in der Datenbank von Nextcloud,
+zugeordnet über einen Hashwert der Benutzerkennung. Der Text bleibt höchstens 7 Tage,
+der Eintrag ohne Text weitere 30 Tage; ein unklares Ergebnis bleibt bis zur Prüfung.
+Diese Fristen stehen fest im Code; es gibt keinen Schalter. Deaktivieren oder
+Entfernen der App und Löschen eines Benutzers entfernen davon vorher nichts. Nehmen
+Sie die Journaltabellen in Ihre Sicherungen und Ihr Verzeichnis der
+Verarbeitungstätigkeiten auf. Optional sind nur die Werkzeuge zum Rückgängigmachen
+und Wiederholen (`history_enabled`).
