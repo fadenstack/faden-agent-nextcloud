@@ -11,5 +11,7 @@ OC.L10N.register("fadenstack_agent", {
   "Open sign-in page": "打开登录页面",
   "Waiting for approval…": "等待批准…",
   "The code expires at {time}.": "代码将在 {time} 过期。",
-  "Cancel": "取消"
+  "Cancel": "取消",
+  "Experimental: development mode": "实验性：开发模式",
+  "Mail, Talk and the workflow engines are untested in this mode and send content to other people. It also allows HTTP on localhost. Use it for testing only, never in production.": "在此模式下，Mail、Talk 和工作流引擎未经测试，并会将内容发送给其他人。它还允许在 localhost 上使用 HTTP。仅用于测试，切勿在生产环境中使用。"
 }, "nplurals=1; plural=0;");

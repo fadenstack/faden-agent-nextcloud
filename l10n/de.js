@@ -58,7 +58,6 @@ OC.L10N.register("fadenstack_agent", {
   "Enable integration": "Integration aktivieren",
   "Fadenstack server origin": "Fadenstack-Serveradresse",
   "Published agent identifier": "Kennung des veröffentlichten Agenten",
-  "Allow HTTP on localhost for development": "HTTP auf localhost für die Entwicklung erlauben",
   "Configure the Nextcloud origin in Fadenstack CORS. Only the configured server origin is allowed by this app.": "Tragen Sie die Nextcloud-Adresse in Fadenstack CORS ein. Diese App erlaubt nur die konfigurierte Serveradresse.",
   "Save": "Speichern",
   "Saved. Reload Files to use the new configuration.": "Gespeichert. Laden Sie Dateien neu, um die neue Konfiguration zu verwenden.",
@@ -105,5 +104,7 @@ OC.L10N.register("fadenstack_agent", {
   "Open sign-in page": "Anmeldeseite öffnen",
   "Waiting for approval…": "Warten auf Bestätigung…",
   "The code expires at {time}.": "Der Code läuft um {time} ab.",
-  "Cancel": "Abbrechen"
+  "Cancel": "Abbrechen",
+  "Experimental: development mode": "Experimentell: Entwicklungsmodus",
+  "Mail, Talk and the workflow engines are untested in this mode and send content to other people. It also allows HTTP on localhost. Use it for testing only, never in production.": "Mail, Talk und die Workflow-Engines sind in diesem Modus ungetestet und senden Inhalte an andere Personen. Außerdem erlaubt er HTTP auf localhost. Nur zum Testen verwenden, nie im Produktivbetrieb."
 }, "nplurals=2; plural=(n != 1);");

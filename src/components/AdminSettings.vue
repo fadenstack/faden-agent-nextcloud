@@ -5,6 +5,7 @@ import { t } from '@nextcloud/l10n'
 import axios from '@nextcloud/axios'
 import { generateUrl } from '@nextcloud/router'
 import NcButton from '@nextcloud/vue/components/NcButton'
+import NcNoteCard from '@nextcloud/vue/components/NcNoteCard'
 import type { AppConfig } from '../integrations/nextcloud/types.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 const config = reactive(loadState<AppConfig>('fadenstack_agent', 'admin-config'))
@@ -24,7 +25,10 @@ async function save() {
 			required
 			placeholder="https://ai.example.org"></label>
 		<label>{{ t('fadenstack_agent', 'Published agent identifier') }}<input v-model="config.agent" required pattern="[a-zA-Z0-9_-]{1,100}"></label>
-		<label><input v-model="config.development" type="checkbox">{{ t('fadenstack_agent', 'Allow HTTP on localhost for development') }}</label>
+		<label><input v-model="config.development" type="checkbox" aria-describedby="fadenstack-development-warning">{{ t('fadenstack_agent', 'Experimental: development mode') }}</label>
+		<NcNoteCard id="fadenstack-development-warning"
+			type="warning"
+			:text="t('fadenstack_agent', 'Mail, Talk and the workflow engines are untested in this mode and send content to other people. It also allows HTTP on localhost. Use it for testing only, never in production.')" />
 		<p>{{ t('fadenstack_agent', 'Configure the Nextcloud origin in Fadenstack CORS. Only the configured server origin is allowed by this app.') }}</p>
 		<NcButton type="submit" variant="primary" :disabled="saving">
 			{{ t('fadenstack_agent', 'Save') }}

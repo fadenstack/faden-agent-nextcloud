@@ -11,5 +11,7 @@ OC.L10N.register("fadenstack_agent", {
   "Open sign-in page": "Ouvrir la page de connexion",
   "Waiting for approval…": "En attente de validation…",
   "The code expires at {time}.": "Le code expire à {time}.",
-  "Cancel": "Annuler"
+  "Cancel": "Annuler",
+  "Experimental: development mode": "Expérimental : mode développement",
+  "Mail, Talk and the workflow engines are untested in this mode and send content to other people. It also allows HTTP on localhost. Use it for testing only, never in production.": "Mail, Talk et les moteurs de workflow ne sont pas testés dans ce mode et envoient du contenu à d'autres personnes. Il autorise aussi HTTP sur localhost. À utiliser uniquement pour des tests, jamais en production."
 }, "nplurals=2; plural=(n > 1);");
