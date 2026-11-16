@@ -1,5 +1,21 @@
 # Limitations and unfinished acceptance
 
+## The 0.2 preview (December 2026)
+
+This is a preview. It works only with a Fadenstack server (governed mode). Two acceptance gates are not done
+for it:
+
+- **No adversarial test across the tools yet.** The full fault-injection suite (concurrency, races, network
+  boundaries) has not run against the app's tools. When the Fadenstack SDK's prompt-injection suite exists, it is
+  run against these tools.
+- **No named pilot yet.** The app has not run at a customer under a named pilot. That follows with the store
+  release after this preview.
+
+The admin's **Experimental: development mode** stays off by default. When it is on, Mail, Talk and the workflow
+engines are untested and send content to other people, and HTTP on localhost is allowed. Use it for testing only.
+
+The details below record earlier versions' limits and remain valid where they still apply.
+
 - The mandatory live PDF → summary → approved Markdown flow passed on Nextcloud
   35 against the real supplied server. This remains a development pilot; remaining
   browser/storage coverage is listed below.
