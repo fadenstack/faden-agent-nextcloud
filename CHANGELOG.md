@@ -1,25 +1,81 @@
 # Changelog
 
-## 0.1.17 — local SDK/core candidate (unreleased)
-
-- Consume the owner's coherent local TypeScript SDK 0.3.0-sync.2 tarballs and
-  require core host-tool prepare/dispatch checks; preserve native per-action approval.
-- Add password-free pairing against the configured server, sharing the token
-  provider's in-memory store. Connect SDK grant/second-sign-in handlers and allow
-  sign-in revocation after the native runtime stops.
-- Use the shared preference for routine unmarked notices; keep actual marking
-  failures visible. Extend scoped browser CORS setup for pairing, revoke and SDK headers.
-- Remove the integration search test's dependency on an administrator's default
-  PDF: use a small owned two-page fixture instead.
-- Local-only dependencies and build: no npm release or publication. See
-  [local SDK setup](docs/sdk-local.md).
-
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+From the 0.2 preview, every release has a **Data fields** section. It lists each
+value the app stores, sends or writes into your content that was added, changed or
+removed, so an organisation can keep its works agreement and records of processing
+current. "Works agreement? Yes" marks a field that reaches the organisation's server,
+or a changed default or purpose.
+
 ## [Unreleased]
+
+The 0.2 preview, planned as `0.2.0-beta.1` on the App Store's beta channel. It works
+only with a Fadenstack server (governed mode). See
+[known limitations](docs/known-limitations.md).
+
+### Added
+
+- Sign-in without a password: pair the browser with the configured Fadenstack
+  server. Pairing and password sign-in share one in-memory token store.
+- When an organisation turns the agent off (Fadenstack 0.7.1), the app stops its
+  reads and writes in Nextcloud and says "Your organisation turned this agent off."
+  in the person's language. It does not try again.
+- `SECURITY.md`: how to report a vulnerability. Version 0.2 gets security fixes
+  until 8 December 2031.
+- The release package carries `SECURITY.md` and `CHANGELOG.md`, and its
+  third-party inventory names a licence for every component.
+
+### Changed
+
+- The Fadenstack TypeScript SDK 0.3.0 (the `0.3.0-standalone.9` pre-release, as
+  local packages until the SDK's registry release). The chat's copy, link and
+  file-saving services come from `@fadenstack/ui-web`.
+- Every app tool call the model makes is checked by the Fadenstack server before
+  it runs (see Data fields). The app refuses a server that does not offer the check. Each native
+  write still asks for its own approval.
+- The administrator's development checkbox is now "Experimental: development
+  mode", off by default, with a warning in five languages: Mail, Talk and the
+  workflow engines are untested in this mode and send content to other people.
+- The store description says that the text of the files you include, and what
+  the agent's tools read, go to the organisation's Fadenstack server and on to its
+  model.
+- The administrator guide says that the action journal is written for every
+  approved change, whether history is on or off, and for how long.
+- German texts address the reader as "Sie" throughout.
+- Routine "not marked" notices follow the shared preference; real marking
+  failures stay visible.
+- The browser CORS helper covers pairing, sign-in revocation and the SDK's
+  headers.
+
+### Fixed
+
+- `appinfo/info.xml` validates against the App Store's schema.
+- A sign-in revocation is no longer cut off when the person stops the agent.
+- Shell scripts and the development containers' files are checked out with LF
+  line endings on Windows.
+- The integration search test uses its own two-page PDF instead of an
+  administrator's default file.
+
+### Data fields
+
+Compared with 0.1.16. Mode G is governed (with a Fadenstack server), the only mode
+of this release.
+
+| Change | Field | Where | Mode | Purpose | Default and who can switch it | Retention | Works agreement? |
+|---|---|---|---|---|---|---|---|
+| Added | Host tool check: `name`, `arguments` (the tool's full arguments; for a write, the text to be written), `tool_mode`, `origin`, `call_id`, `phase`, `schema_sha256`; headers `x-faden-conversation-id`, `x-faden-turn-id` | Sent from the browser to the organisation's Fadenstack server, `POST /v1/agents/{agent}/tools/check`, before each app tool call the model makes. In 0.1.16 only the person's own history commands were checked | G | The server's policy allows, asks for or refuses each call before the app runs it | On; no one can switch it off | Per the server's policy decision records | Yes |
+| Added | Pairing: `agent`, `device_label` ("Nextcloud Files"), `client` (`name` "Fadenstack Nextcloud", `version`, `os` "Browser") | Sent to the organisation's Fadenstack server, `POST /api/agent-tokens/pairings` | G | Sign in without typing the Fadenstack password into Nextcloud | Used when the person chooses pairing; the person | Per the server's sign-in records | Yes |
+| Changed | Header `X-Fadenstack-Agent-Token` (the short-lived Fadenstack access token) | Sent from the browser to the organisation's own Nextcloud server with each approved write; Nextcloud checks it with the Fadenstack server (`GET .../profile`) and never stores it | G | The Fadenstack server signs the AI mark under the person's own sign-in | Was: only with history or provider reads on. Now also whenever marking is on, which is always in production; only the experimental development mode can turn marking off | Not stored | No |
+| Changed | App manifest `version` | Sent to the organisation's Fadenstack server, `PUT /v1/agents/{agent}/manifest` | G | Now the app's own version; before, a fixed "0.1.5" | On; no one | Per the server's manifest records | No |
+
+**Not determined:** the fields the Fadenstack SDK 0.3.0 itself adds or changes
+(its events, the manifest, approval answers, data on the device). The SDK has no
+"Data fields" section yet. Its rows that reach this app's users are added here
+when the app takes the SDK's release pack.
 
 ## [0.1.16] - 2026-11-11
 
