@@ -1,6 +1,7 @@
 import { FadenstackClient, AgentTokenProvider, AgentPairing, MemoryTokenStore, loginWithPassword, type FetchLike, type ChatUpdate, type PairingStart } from '@fadenstack/client'
 import { FadenstackAgent, MemorySessionStore, MemoryApprovalStore, StageOrder, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
 import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, type ApprovalPart, type PreferenceStore, type ToolCallPart } from '@fadenstack/ui'
+import { browserChatServices } from '@fadenstack/ui-web'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nativeProvenanceSummary, type ProvenanceSummary } from '../integrations/nextcloud/provenance.ts'
 import { readerTextSha256 } from '@fadenstack/provenance'
@@ -595,6 +596,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.build()
 		const locale = config.locale ?? navigator.language
 		this.chat = new AgentChatViewModel(this.agent, this.approvals, {
+			// The browser's clipboard, link opener and file saving (SDK 0.3.0 asks the host for them); the
+			// preferences below stay the Nextcloud user's own.
+			...browserChatServices(),
 			locale,
 			// The user picks the language in the panel's settings; Automatic is the Nextcloud user's language.
 			automaticLanguage: locale,
