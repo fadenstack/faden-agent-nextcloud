@@ -737,6 +737,45 @@ describe('The SDK panel in Nextcloud', () => {
 		}
 	})
 
+	it('gives the composer the AI notice as its description, so a screen reader reads it on focus (Art. 50(5))', async () => {
+		vi.stubGlobal('ResizeObserver', class {
+
+			observe() {} disconnect() {}
+
+		})
+		const { host, gateway } = fixture()
+		await host.signIn('alice', 'test')
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(AgentChat, { host: markRaw(host), context: selected })
+		app.mount(root)
+		const described = () => {
+			const composer = root.querySelector<HTMLTextAreaElement>('.fdn-composer textarea')!
+			const ids = (composer.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean)
+			return ids.map(id => document.getElementById(id)?.textContent?.trim()).join(' ')
+		}
+		try {
+			expect(described()).toBe(host.chat.strings.aiNotice)
+			expect(described()).toContain('AI')
+			await host.chat.setLanguage('de')
+			await vi.waitFor(() => expect(described()).toBe('Antworten werden von einer KI erzeugt und können falsch sein. Prüfen Sie Wichtiges.'))
+			// The off-switch replaces the composer's state; the link survives it, and comes back after Check again.
+			gateway.turnOff()
+			await host.chat.checkAgain()
+			await nextTick()
+			expect(host.chat.isAgentOff).toBe(true)
+			expect(described()).toContain('KI')
+			gateway.turnOn()
+			await host.chat.checkAgain()
+			await nextTick()
+			expect(described()).toContain('KI')
+			// One notice id per panel, never a duplicate in the description.
+			expect(root.querySelector('.fdn-composer textarea')!.getAttribute('aria-describedby')!.split(' ')).toHaveLength(1)
+		} finally {
+			app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals()
+		}
+	})
+
 	it('reflects an excluded implicit attachment without reading it or claiming it grounds a response', async () => {
 		vi.stubGlobal('ResizeObserver', class {
 
