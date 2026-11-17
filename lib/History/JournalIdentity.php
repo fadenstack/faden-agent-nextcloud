@@ -38,7 +38,12 @@ final class JournalIdentity {
 			|| strlen($sessionBinding) < 16 || strlen($sessionBinding) > 512) {
 			throw new JournalException('invalid_identity', 400);
 		}
-		$this->ownerHash = hash('sha256', 'fadenstack-history-owner:' . $userId);
+		$this->ownerHash = self::ownerHashOf($userId);
 		$this->sessionHash = hash('sha256', $sessionBinding);
+	}
+
+	/** The journal's owner key for a native user; also finds a deleted user's rows. */
+	public static function ownerHashOf(string $userId): string {
+		return hash('sha256', 'fadenstack-history-owner:' . $userId);
 	}
 }

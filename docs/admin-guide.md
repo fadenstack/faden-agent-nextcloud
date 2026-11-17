@@ -15,9 +15,9 @@ instance secret (`ICrypto`), with its header sealed by an HMAC. Its rows are key
 by a hash of the Nextcloud user id. The text is kept for at most 7 days. The record
 without text stays 30 more days, and an unclear outcome stays until it is
 inspected. An hourly background job removes what has expired. These periods are
-fixed in code; there is no switch. Disabling or removing the app, or deleting a
-user, removes none of it before then. Include the journal tables in your backups
-and in your records of processing.
+fixed in code; there is no switch. Deleting a user erases that user's rows at
+once, and disabling or removing the app erases all of them (see below). Include
+the journal tables in your backups and in your records of processing.
 
 ## Optional action history (0.1.7)
 
@@ -66,8 +66,23 @@ revision changes; file bytes, action state and ordering stay unchanged. Undo/Red
 then requires a separate approval. Later edits, ambiguous/expired snapshots,
 shared targets and dependent actions remain blocked. Verification cannot prove
 notification or other external effects.
-Keep background jobs running for physical snapshot expiry. App disable/removal
-and database-engine conversion need their own retention/migration acceptance.
+Keep background jobs running for physical snapshot expiry. Database-engine
+conversion needs its own migration acceptance.
+
+**Deleted accounts.** When a Nextcloud account is deleted, the app erases that
+account's journal entries, snapshots and open approvals at once; Nextcloud deletes
+its preferences, which hold the person's workflow-engine keys. If the erasure fails,
+Nextcloud's log says so, the deletion still goes ahead, and the entries expire as
+above.
+
+**Disabling or removing the app.** Nextcloud runs the same uninstall step for both,
+so both erase the whole journal with its snapshots, all open approvals, and every
+person's workflow-engine keys. Undo is no longer possible for earlier changes, and
+people connect their workflow engines again after the app is enabled again. The
+organisation's settings (server address, agent, policies) stay, so the app comes
+back paired. The files the agent wrote keep their AI marking. To remove the app
+and keep its data, use `occ app:remove --keep-data fadenstack_agent`. The app's
+empty tables stay after removal, as Nextcloud leaves them.
 
 The nine host tools are discovered on connection. Review them in Fadenstack's
 governance interface and reconnect after policy publication. Search and metadata

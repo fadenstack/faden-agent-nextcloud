@@ -106,6 +106,15 @@ final class StructuredTickets {
 		}
 		return $this->move($identity, $id, ['preparing', 'prepared', 'approving', 'approved', 'cancelled'], 'cancelled');
 	}
+	/** A deleted user's open tickets; with null, every ticket (the app is switched off or removed). */
+	public function erase(?string $ownerHash): int {
+		$q = $this->db->getQueryBuilder();
+		$q->delete('fdn_provider_tickets');
+		if ($ownerHash !== null) {
+			$q->where($q->expr()->eq('owner_hash', $q->createNamedParameter($ownerHash)));
+		}
+		return $q->executeStatement();
+	}
 	public function prune(): int {
 		$q = $this->db->getQueryBuilder();
 		$ids = $q->select('ticket_id')->from('fdn_provider_tickets')->where($q->expr()->lte('expires_at', $q->createNamedParameter(time(), IQueryBuilder::PARAM_INT)))->setMaxResults(1000)->executeQuery()->fetchFirstColumn();

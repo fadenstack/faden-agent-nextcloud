@@ -19,6 +19,11 @@
 		<job>OCA\FadenstackAgent\BackgroundJob\ExpireJournal</job>
 		<job>OCA\FadenstackAgent\BackgroundJob\ExpireProviderTickets</job>
 	</background-jobs>
+	<repair-steps>
+		<uninstall>
+			<step>OCA\FadenstackAgent\Migration\EraseOnUninstall</step>
+		</uninstall>
+	</repair-steps>
 	<commands>
 		<command>OCA\FadenstackAgent\Command\JournalCheck</command>
 	</commands>

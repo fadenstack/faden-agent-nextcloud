@@ -168,6 +168,34 @@ final class SqlJournalStore {
 		$this->db->executeStatement('DELETE FROM *PREFIX*fdn_jr_alloc WHERE action_id = ?', [$id]);
 	}
 
+	/**
+	 * Call in atomic(). Erases every action the owner wrote or was charged for, including one whose header moved,
+	 * with its snapshots, receipts, claims, quota and pauses. Bounded by the per-user entry quota.
+	 */
+	public function eraseOwner(string $owner): int {
+		$ids = array_column($this->all('SELECT action_id FROM *PREFIX*fdn_journal WHERE owner_hash = ?'
+			. ' UNION SELECT action_id FROM *PREFIX*fdn_jr_alloc WHERE owner_hash = ?', [$owner, $owner]), 'action_id');
+		foreach (array_chunk($ids, 100) as $chunk) {
+			$in = implode(', ', array_fill(0, count($chunk), '?'));
+			$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_resources SET active_id = NULL WHERE active_id IN (' . $in . ')', $chunk);
+			foreach (['fdn_jr_attempts', 'fdn_journal', 'fdn_jr_alloc'] as $table) {
+				$this->db->executeStatement('DELETE FROM *PREFIX*' . $table . ' WHERE action_id IN (' . $in . ')', $chunk);
+			}
+		}
+		foreach (['fdn_jr_resources', 'fdn_jr_owners', 'fdn_jr_barriers'] as $table) {
+			$this->db->executeStatement('DELETE FROM *PREFIX*' . $table . ' WHERE owner_hash = ?', [$owner]);
+		}
+		return count($ids);
+	}
+
+	/** Call in atomic(). Erases the whole journal and restarts the maintenance cursors; the mutex row stays. */
+	public function eraseAll(): void {
+		foreach (['fdn_jr_attempts', 'fdn_journal', 'fdn_jr_alloc', 'fdn_jr_resources', 'fdn_jr_owners', 'fdn_jr_barriers'] as $table) {
+			$this->db->executeStatement('DELETE FROM *PREFIX*' . $table);
+		}
+		$this->db->executeStatement('UPDATE *PREFIX*fdn_jr_control SET cursor_id = ?, generation = 0 WHERE control_name <> ?', ['', 'safety']);
+	}
+
 	public function unallocatedPage(?string $after = null, int $limit = 25): array {
 		$limit = max(1, min(1000, $limit));
 		return $this->all('SELECT j.* FROM *PREFIX*fdn_journal j LEFT JOIN *PREFIX*fdn_jr_alloc a ON a.action_id = j.action_id WHERE a.action_id IS NULL'

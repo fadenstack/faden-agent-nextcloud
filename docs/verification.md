@@ -1,5 +1,23 @@
 # Pilot verification — 13 October 2026
 
+## 17 November: erasure on account deletion and on app removal (0.2 preview)
+
+`tests/integration/data-erasure.php` runs in the disposable development container
+as `www-data`, with `FADEN_DISPOSABLE_TEST=erasure-20261117`, in three steps:
+`user`, then `occ app:disable fadenstack_agent`, `disabled`, then `occ app:enable
+fadenstack_agent`, `enabled`. It seeds two accounts with journal entries, receipts,
+claims, a pause, an open ticket and an engine key, and deletes one through Nextcloud.
+
+| Check | Nextcloud 35.0.1 | Nextcloud 31.0.14 |
+| --- | --- | --- |
+| The deleted account: no rows left in any journal table or tickets; its receipts and engine key gone | 14 of 14 | 14 of 14 |
+| The other account: journal, receipts, quota, tickets and engine key untouched | included above | included above |
+| After `app:disable`: every journal table and the tickets empty, engine keys gone, the mutex row and the organisation's settings kept | 12 of 12 | 12 of 12 |
+| After `app:enable`: the journal records again; the test removes its second account | 2 of 2 | 2 of 2 |
+
+`tests/Unit/DataErasureTest.php` adds that a failed erasure never blocks the account
+deletion: it logs a warning and the entries expire as before.
+
 ## 28 October: restored revision verification (0.1.7)
 
 On isolated Nextcloud 35.0.2/PHP 8.5.12/PostgreSQL 16.15, applied and undone paired

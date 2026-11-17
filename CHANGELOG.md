@@ -8,8 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 From the 0.2 preview, every release has a **Data fields** section. It lists each
 value the app stores, sends or writes into your content that was added, changed or
 removed, so an organisation can keep its works agreement and records of processing
-current. "Works agreement? Yes" marks a field that reaches the organisation's server,
-or a changed default or purpose.
+current. "Works agreement? Yes" marks a field that records what a person did (which
+tool the agent ran for them, what they approved, when), wherever it is kept; a
+field that reaches the organisation's server; or a changed default or purpose. The
+flag is information for the organisation; whether a works agreement is needed stays
+with it.
 
 ## [Unreleased]
 
@@ -33,6 +36,11 @@ only with a Fadenstack server (governed mode). See
   organisation's Fadenstack server signs from the text's hash. The plain text is
   copied as it is; code is not marked. When the organisation's policy requires the
   mark and it cannot be made, nothing is copied and the chat says so.
+- When a Nextcloud account is deleted, its action journal (the snapshots for Undo)
+  and its open approvals go with it, instead of expiring after 7 and 30 days.
+  Disabling or removing the app erases the whole journal, the open approvals and
+  every person's stored workflow-engine keys; the organisation's settings stay, so
+  the app comes back paired. `occ app:remove --keep-data` keeps everything.
 - `SECURITY.md`: how to report a vulnerability. Version 0.2 gets security fixes
   until 8 December 2031.
 - The release package carries `SECURITY.md` and `CHANGELOG.md`, and its
@@ -90,12 +98,15 @@ of this release.
 | Added | Copy record: `content_sha256`, `text_sha256`, `media_type`, `edit_kind` ("generated"), `receipt_id`, `model`; then the placement report (tool `copy`, sink `clipboard`, which marks held; never the copied text). The copied HTML carries the record's id | Sent to the organisation's Fadenstack server, `POST /v1/agents/{agent}/provenance/records` and `.../provenance/placements`, each time the person copies an answer out of the chat | G | The AI mark on what leaves the chat (AI Act Art. 50(2)) | On; the organisation's marking policy decides whether a copy that cannot be marked is refused; the person cannot switch it off | Per the server's provenance records | Yes |
 | Added | Manifest `device` block: `os` (the browser's platform name, such as "Windows"), `app_version`, `plugins` and `mcp_programs` (both empty in this app) | Sent to the organisation's Fadenstack server, `PUT /v1/agents/{agent}/manifest`, when the agent starts | G | The console's list of devices per person | On; no one | Per the server's manifest records | Yes |
 | Added | `arguments_sha256` (the SHA-256 of a tool call's arguments, not the arguments) in the `tool.executed` and `approval.decided` events | Sent to the organisation's Fadenstack server, `POST /v1/agents/{agent}/events`, when the server's profile asks for it (Fadenstack 0.7.1 does) | G | Ties the server's record of each call to the arguments that were checked | On with Fadenstack 0.7.1; no one | Per the server's event records | Yes |
+| Added | Record of tool calls: one entry per call, with `time`, `app`, `agent`, `chat`, `turn`, `tool`, `class`, `source`, `server`, `decision`, `scope`, `outcome` and `argumentsSha256` (no content) | Kept in the page's memory only (the SDK's `MemoryAuditLog`); no browser database | G | Shows the person what the agent did and who allowed it | On; no switch | Gone when the page closes | Yes |
+| Changed | Action journal (`fdn_journal` and its `fdn_jr_*` tables: which change the agent made for whom, when, its state and an encrypted snapshot) and open approvals (`fdn_provider_tickets`) | Nextcloud's database | G | Undo and Redo of approved changes | On; no one | Was: 7 days for snapshots, 30 days for the rest, also after the account was deleted. Now also erased when the account is deleted, and when the app is disabled or removed | Yes (it records what a person had the agent do) |
+| Changed | A person's workflow-engine keys (user preferences `engine_connection_*`) | Nextcloud's database, sealed with the instance secret | G | Run n8n and Windmill workflows under the person's own key | Set by the person | Was: until the person disconnects or the account is deleted. Now also erased when the app is disabled or removed | No |
 | Changed | App manifest `version` | Sent to the organisation's Fadenstack server, `PUT /v1/agents/{agent}/manifest` | G | Now the app's own version; before, a fixed "0.1.5" | On; no one | Per the server's manifest records | No |
 
-**Kept on the device: nothing new.** The SDK's record of tool calls (time, chat,
-tool, decision and the arguments' hash) stays in the page's memory and is gone
-when the page closes; the app opens no browser database for it. Chats and
-approvals stay in memory as before.
+**Kept on the device: nothing new.** The record of tool calls above stays in the
+page's memory; the app opens no browser database for it. Its row is "Yes" all the
+same, because it records what a person had the agent do. Chats and approvals stay
+in memory as before.
 
 **Not determined:** the SDK's other fields (its remaining events and approval
 answers). The SDK has no "Data fields" section yet; the rows above were read from
