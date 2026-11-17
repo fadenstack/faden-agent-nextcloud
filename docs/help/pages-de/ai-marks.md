@@ -16,7 +16,8 @@ Wichtiges.** Ein Screenreader liest diese Zeile vor, wenn Sie in das Nachrichten
 
 Jede Datei, die der Agent erstellt oder ersetzt, erhält einen Nachweis, den der Fadenstack-Server Ihrer
 Organisation signiert, außer die Datei braucht keine Kennzeichnung: eine Übersetzung, eine Korrektur oder eine kurze
-Bezeichnung. Nextcloud bewahrt den Nachweis in den Metadaten der Datei auf. Eine Markdown-Datei
+Bezeichnung. Eine experimentelle Einstellung des Administrators, nur zum Testen gedacht, kann die Kennzeichnung
+auch ausschalten. Nextcloud bewahrt den Nachweis in den Metadaten der Datei auf. Eine Markdown-Datei
 (`.md`) beginnt außerdem mit einem kurzen Kopf, ihrem Front Matter, der `ai-generated: true` sagt und den Nachweis
 nennt (`ai-record-id`). Nextcloud Text zeigt ihn als Kasten am Anfang der Datei.
 

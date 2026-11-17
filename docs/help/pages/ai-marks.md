@@ -14,7 +14,8 @@ reader reads this line when you move into the message box.
 ## In the files the agent saves
 
 Each file the agent creates or replaces gets a record that your organisation's Fadenstack server signs, unless the
-file needs no mark: a translation, a correction or a short label. Nextcloud keeps the record in the file's metadata.
+file needs no mark: a translation, a correction or a short label. An administrator's experimental setting, meant for
+testing only, can also switch the marks off. Nextcloud keeps the record in the file's metadata.
 A Markdown file (`.md`) also starts with a short header, its front
 matter, that says `ai-generated: true` and names the record (`ai-record-id`). Nextcloud Text shows it as a box at the
 top of the file.
