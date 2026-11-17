@@ -16,6 +16,13 @@ exposes the notice as its description:
 off-switch and Check again. No one listened to Narrator or NVDA speak it; the UI
 Automation reading is what Narrator receives.
 
+**Again on SDK 0.3.0-rc.4 (from npm), the same day.** The SDK's composer now names a
+hidden copy of the notice itself, so the app's own link was removed. The drawer's Vue
+app gets the id prefix `fadenstack-agent`, so the panel's generated ids cannot meet
+another Vue app's `v-` ids on the same Nextcloud page. Measured: `aria-describedby`
+`fadenstack-agent-3`, no `v-` ids on the page, and UI Automation's `FullDescription`
+is the notice.
+
 ## 17 November: erasure on account deletion and on app removal (0.2 preview)
 
 `tests/integration/data-erasure.php` runs in the disposable development container

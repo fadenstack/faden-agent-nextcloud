@@ -88,7 +88,11 @@ function mount() {
 	const root = document.createElement('div')
 	root.id = 'fadenstack-agent-drawer'
 	document.body.appendChild(root)
-	createApp(AgentDrawer, { state, onClose: closeDrawer }).mount(root)
+	const drawer = createApp(AgentDrawer, { state, onClose: closeDrawer })
+	// The SDK's panel links the composer to the AI notice by a `useId()` id (Art. 50(5)). Another Vue app on the same
+	// Nextcloud page counts its ids from `v-` too; a shared id would give a screen reader that app's text instead.
+	drawer.config.idPrefix = 'fadenstack-agent'
+	drawer.mount(root)
 	const activity = document.createElement('div')
 	activity.id = 'fadenstack-agent-activity'
 	document.body.append(activity)

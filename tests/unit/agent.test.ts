@@ -737,7 +737,7 @@ describe('The SDK panel in Nextcloud', () => {
 		}
 	})
 
-	it('gives the composer the AI notice as its description, so a screen reader reads it on focus (Art. 50(5))', async () => {
+	it('the SDK gives the composer the AI notice as its description, so a screen reader reads it on focus (Art. 50(5))', async () => {
 		vi.stubGlobal('ResizeObserver', class {
 
 			observe() {} disconnect() {}
@@ -774,6 +774,30 @@ describe('The SDK panel in Nextcloud', () => {
 		} finally {
 			app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals()
 		}
+	})
+
+	it('takes the panel preferences of this Nextcloud user with "Remove my data", and leaves other users alone', async () => {
+		const { host } = fixture()
+		localStorage.setItem('fadenstack_agent.alice.unmarkedNotice', '1')
+		localStorage.setItem('fadenstack_agent.bob.unmarkedNotice', '1')
+		localStorage.setItem('unrelated.key', 'kept')
+		try {
+			await host.signIn('alice', 'test')
+			const removal = await host.agent.deleteMyData()
+			expect(localStorage.getItem('fadenstack_agent.alice.unmarkedNotice')).toBeNull()
+			expect(localStorage.getItem('fadenstack_agent.bob.unmarkedNotice')).toBe('1')
+			expect(localStorage.getItem('unrelated.key')).toBe('kept')
+			expect(removal.storesCleared).toBeGreaterThanOrEqual(1)
+		} finally {
+			localStorage.clear(); await host.dispose()
+		}
+	})
+
+	it('stops the Stop everything result timer when the agent is disposed', async () => {
+		const { host } = fixture()
+		const dispose = vi.spyOn(host.stopEverything, 'dispose')
+		await host.dispose()
+		expect(dispose).toHaveBeenCalledOnce()
 	})
 
 	it('reflects an excluded implicit attachment without reading it or claiming it grounds a response', async () => {

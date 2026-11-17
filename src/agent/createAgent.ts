@@ -315,6 +315,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			// shared browser. The durable records are the Fadenstack server's events (with arguments_sha256) and the
 			// app's action journal in Nextcloud.
 			.useAuditLog(new MemoryAuditLog())
+			// "Remove my data" also takes the app's own per-user panel preferences in this browser (userPreferences below).
+			.useHostData({ localStoragePrefixes: [preferencePrefix(config.userId)] })
 			// The SDK's marking: what the person copies out of the chat carries the AI mark in its HTML, signed by the
 			// organisation's server, in the panel's language. Native writes keep their own marking below.
 			.use(provenanceModule({ strings: () => markStringsFor(this.chat.language === 'auto' ? locale : this.chat.language) }))
@@ -2981,6 +2983,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		this.#stop.abort()
 		this.chat.stop()
 		this.chat.dispose()
+		this.stopEverything.dispose()
 		this.selection.clear()
 		this.discovery.clear()
 		this.#toolResults.clear()
@@ -3051,8 +3054,13 @@ function resultRecords(result: unknown): number {
 }
 
 /** The language the user picked, in this browser, per Nextcloud user (a shared computer keeps each user's own). */
+/** The `localStorage` prefix of one Nextcloud user's panel preferences in this browser. */
+function preferencePrefix(userId: string): string {
+	return `fadenstack_agent.${userId}.`
+}
+
 function userPreferences(userId: string): PreferenceStore {
-	const key = (name: string) => `fadenstack_agent.${userId}.${name}`
+	const key = (name: string) => `${preferencePrefix(userId)}${name}`
 	return {
 		get: (name) => { try { return localStorage.getItem(key(name)) ?? undefined } catch { return undefined } },
 		set: (name, value) => {

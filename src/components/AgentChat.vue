@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, h, nextTick, ref, watch } from 'vue'
 import { t } from '@nextcloud/l10n'
 import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
 import { AgentAvatar, ChatPanel, Icon, StopEverythingButton, ToolCallView, type ChatTheme, type PartRenderer } from '@fadenstack/ui-vue'
@@ -24,7 +24,6 @@ import AssistantDetails from './AssistantDetails.vue'
 import ActionHistory from './ActionHistory.vue'
 import EngineConnections from './EngineConnections.vue'
 import { currentEngineSurface } from '../workspace/engineSurface.ts'
-import { linkAiNotice } from './aiNoticeLink.ts'
 import '../styles/nextcloud.css'
 
 const props = defineProps<{ host: NextcloudAgent; context?: FileContext; loadingContext?: boolean; documentContext?: boolean; contextError?: string }>()
@@ -146,11 +145,6 @@ function escape(event: KeyboardEvent) {
 		chat.setHistoryOpen(false)
 	} else if (chat.isBusy) props.host.stop()
 }
-// Art. 50(5): a screen reader reads the AI notice with the composer (see aiNoticeLink.ts).
-const container = ref<HTMLElement>()
-let unlinkNotice: (() => void) | undefined
-onMounted(() => { if (container.value) unlinkNotice = linkAiNotice(container.value) })
-onBeforeUnmount(() => unlinkNotice?.())
 function signOut() {
 	chat.setSettingsOpen(false)
 	emit('signed-out')
@@ -158,7 +152,7 @@ function signOut() {
 </script>
 
 <template>
-	<div ref="container" class="fadenstack-chat-container">
+	<div class="fadenstack-chat-container">
 		<ChatPanel class="fadenstack-chat"
 			:chat="chat"
 			:theme="theme"
