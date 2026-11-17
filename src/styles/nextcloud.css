@@ -289,7 +289,32 @@
 	}
 }
 
-/* "Stop everything" in the panel header: its result line stays short, so the agent's name keeps its room. */
-.fadenstack-panel .fdn-header .fdn-stop-everything { height: auto; min-width: 0; background: transparent; }
+/*
+ * "Stop everything" in the panel header. The SDK's root also carries .fdn-chat (a column with the panel's height and
+ * background), so it is set back to a button of the header's size. Its result line shows under the button for its
+ * 8 seconds, like the header's menus, so the narrow drawer's header neither wraps nor moves.
+ */
+.fadenstack-panel .fdn-header .fdn-stop-everything {
+	position: relative;
+	flex: 0 0 auto;
+	flex-direction: row;
+	height: auto;
+	background: transparent;
+}
 
-.fadenstack-panel .fdn-header .fdn-stop-everything-result { max-width: 140px; font-size: var(--font-size-small, 12px); }
+.fadenstack-panel .fdn-header .fdn-stop-everything-result:not(:empty) {
+	position: absolute;
+	z-index: 10;
+	inset-block-start: calc(100% + 4px);
+	inset-inline-end: 0;
+	inline-size: max-content;
+	max-inline-size: 220px;
+	padding-block: 6px;
+	padding-inline: 10px;
+	border-radius: var(--fdn-radius);
+	background: var(--fdn-surface);
+	box-shadow: var(--fdn-shadow);
+	font-size: var(--font-size-small, 13px);
+	line-height: 1.4;
+	overflow-wrap: normal;
+}

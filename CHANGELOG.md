@@ -87,6 +87,9 @@ only with a Fadenstack server (governed mode). See
   change in that folder was refused with "The selected file changed" until the
   person included the folder again (Nextcloud gives a folder a new version when a
   file in it changes). Nothing was changed by the refused write.
+- The "Stop everything" result line shows under the button for its 8 seconds.
+  Before, it wrapped letter by letter in the narrow panel's header and pushed the
+  header's buttons down.
 - `appinfo/info.xml` validates against the App Store's schema.
 - A sign-in revocation is no longer cut off when the person stops the agent.
 - Shell scripts and the development containers' files are checked out with LF
