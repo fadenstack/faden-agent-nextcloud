@@ -736,6 +736,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			const result = await this.files.history.execute(preview, call.signal)
 			const activity = binding && generation !== undefined ? await this.workspace!.committed(call.callId, generation, binding, result, call.signal) : undefined
 			this.history.items = this.history.items.map(item => item.id === preview.actionId ? { ...item, state: result.state, eligible: result.state === 'undone' ? 'redo' : result.state === 'applied' ? 'undo' : 'none' } : item)
+			await this.selectAgainAfterWrite(result.file?.id, call.signal)
 			const visible = result.provenance ? { ...result, provenance: nativeProvenanceSummary(result.provenance) } : result
 			return activity ? { ...visible, view: activity.view } : visible
 		} catch (error) {
@@ -862,7 +863,6 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 		}
 		this.#proposals.delete(call.callId)
 		const binding = this.#proposalViews.get(call.callId)
-		const parentId = this.#proposalParents.get(call.callId)
 		this.#proposalViews.delete(call.callId)
 		this.#proposalResources.delete(call.callId)
 		this.#proposalParents.delete(call.callId)
@@ -884,16 +884,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (!call.signal.aborted) {
 				try { this.discovery.remember(result.file); await this.rememberSource(`nextcloud:files:${result.file.id}`, call.signal) } catch { this.#providerCompletion = 'Nextcloud confirmed the file save. Start a new conversation; its current disclosure could not be safely checked.' }
 			}
-			const current = this.selection.snapshot()
-			if (!call.signal.aborted && current && (current.file.id === result.file.id || current.file.id === parentId)) {
-				try {
-					const updated = await this.selection.select(current.file.id, call.signal)
-					if (updated) {
-						this.offerSelection(updated)
-						if (this.#active?.file.folder && this.#active.file.id === updated.file.id && this.#active.file.path === updated.file.path) this.#active = updated
-					}
-				} catch { this.offerSelection() }
-			}
+			await this.selectAgainAfterWrite(result.file.id, call.signal)
 			const visible = result.provenance ? { ...result, provenance: nativeProvenanceSummary(result.provenance) } : result
 			return activity ? { ...visible, view: activity.view } : visible
 		} catch (error) {
@@ -901,6 +892,25 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			if (generation !== undefined) this.workspace!.failed(call.callId, generation, proposal.filename ?? '', error)
 			throw error
 		}
+	}
+
+	/**
+	 * Selects the selected file again after a verified write, so the next write is not refused as "The selected file
+	 * changed". Nextcloud gives every folder above a changed file a new ETag, so a selected folder is stale after any
+	 * write below it, whether the agent created, copied, moved or shared the file, or History undid a change. The chip in
+	 * the composer stays the same object with the person's include choice; only its name follows a rename.
+	 */
+	private async selectAgainAfterWrite(changedFileId: number | undefined, signal: AbortSignal): Promise<void> {
+		const current = this.selection.snapshot()
+		if (signal.aborted || !current || (current.file.id !== changedFileId && !current.file.folder)) return
+		try {
+			const updated = await this.selection.select(current.file.id, signal)
+			if (updated) {
+				if (this.#attachment) this.#attachment.update(updated.file.name)
+				else this.offerSelection(updated)
+				if (this.#active?.file.folder && this.#active.file.id === updated.file.id && this.#active.file.path === updated.file.path) this.#active = updated
+			}
+		} catch { this.offerSelection() }
 	}
 
 	private async planFolderCreateMutation(args: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<FolderCreateProposal> {
@@ -1037,6 +1047,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 						provider: { app: 'files', collectionId: proposal.resourceId.slice(16), filename: outcome.name },
 					}, call.signal)
 					: undefined
+				await this.selectAgainAfterWrite(undefined, call.signal)
 				// A confirmed creation stays confirmed if Stop or reauthorization
 				// interrupts optional source binding after dispatch.
 				try { if (!call.signal.aborted) await this.rememberSource(outcome.resourceId, call.signal) } catch {
@@ -1073,11 +1084,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					try {
 						if (result.file) { this.discovery.remember(result.file); await this.rememberSource(`nextcloud:files:${result.file.id}`, call.signal) }
 						for (const reference of this.#sources.references) await this.authorizeSource(reference, call.signal, this.#sources.purpose(reference))
-						if (result.file && this.selection.snapshot()?.file.id === result.file.id) {
-							const selected = await this.selection.select(result.file.id, call.signal)
-							if (selected) this.offerSelection(selected)
-						}
 					} catch { this.#providerCompletion = 'Nextcloud confirmed the Files action. Start a new conversation; earlier source content can no longer be safely sent.' }
+					await this.selectAgainAfterWrite(result.file?.id, call.signal)
 				}
 				return { ...result, ...(activity ? { view: activity.view } : {}) }
 			}
@@ -1107,6 +1115,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 					file: { id: 0, name: proposal.target, path: '', mime: '', size: 0, etag: '', folder: false, permissions: 0, url: '' },
 				}, call.signal)
 				: undefined
+			await this.selectAgainAfterWrite(undefined, call.signal)
 			return activity ? { ...((result as object) ?? {}), view: activity.view } : result
 		} catch (error) {
 			this.#writeBlocked = true

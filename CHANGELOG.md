@@ -82,6 +82,11 @@ only with a Fadenstack server (governed mode). See
   wrong.") when the message box gets focus, in the panel's language: the box names
   the notice as its description (AI Act Art. 50(5)), from the SDK's panel. Before,
   it was only reachable by reading on past the box.
+- After the agent copies, moves or shares a file, creates a folder, or History
+  undoes or redoes a change, the included folder stays included. Before, the next
+  change in that folder was refused with "The selected file changed" until the
+  person included the folder again (Nextcloud gives a folder a new version when a
+  file in it changes). Nothing was changed by the refused write.
 - `appinfo/info.xml` validates against the App Store's schema.
 - A sign-in revocation is no longer cut off when the person stops the agent.
 - Shell scripts and the development containers' files are checked out with LF

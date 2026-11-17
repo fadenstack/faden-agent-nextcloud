@@ -34,7 +34,7 @@ async function flow(name: string, { enabled = true, capabilities = names, restri
 		cancel: vi.fn(async () => {}),
 	}
 	const files: FileApi = {
-		identity: async () => identity, assertIdentity: async () => {}, select: async () => folder,
+		identity: async () => identity, assertIdentity: async () => {}, select: vi.fn(async () => folder),
 		read: async () => ({ file: source, text: '', partial: false, totalCharacters: 0, processedCharacters: 0 }), pdf: async () => new Uint8Array(),
 		list: async () => ({ folder: folder.file, files: [source], partial: false }),
 		propose: vi.fn(), approve: vi.fn(), commit: vi.fn(), fileOperations: native,
@@ -50,7 +50,7 @@ async function flow(name: string, { enabled = true, capabilities = names, restri
 	const agent = new NextcloudAgent({ ...identity, filesMutationsEnabled: enabled }, files, gateway.fetch, workspace)
 	await agent.signIn('alice', 'test')
 	agent.offerSelection(await agent.selection.select(50))
-	return { agent, native, workspace, send: agent.send('Organize the included project', true) }
+	return { agent, files, native, workspace, send: agent.send('Organize the included project', true) }
 }
 async function pending(agent: NextcloudAgent) {
 	let part: ApprovalPart | undefined
@@ -96,6 +96,20 @@ describe('Typed native Files organization through the published SDK', () => {
 			await run.send
 			expect(run.native.commit).not.toHaveBeenCalled()
 			expect(run.native.cancel).toHaveBeenCalled()
+		} finally { run.agent.stop(); await run.agent.dispose() }
+	})
+	it.each(names)('selects the included folder again after %s, so the next write in it is not refused as changed', async name => {
+		// Nextcloud gives the folder a new ETag when a file below it changes; the old context would answer 409.
+		const run = await flow(name)
+		try {
+			const fresh: FileContext = { ...folder, id: 'folder-context-2', file: { ...folder.file, etag: 'folder-etag-2' } }
+			vi.mocked(run.files.select).mockResolvedValue(fresh)
+			const chip = run.agent.contextAttachment
+			await run.agent.approve(await pending(run.agent)); await run.send
+			expect(run.files.select).toHaveBeenLastCalledWith(50, expect.any(AbortSignal))
+			expect(run.agent.selection.snapshot()).toMatchObject({ id: 'folder-context-2', file: { id: 50, etag: 'folder-etag-2' } })
+			// The composer keeps the same chip, with the person's include choice.
+			expect(run.agent.contextAttachment).toBe(chip)
 		} finally { run.agent.stop(); await run.agent.dispose() }
 	})
 	it('releases the shared overlay when commitment is verified but disclosure is restricted', async () => {
