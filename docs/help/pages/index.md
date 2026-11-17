@@ -12,7 +12,8 @@ server and the models your organisation offers there.
 - Ask about a file you include: "What is the notice period?" The answer shows the passage and links to it.
 - Have it write a summary, notes or a draft as a `.md` or `.txt` file, or update one. You see the whole text before
   anything is saved, and you allow each change.
-- See where an answer or a file came from: what the agent writes is marked as made by AI.
+- See where an answer or a file came from: what the agent writes is marked as made by AI, unless it needs no mark
+  (see [AI marks](ai-marks.md)).
 
 ## The pages
 

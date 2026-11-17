@@ -8,7 +8,8 @@ nothing was saved unless the chat says **Saved:**.
 | You see | What to do |
 |---|---|
 | **Ask your administrator to configure and enable Fadenstack Agent in Additional settings.** | The app is not connected to a Fadenstack server yet. Your Nextcloud administrator completes [the setup](get-started.md#install) |
-| **Connection unavailable** | Nextcloud cannot reach your organisation's Fadenstack server. Try again later; if it stays, tell your administrator |
+| **Connection unavailable** in **Assistant details** | The Fadenstack server address in Nextcloud's settings is not valid. Ask your Nextcloud administrator |
+| The panel cannot reach your organisation's Fadenstack server | Try again later. If it stays, tell your administrator |
 | **Your sign-in expired. Sign in again.** | Sign in again: see [Sign in](sign-in.md) |
 | The code expired before you approved it | Select **Cancel**, then **Sign in with a code** for a new one |
 | **Your organisation turned this agent off.** | Your organisation switched the agent off. Your typed text stays. Select **Check again** later, or ask your administrator |

@@ -20,18 +20,18 @@ Grenzen auf.
 Tools, die nur lesen, laufen ohne Karte. Jede Änderung zeigt ihre eigene Karte mit dem ganzen Text: siehe
 [Fragen und freigeben](ask-and-approve.md).
 
-Ihr Administrator kann außerdem einschalten:
+Ihr Nextcloud-Administrator kann außerdem mit dem Nextcloud-Befehl `occ` einschalten:
 
-- **Verlauf**: Aktualisierungen einer Textdatei durch den Agenten rückgängig machen und wiederholen, jeweils mit
+- Verlauf (`history_enabled`): Aktualisierungen einer Textdatei durch den Agenten rückgängig machen und wiederholen, jeweils mit
   eigener Freigabe (siehe [Eine Änderung rückgängig machen](ask-and-approve.md#undo)).
-- **Folder overview and shares**: den Baum eines Ordners auflisten und zeigen, mit wem eine Datei geteilt ist.
+- Ordnerübersicht und Freigaben (`files_reads_enabled`): den Baum eines Ordners auflisten und zeigen, mit wem eine Datei geteilt ist.
 
 ## Woran er arbeitet {#what-it-works-on}
 
 - Ihre eigenen Dateien: was Sie in Nextcloud öffnen können, einschließlich der Dateien, die andere mit Ihnen
   geteilt haben. Ihre Nextcloud-Berechtigungen gelten für jeden Schritt; der Agent kann nichts öffnen, was Sie
   nicht öffnen können.
-- Er schreibt nur in Ihre eigenen Dateien und teilt nichts mit anderen.
+- In der Standardeinrichtung schreibt er nur in Ihre eigenen Dateien und teilt nichts mit anderen.
 - Er liest Text-, Markdown-, CSV- und JSON-Dateien und PDFs, die Text enthalten.
 
 ## Grenzen {#limits}
@@ -42,7 +42,7 @@ Ihr Administrator kann außerdem einschalten:
 - **Größen:** Textdateien bis 2 MiB und PDFs bis 10 MiB; er liest bis zu 50.000 Zeichen und 50 Seiten einer Datei.
   Was er schreibt, ist bis zu 256 KiB groß.
 - **Die Suche in Dateiinhalten** braucht die Volltextsuche von Nextcloud. Ohne sie sagt der Agent es; er sucht
-  nicht stattdessen ungefragt in Dateinamen.
+  nicht stattdessen in Dateinamen, ohne es Ihnen zu sagen.
 - **„Neueste“** heißt zuletzt geändert, nicht ein Datum, das im Dokument steht.
 - **Pro Nachricht:** höchstens 30 Tool-Aufrufe und 10 Änderungen. Eine aufgenommene Datei bleibt eine Stunde lang
   gültig, und eine Karte wartet bis zu zehn Minuten.
@@ -54,5 +54,6 @@ Ihr Administrator kann außerdem einschalten:
     Ihr Administrator kann **Experimentell: Entwicklungsmodus** zum Testen einschalten. Mit weiteren Einstellungen
     lässt er den Agenten andere Nextcloud-Apps nutzen (etwa Kalender, Kontakte, Deck, Tables, Mail und Talk),
     Ordner erstellen, Dateien kopieren, verschieben und teilen und externe Workflow-Dienste aufrufen. Diese Tools
-    sind ungetestet, können sich ändern, und manche senden Inhalte an andere Personen. Er ist nicht für die
+    sind ungetestet, können sich ändern, und manche senden Inhalte an andere Personen. Er kann auch die
+    KI-Kennzeichnung von Dateien ausschalten. Er ist nicht für die
     tägliche Arbeit gedacht. Die [Gebrauchsanweisung](more-help.md#instructions-for-use) beschreibt ihn.

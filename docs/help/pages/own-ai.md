@@ -13,5 +13,4 @@ needs, and signs the marks that show what was made by AI. Without that server, t
 
 - **Ask your administrator** for access to the agent on your organisation's server: see [Get started](get-started.md).
 - **Fadenstack's other agents** can work with an AI of your own: the browser agent, the Office add-ins and the desktop
-  app. See [Browser agent](../chrome/index.md), [Office add-ins](../office/index.md) and
-  [Desktop app](../desktop/index.md).
+  app. See [The browser agent](../../use/browser-agent.md) and [The Office add-ins](../../use/office-add-ins.md).

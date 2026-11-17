@@ -15,5 +15,5 @@ Ohne diesen Server startet der Agent nicht.
 - **Fragen Sie Ihren Administrator** nach Zugriff auf den Agenten auf dem Server Ihrer Organisation: siehe
   [Erste Schritte](get-started.md).
 - **Die anderen Agenten von Fadenstack** können mit einer eigenen KI arbeiten: der Browser-Agent, die
-  Office-Add-ins und die Desktop-App. Siehe [Browser-Agent](../chrome/index.md),
-  [Office-Add-ins](../office/index.md) und [Desktop-App](../desktop/index.md).
+  Office-Add-ins und die Desktop-App. Siehe [Der Browser-Agent](../../use/browser-agent.md) und
+  [Office-Add-ins](../../use/office-add-ins.md).

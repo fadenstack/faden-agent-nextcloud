@@ -1,7 +1,7 @@
 # Ask and approve
 
-Include a file or folder, ask in your own words, and check each change before the agent makes it. Nothing is saved
-in Nextcloud until you select **Allow once**, and you can stop the agent at any time.
+Include a file or folder, ask in your own words, and check each change before the agent makes it. No file is created or
+changed until you select **Allow once**, and you can stop the agent at any time.
 
 <!-- picture: ask/panel.png — the panel with a file included (the chip above the message box), a question and an answer -->
 

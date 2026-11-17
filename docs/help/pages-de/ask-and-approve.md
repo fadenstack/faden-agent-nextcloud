@@ -1,8 +1,8 @@
 # Fragen und freigeben {#ask-and-approve}
 
 Nehmen Sie eine Datei oder einen Ordner auf, fragen Sie in Ihren eigenen Worten und prüfen Sie jede Änderung, bevor
-der Agent sie vornimmt. In Nextcloud wird nichts gespeichert, bis Sie **Einmal erlauben** wählen, und Sie können den
-Agenten jederzeit stoppen.
+der Agent sie vornimmt. Keine Datei wird erstellt oder geändert, bis Sie **Einmal erlauben** wählen, und Sie können
+den Agenten jederzeit stoppen.
 
 <!-- picture: ask/panel.png — the panel with a file included (the chip above the message box), a question and an answer -->
 

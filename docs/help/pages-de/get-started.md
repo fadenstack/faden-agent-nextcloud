@@ -38,7 +38,7 @@ anbietet, gehören Ihrer Organisation.
 Der Nextcloud-Administrator tut das einmal für alle.
 
 1. Öffnen Sie in Nextcloud **Apps**, suchen Sie **Fadenstack Agent** und wählen Sie **Herunterladen und
-   aktivieren**. Während der Vorschau liegt die App im Beta-Kanal des App Stores.
+   aktivieren**.
 2. Öffnen Sie **Verwaltungseinstellungen**, dann **Zusätzliche Einstellungen**, und suchen Sie **Fadenstack Agent**.
 3. Schalten Sie **Integration aktivieren** ein.
 4. Tragen Sie bei **Fadenstack-Serveradresse** die Adresse Ihres Fadenstack-Servers ein, z. B.
@@ -57,10 +57,12 @@ erlaubt der Nextcloud-Adresse, den Server aus dem Browser aufzurufen.
       kein Administratorpasswort und kein gemeinsames Konto.
     - **Experimentell: Entwicklungsmodus** ist standardmäßig aus. Er dient nur zum Testen, nie für den
       Produktivbetrieb: Er schaltet Tools für andere Nextcloud-Apps frei (darunter Mail und Talk, die Inhalte an
-      andere Personen senden) und für externe Workflow-Dienste. Siehe die
-      [Gebrauchsanweisung](more-help.md#instructions-for-use).
-    - Wird die App deaktiviert oder entfernt, löscht sie ihre eigenen Aufzeichnungen der Änderungen des Agenten
-      (siehe [Ihre Daten](your-data.md)). Die Einstellungen der Organisation bleiben.
+      andere Personen senden) und für externe Workflow-Dienste. Er kann auch die KI-Kennzeichnung von Dateien
+      ausschalten. Siehe die [Gebrauchsanweisung](more-help.md#instructions-for-use).
+    - Wird die App deaktiviert oder entfernt, löscht sie ihre Aufzeichnungen der Änderungen des Agenten und die
+      Schlüssel, die Benutzer für externe Workflow-Dienste gespeichert haben (siehe [Ihre Daten](your-data.md)). Die
+      Einstellungen der Organisation bleiben. Um die App zu entfernen und dies zu behalten, verwenden Sie
+      `occ app:remove --keep-data fadenstack_agent`.
 
 ## Wenn es nicht funktioniert {#when-it-does-not-work}
 
@@ -68,6 +70,6 @@ erlaubt der Nextcloud-Adresse, den Server aus dem Browser aufzurufen.
 |---|---|
 | **Bitten Sie Ihren Administrator, Fadenstack Agent unter Zusätzliche Einstellungen einzurichten und zu aktivieren.** | Die App ist installiert, aber noch nicht verbunden. Ihr Nextcloud-Administrator führt die obigen Schritte aus |
 | Keine Fadenstack-Schaltfläche in der oberen Leiste | Die App ist für Sie nicht aktiviert. Fragen Sie Ihren Nextcloud-Administrator |
-| **Verbindung nicht verfügbar** | Nextcloud erreicht den Fadenstack-Server nicht. Versuchen Sie es später noch einmal; bleibt es so, sagen Sie Ihrem Administrator Bescheid |
+| **Verbindung nicht verfügbar** in **Details zum Assistenten** | Die Adresse des Fadenstack-Servers in den Einstellungen von Nextcloud ist nicht gültig. Fragen Sie Ihren Nextcloud-Administrator |
 
 Mehr unter [Wenn es nicht funktioniert](troubleshooting.md).

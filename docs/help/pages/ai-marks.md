@@ -1,8 +1,8 @@
 # AI marks
 
 What the agent writes is marked as made by AI, so that you and others can tell. A file it saves carries a signed
-record in Nextcloud, a Markdown file also shows the mark at its top, and an answer you copy out of the chat carries
-a mark too. Keep these marks when you edit or pass the text on.
+record in Nextcloud, a Markdown file also shows the mark at its top, and formatted text you copy out of the chat
+carries a hidden mark. Keep these marks when you edit or pass the text on.
 
 <!-- picture: marks/front-matter.png — a Markdown file the agent wrote, open in Nextcloud Text, with the front matter box holding ai-generated: true and the ai-record-id -->
 
@@ -13,8 +13,9 @@ reader reads this line when you move into the message box.
 
 ## In the files the agent saves
 
-Each file the agent creates or replaces gets a record that your organisation's Fadenstack server signs. Nextcloud
-keeps it with the file, in the file's details. A Markdown file (`.md`) also starts with a short header, its front
+Each file the agent creates or replaces gets a record that your organisation's Fadenstack server signs, unless the
+file needs no mark: a translation, a correction or a short label. Nextcloud keeps the record in the file's metadata.
+A Markdown file (`.md`) also starts with a short header, its front
 matter, that says `ai-generated: true` and names the record (`ai-record-id`). Nextcloud Text shows it as a box at the
 top of the file.
 
@@ -24,10 +25,13 @@ line under it says how the file is marked:
 | The line says | It means |
 |---|---|
 | **Marked as AI-generated in the file's metadata and its front matter.** | A Markdown file, marked both ways |
-| **Marked as AI-generated in the file's metadata.** | A text file, marked in its details |
+| **Marked as AI-generated in the file's metadata.** | A text file, marked in its metadata |
 | **Marked as AI-generated in its front matter only: Nextcloud did not keep the file's metadata.** | The header is there; tell your administrator about the missing record |
 | **No new AI mark was required by the agent's marking policy.** | Your organisation's rules needed no new mark for this change |
 | **Saved without an AI mark:** and a reason | The file was saved, but not marked. The reason says why |
+
+The line **No new AI mark was required by the agent's marking policy.** shows only when **Tell me when an answer
+carries no AI mark** is on in the settings (the gear in the panel's header).
 
 ## What keeps the mark
 
@@ -38,7 +42,6 @@ line under it says how the file is marked:
 | Delete it and restore it from the trash | Kept | Kept |
 | Copy it in Nextcloud | Kept: the copy gets it too | Kept |
 | Download it | Not in the downloaded file | Kept in the file |
-| Upload it again, or copy it outside Nextcloud | Lost | Kept, unless removed |
 
 ??? info "More about the record"
     - The record says the text was made by AI when it was saved. A later edit by a person does not change the record,
@@ -48,9 +51,10 @@ line under it says how the file is marked:
 
 ## In answers you copy
 
-When you copy an answer with its copy button, what you paste into an editor that keeps formatting carries a hidden
-AI mark with the record's number. Plain text is copied as it is, and code is not marked. Some editors drop the
-mark when you paste: do not rely on it there.
+When you copy an answer with its copy button, the copied formatted text carries a hidden AI mark with the record's
+number. Plain text is copied as it is, and code is not marked. Of the editors tested, TinyMCE and CKEditor 5 keep
+the mark when you paste; Outlook on the web, Lexical, ProseMirror, Quill, Slate and Tiptap drop it; Word and the
+Outlook app are not tested. Do not rely on the mark after a paste.
 
 If your organisation requires the mark and it cannot be added, nothing is copied and the panel says **Not copied:
 this answer could not be marked as AI-generated, and your organisation requires it.**

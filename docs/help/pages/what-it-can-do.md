@@ -19,17 +19,17 @@ updates text files after you allow each change. This page lists its tools and it
 Tools that only read run without a card. Each change shows its own card, with the whole text: see
 [Ask and approve](ask-and-approve.md).
 
-Your administrator can also turn on:
+Your Nextcloud administrator can also turn on, with Nextcloud's `occ` command:
 
-- **History**: undo and redo the agent's updates of a text file, each with its own approval (see
+- History (`history_enabled`): undo and redo the agent's updates of a text file, each with its own approval (see
   [Undo a change](ask-and-approve.md#undo)).
-- **Folder overview and shares**: list a folder's tree, and with whom a file is shared.
+- Folder overview and shares (`files_reads_enabled`): list a folder's tree, and with whom a file is shared.
 
 ## What it works on
 
 - Your own Files: what you can open in Nextcloud, including files others shared with you. Your Nextcloud
   permissions apply to every step; the agent cannot open what you cannot.
-- It writes only into your own files, and shares nothing with anyone.
+- In the standard setup it writes only into your own files, and shares nothing with anyone.
 - It reads text, Markdown, CSV and JSON files and PDFs with text in them.
 
 ## Limits
@@ -51,5 +51,5 @@ Your administrator can also turn on:
     Your administrator can switch on **Experimental: development mode** for testing. With further settings it lets the
     agent use other Nextcloud apps (such as Calendar, Contacts, Deck, Tables, Mail and Talk), create folders, copy,
     move and share files, and call outside workflow services. These tools are untested, may change, and some send
-    content to other people. It is not meant for everyday work. The
+    content to other people. It can also switch off the AI marks on files. It is not meant for everyday work. The
     [instructions for use](more-help.md#instructions-for-use) describe it.

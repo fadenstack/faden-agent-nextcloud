@@ -7,7 +7,7 @@ organisation's privacy policy for Fadenstack applies too; ask your administrator
 
 When you send a message, these go to your organisation's Fadenstack server and on to the model it uses:
 
-- your message;
+- your message and the chat so far;
 - the file or folder you included: its name and details, and for a file its text;
 - what the agent's tools read while it answers: file names, folders, passages and listings.
 
@@ -54,9 +54,12 @@ content of your files or chats.
 ## Remove your data
 
 - **Chats**: close or reload the page.
-- **Your Nextcloud account deleted**: Nextcloud erases your records of the agent's changes at once.
-- **The app disabled or removed** by your administrator: Nextcloud erases all records of the agent's changes. Files
-  the agent wrote stay in your Files, with their AI marks.
-- **Your Fadenstack account deleted**: the server deletes the agent's records of your tool calls and your devices.
+- **Your Nextcloud account deleted**: Nextcloud erases your records of the agent's changes at once. If that fails,
+  they expire as the table above says.
+- **The app disabled or removed** by your administrator: Nextcloud erases all records of the agent's changes and the
+  keys people stored for outside workflow services, unless the administrator removes the app and keeps its data on
+  purpose. Files the agent wrote stay in your Files, with their AI marks.
+- **Your Fadenstack account deleted**: on a Fadenstack server 0.7.1 or newer, the server deletes the agent's records of
+  your tool calls and your devices.
 
 The files the agent wrote are your files: delete them as any other file.

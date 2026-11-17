@@ -18,8 +18,8 @@ wird.
    sich in einem neuen Tab, der Code ist schon eingetragen.
 3. Ist dieser Tab noch nicht bei Fadenstack angemeldet, melden Sie sich wie gewohnt an: mit Ihrem Passwort oder mit
    der Anmeldung Ihrer Organisation.
-4. Prüfen Sie, ob der Code der ist, den das Panel zeigt, und ob die anfragende App **Nextcloud Files** ist, und
-   wählen Sie dann **Genehmigen**.
+4. Prüfen Sie, ob der **Code** der ist, den das Panel zeigt, und wählen Sie **Weiter**.
+5. Prüfen Sie, ob die anfragende App **Nextcloud Files** ist, und wählen Sie dann **Genehmigen**.
 
 <!-- picture: sign-in/code.png — the panel showing the code, Open sign-in page, Waiting for approval… and The code expires at … -->
 
@@ -35,8 +35,8 @@ Gehen Sie zurück zu Nextcloud. Das Panel schließt die Anmeldung selbst ab und 
 
 ## Mit E-Mail und Passwort anmelden {#sign-in-with-your-email-and-password}
 
-Wenn Ihre Organisation es erlaubt, können Sie auch Ihre Fadenstack-E-Mail-Adresse und Ihr Passwort in
-**Benutzername oder E-Mail** und **Passwort** eintippen und dann **Anmelden** wählen. Beide gehen nur an Ihren
+Sie können auch Ihre Fadenstack-E-Mail-Adresse und Ihr Passwort in **Benutzername oder E-Mail** und
+**Passwort** eintippen und dann **Anmelden** wählen. Beide gehen nur an Ihren
 Fadenstack-Server; Nextcloud speichert sie nicht.
 
 ## Wie lange Sie angemeldet bleiben {#how-long-you-stay-signed-in}
@@ -54,4 +54,4 @@ Zum Abmelden öffnen Sie die Einstellungen (das Zahnrad in der Kopfzeile des Pan
 | Der Code ist abgelaufen, bevor Sie ihn genehmigt haben | Wählen Sie **Abbrechen**, dann **Mit einem Code anmelden** für einen neuen Code |
 | **Ihre Organisation hat diesen Agenten ausgeschaltet.** | Ihre Organisation hat den Agenten auf dem Fadenstack-Server ausgeschaltet. Ihr eingetippter Text bleibt erhalten; wählen Sie später **Erneut prüfen** oder fragen Sie Ihren Administrator |
 | Die Anmeldeseite markiert den Agenten als für Sie nicht verfügbar oder lässt das Genehmigen nicht zu | Sie haben noch keinen Zugriff auf den Agenten. Fragen Sie Ihren Administrator |
-| **Verbindung nicht verfügbar** | Nextcloud erreicht den Fadenstack-Server nicht. Versuchen Sie es später noch einmal; bleibt es so, sagen Sie Ihrem Administrator Bescheid |
+| **Verbindung nicht verfügbar** in **Details zum Assistenten** | Die Adresse des Fadenstack-Servers in den Einstellungen von Nextcloud ist nicht gültig. Fragen Sie Ihren Nextcloud-Administrator |

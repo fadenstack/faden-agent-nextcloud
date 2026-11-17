@@ -17,8 +17,8 @@ the Fadenstack server, so your Fadenstack password is never typed into Nextcloud
    the code filled in.
 3. If that tab is not signed in to Fadenstack yet, sign in as usual: with your password, or with your organisation's
    sign-in.
-4. Check that the code is the one the panel shows and that the app asking is **Nextcloud Files**, then select
-   **Approve**.
+4. Check that the **Code** is the one the panel shows, then select **Continue**.
+5. Check that the app asking is **Nextcloud Files**, then select **Approve**.
 
 <!-- picture: sign-in/code.png — the panel showing the code, Open sign-in page, Waiting for approval… and The code expires at … -->
 
@@ -33,8 +33,8 @@ Go back to Nextcloud. The panel finishes signing in by itself and shows the chat
 
 ## Sign in with your email and password
 
-If your organisation lets you, you can also type your Fadenstack email and password into **Email** and
-**Password**, then select **Sign in**. They go to your Fadenstack server only; Nextcloud does not keep them.
+You can also type your Fadenstack email and password into **Email** and **Password**, then select **Sign in**. They
+go to your Fadenstack server only; Nextcloud does not keep them.
 
 ## How long you stay signed in
 
@@ -51,4 +51,4 @@ To sign out, open the settings (the gear in the panel's header) and select **Sig
 | The code expired before you approved it | Select **Cancel**, then **Sign in with a code** for a new code |
 | **Your organisation turned this agent off.** | Your organisation switched the agent off on the Fadenstack server. You can keep your typed text; select **Check again** later, or ask your administrator |
 | The sign-in page marks the agent as not available to you, or does not let you approve | You have no access to the agent yet. Ask your administrator |
-| **Connection unavailable** | Nextcloud cannot reach the Fadenstack server. Try again later; if it stays, tell your administrator |
+| **Connection unavailable** in **Assistant details** | The Fadenstack server address in Nextcloud's settings is not valid. Ask your Nextcloud administrator |

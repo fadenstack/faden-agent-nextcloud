@@ -8,7 +8,8 @@ abgelehnt oder gestoppt, wurde nichts gespeichert, außer der Chat sagt **Gespei
 | Sie sehen | Was zu tun ist |
 |---|---|
 | **Bitten Sie Ihren Administrator, Fadenstack Agent unter Zusätzliche Einstellungen einzurichten und zu aktivieren.** | Die App ist noch nicht mit einem Fadenstack-Server verbunden. Ihr Nextcloud-Administrator führt [die Einrichtung](get-started.md#install) durch |
-| **Verbindung nicht verfügbar** | Nextcloud erreicht den Fadenstack-Server Ihrer Organisation nicht. Versuchen Sie es später noch einmal; bleibt es so, sagen Sie Ihrem Administrator Bescheid |
+| **Verbindung nicht verfügbar** in **Details zum Assistenten** | Die Adresse des Fadenstack-Servers in den Einstellungen von Nextcloud ist nicht gültig. Fragen Sie Ihren Nextcloud-Administrator |
+| Das Panel erreicht den Fadenstack-Server Ihrer Organisation nicht | Versuchen Sie es später noch einmal. Bleibt es so, sagen Sie Ihrem Administrator Bescheid |
 | **Ihre Anmeldung ist abgelaufen. Melden Sie sich erneut an.** | Melden Sie sich erneut an: siehe [Anmelden](sign-in.md) |
 | Der Code ist abgelaufen, bevor Sie ihn genehmigt haben | Wählen Sie **Abbrechen**, dann **Mit einem Code anmelden** für einen neuen |
 | **Ihre Organisation hat diesen Agenten ausgeschaltet.** | Ihre Organisation hat den Agenten ausgeschaltet. Ihr eingetippter Text bleibt. Wählen Sie später **Erneut prüfen** oder fragen Sie Ihren Administrator |

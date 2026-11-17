@@ -5,7 +5,7 @@ Where to read more about the Nextcloud agent, and where to ask.
 ## The instructions for use {#instructions-for-use}
 
 The instructions for use describe what the agent is for, what it can do, its limits, the administrator's settings,
-what is logged and where, and the known risks. They are with the agent's legal documents:
+what is logged and where, and the known risks. They will be published with the agent's legal documents:
 [fadenstack.com/legal/nextcloud](https://fadenstack.com/legal/nextcloud/).
 
 ## Privacy and terms
@@ -29,8 +29,7 @@ parts it shares with the server:
 ## Ask for help
 
 - **At work**: ask your administrator first. They can see your organisation's settings for the agent.
-- **Fadenstack's support**: [fadenstack.com/support](https://fadenstack.com/support/). In the panel, **About** (in the
-  settings) also links there.
+- **Fadenstack's support**: [fadenstack.com/support](https://fadenstack.com/support/).
 - **A problem in the app's code**: the app is free software, and its source and issue tracker are at
   [github.com/fadenstack/faden-agent-nextcloud](https://github.com/fadenstack/faden-agent-nextcloud).
 - **A security problem**: report it as the support page says, not in a public issue.

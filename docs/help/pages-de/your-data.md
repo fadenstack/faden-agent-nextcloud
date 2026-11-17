@@ -8,7 +8,7 @@ Datenschutzerklärung Ihrer Organisation für Fadenstack gilt zusätzlich; frage
 Wenn Sie eine Nachricht senden, gehen diese Daten an den Fadenstack-Server Ihrer Organisation und weiter an das
 Modell, das er verwendet:
 
-- Ihre Nachricht;
+- Ihre Nachricht und der bisherige Chat;
 - die Datei oder der Ordner, den Sie aufgenommen haben: Name und Details, bei einer Datei auch ihr Text;
 - was die Tools des Agenten beim Antworten lesen: Dateinamen, Ordner, Textstellen und Listen.
 
@@ -61,10 +61,12 @@ eigene Protokoll von Nextcloud enthält keine Inhalte Ihrer Dateien oder Chats.
 
 - **Chats**: Schließen Sie die Seite oder laden Sie sie neu.
 - **Ihr Nextcloud-Konto wird gelöscht**: Nextcloud löscht Ihre Aufzeichnungen der Änderungen des Agenten sofort.
+  Schlägt das fehl, laufen sie ab, wie die Tabelle oben sagt.
 - **Die App wird von Ihrem Administrator deaktiviert oder entfernt**: Nextcloud löscht alle Aufzeichnungen der
-  Änderungen des Agenten. Dateien, die der Agent geschrieben hat, bleiben in Ihren Dateien, mit ihrer
-  KI-Kennzeichnung.
-- **Ihr Fadenstack-Konto wird gelöscht**: Der Server löscht die Aufzeichnungen des Agenten zu Ihren Tool-Aufrufen
-  und Ihren Geräten.
+  Änderungen des Agenten und die Schlüssel, die Benutzer für externe Workflow-Dienste gespeichert haben, außer der
+  Administrator entfernt die App und behält ihre Daten bewusst. Dateien, die der Agent geschrieben hat, bleiben in
+  Ihren Dateien, mit ihrer KI-Kennzeichnung.
+- **Ihr Fadenstack-Konto wird gelöscht**: Auf einem Fadenstack-Server ab Version 0.7.1 löscht der Server die
+  Aufzeichnungen des Agenten zu Ihren Tool-Aufrufen und Ihren Geräten.
 
 Die Dateien, die der Agent geschrieben hat, sind Ihre Dateien: Löschen Sie sie wie jede andere Datei.

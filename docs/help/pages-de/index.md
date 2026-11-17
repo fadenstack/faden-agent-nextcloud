@@ -13,7 +13,8 @@ dem Fadenstack-Server Ihrer Organisation und den Modellen, die Ihre Organisation
   Textstelle und verlinkt darauf.
 - Eine Zusammenfassung, Notizen oder einen Entwurf als `.md`- oder `.txt`-Datei schreiben lassen oder eine solche
   Datei aktualisieren. Sie sehen den ganzen Text, bevor etwas gespeichert wird, und Sie geben jede Änderung frei.
-- Sehen, woher eine Antwort oder eine Datei stammt: Was der Agent schreibt, ist als KI-generiert gekennzeichnet.
+- Sehen, woher eine Antwort oder eine Datei stammt: Was der Agent schreibt, ist als KI-generiert gekennzeichnet,
+  außer es braucht keine Kennzeichnung (siehe [KI-Kennzeichnung](ai-marks.md)).
 
 ## Die Seiten {#the-pages}
 
