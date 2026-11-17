@@ -1,0 +1,15 @@
+# Die Navigation der deutschen Hilfe des Nextcloud-Agenten (pages-de/), in der Reihenfolge von zensical.toml.
+nav = [
+  { "Nextcloud-Agent" = [
+    { "Überblick" = "index.md" },
+    { "Erste Schritte" = "get-started.md" },
+    { "Eine eigene KI" = "own-ai.md" },
+    { "Anmelden" = "sign-in.md" },
+    { "Fragen und freigeben" = "ask-and-approve.md" },
+    { "Was er kann" = "what-it-can-do.md" },
+    { "Ihre Daten" = "your-data.md" },
+    { "KI-Kennzeichnung" = "ai-marks.md" },
+    { "Wenn es nicht funktioniert" = "troubleshooting.md" },
+    { "Weitere Hilfe" = "more-help.md" },
+  ] },
+]

@@ -1,0 +1,73 @@
+# Die Fragebox: die Fragen, die jede Seite beantwortet, in den Worten der Leser, mit dem Anker der Überschrift ("" = der Seitenanfang).
+
+["index.md"]
+"Was ist der Fadenstack-Agent in Nextcloud?" = ""
+"Was kann der Nextcloud-Agent?" = "what-you-can-do-with-it"
+
+["get-started.md"]
+"Was brauche ich, um den Agenten in Nextcloud zu nutzen?" = "what-you-need"
+"Wie öffne ich den Agenten in Nextcloud Dateien?" = "open-the-agent"
+"Wo finde ich die Fadenstack-Schaltfläche in Nextcloud?" = "open-the-agent"
+"Was kostet der Nextcloud-Agent?" = "the-licence"
+"Unter welcher Lizenz steht die Nextcloud-App?" = "the-licence"
+"Wie installiere ich die Fadenstack-App in Nextcloud?" = "install"
+"Wie verbinde ich Nextcloud mit unserem Fadenstack-Server?" = "install"
+
+["own-ai.md"]
+"Kann ich in Nextcloud meine eigene KI nutzen?" = ""
+"Funktioniert der Nextcloud-Agent ohne Fadenstack-Server?" = "why"
+"Welche Agenten funktionieren mit meiner eigenen KI?" = "what-you-can-do-instead"
+
+["sign-in.md"]
+"Wie melde ich mich in Nextcloud beim Agenten an?" = "sign-in-with-a-code"
+"Wie melde ich mich mit einem Code an?" = "sign-in-with-a-code"
+"Kann ich mich in Nextcloud mit E-Mail und Passwort anmelden?" = "sign-in-with-your-email-and-password"
+"Warum muss ich mich in Nextcloud erneut anmelden?" = "how-long-you-stay-signed-in"
+"Wie melde ich mich vom Nextcloud-Agenten ab?" = "how-long-you-stay-signed-in"
+
+["ask-and-approve.md"]
+"Wie gebe ich dem Agenten in Nextcloud eine Datei?" = "include-a-file-or-folder"
+"Welche Datei liest der Agent?" = "include-a-file-or-folder"
+"Was kann ich den Nextcloud-Agenten fragen?" = "ask"
+"Wie gebe ich in Nextcloud eine Änderung frei?" = "approve-a-change"
+"Warum fragt der Agent vor jeder Änderung nach?" = "approve-a-change"
+"Was bewirken die Tool-Modi in Nextcloud?" = "the-tool-mode"
+"Wie stoppe ich den Agenten in Nextcloud?" = "stop"
+"Was macht Alles stoppen?" = "stop-everything"
+"Wie mache ich eine Änderung des Agenten in Nextcloud rückgängig?" = "undo"
+
+["what-it-can-do.md"]
+"Was kann der Agent in Nextcloud Dateien tun?" = "its-tools"
+"Welche Dateien kann der Nextcloud-Agent lesen?" = "what-it-works-on"
+"Kann der Agent Word- oder Excel-Dateien in Nextcloud lesen?" = "limits"
+"Wie groß darf eine Datei für den Nextcloud-Agenten sein?" = "limits"
+"Kann der Nextcloud-Agent Mail, Kalender oder Talk nutzen?" = "limits"
+
+["your-data.md"]
+"Was sendet der Nextcloud-Agent an den Server?" = "what-goes-to-your-organisations-server"
+"Wo werden meine Chats in Nextcloud gespeichert?" = "what-stays-in-your-browser"
+"Gibt es in Nextcloud eine Aufzeichnung der Tool-Aufrufe des Agenten?" = "what-stays-in-your-browser"
+"Wie exportiere ich einen Chat aus dem Nextcloud-Agenten?" = "export-a-chat"
+"Was speichert Nextcloud zu den Änderungen des Agenten?" = "what-nextcloud-keeps"
+"Wie lösche ich meine Daten aus dem Nextcloud-Agenten?" = "remove-your-data"
+
+["ai-marks.md"]
+"Wie werden Dateien aus dem Nextcloud-Agenten als KI gekennzeichnet?" = "in-the-files-the-agent-saves"
+"Was ist die ai-record-id in meiner Markdown-Datei?" = "in-the-files-the-agent-saves"
+"Bleibt die KI-Kennzeichnung, wenn ich eine Datei umbenenne oder verschiebe?" = "what-keeps-the-mark"
+"Behält eine heruntergeladene Datei die KI-Kennzeichnung?" = "what-keeps-the-mark"
+"Ist eine kopierte Antwort als KI-generiert gekennzeichnet?" = "in-answers-you-copy"
+"Wie prüfe ich, ob eine Datei von einer KI erstellt wurde?" = "check-a-text-or-a-file"
+
+["troubleshooting.md"]
+"Der Nextcloud-Agent meldet, die ausgewählte Datei habe sich geändert" = "files-and-context"
+"Der Nextcloud-Agent meldet, meine Anmeldung sei abgelaufen" = "signing-in-and-starting"
+"Der Nextcloud-Agent meldet, meine Organisation habe ihn ausgeschaltet" = "signing-in-and-starting"
+"Der Nextcloud-Agent hat eine Datei ohne KI-Kennzeichnung gespeichert" = "changes"
+"Warum wird in Nextcloud kein Rückgängigmachen angeboten?" = "changes"
+
+["more-help.md"]
+"Wo finde ich die Gebrauchsanweisung des Nextcloud-Agenten?" = "instructions-for-use"
+"Wo ist die Datenschutzerklärung des Nextcloud-Agenten?" = "privacy-and-terms"
+"Wo bekomme ich Hilfe zum Nextcloud-Agenten?" = "ask-for-help"
+"Wie melde ich ein Sicherheitsproblem in der Nextcloud-App?" = "ask-for-help"

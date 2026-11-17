@@ -1,0 +1,73 @@
+# The question box: the questions each page answers, in the reader's words, with the heading's anchor ("" = the top).
+
+["index.md"]
+"What is the Fadenstack agent in Nextcloud?" = ""
+"What can the Nextcloud agent do?" = "what-you-can-do-with-it"
+
+["get-started.md"]
+"What do I need to use the agent in Nextcloud?" = "what-you-need"
+"How do I open the agent in Nextcloud Files?" = "open-the-agent"
+"Where is the Fadenstack button in Nextcloud?" = "open-the-agent"
+"What does the Nextcloud agent cost?" = "the-licence"
+"Which licence does the Nextcloud app have?" = "the-licence"
+"How do I install the Fadenstack app in Nextcloud?" = "install"
+"How do I connect Nextcloud to our Fadenstack server?" = "install"
+
+["own-ai.md"]
+"Can I use my own AI in Nextcloud?" = ""
+"Can the Nextcloud agent work without a Fadenstack server?" = "why"
+"Which agents work with my own AI?" = "what-you-can-do-instead"
+
+["sign-in.md"]
+"How do I sign in to the agent in Nextcloud?" = "sign-in-with-a-code"
+"How do I sign in with a code?" = "sign-in-with-a-code"
+"Can I sign in with my email and password in Nextcloud?" = "sign-in-with-your-email-and-password"
+"Why do I have to sign in again in Nextcloud?" = "how-long-you-stay-signed-in"
+"How do I sign out of the Nextcloud agent?" = "how-long-you-stay-signed-in"
+
+["ask-and-approve.md"]
+"How do I give the agent a file in Nextcloud?" = "include-a-file-or-folder"
+"Which file does the agent read?" = "include-a-file-or-folder"
+"What can I ask the Nextcloud agent?" = "ask"
+"How do I approve a change in Nextcloud?" = "approve-a-change"
+"Why does the agent ask before every change?" = "approve-a-change"
+"What do the tool modes do in Nextcloud?" = "the-tool-mode"
+"How do I stop the agent in Nextcloud?" = "stop"
+"What does Stop everything do?" = "stop-everything"
+"How do I undo a change the agent made in Nextcloud?" = "undo"
+
+["what-it-can-do.md"]
+"What can the agent do in Nextcloud Files?" = "its-tools"
+"Which files can the Nextcloud agent read?" = "what-it-works-on"
+"Can the agent read Word or Excel files in Nextcloud?" = "limits"
+"How large can a file be for the Nextcloud agent?" = "limits"
+"Can the Nextcloud agent use Mail, Calendar or Talk?" = "limits"
+
+["your-data.md"]
+"What does the Nextcloud agent send to the server?" = "what-goes-to-your-organisations-server"
+"Where are my chats in Nextcloud kept?" = "what-stays-in-your-browser"
+"Is there a record of the agent's tool calls in Nextcloud?" = "what-stays-in-your-browser"
+"How do I export a chat from the Nextcloud agent?" = "export-a-chat"
+"What does Nextcloud keep about the agent's changes?" = "what-nextcloud-keeps"
+"How do I delete my data from the Nextcloud agent?" = "remove-your-data"
+
+["ai-marks.md"]
+"How are files from the Nextcloud agent marked as AI?" = "in-the-files-the-agent-saves"
+"What is the ai-record-id in my Markdown file?" = "in-the-files-the-agent-saves"
+"Does the AI mark stay when I rename or move a file?" = "what-keeps-the-mark"
+"Does a downloaded file keep the AI mark?" = "what-keeps-the-mark"
+"Is a copied answer marked as AI-generated?" = "in-answers-you-copy"
+"How do I check whether a file was made by AI?" = "check-a-text-or-a-file"
+
+["troubleshooting.md"]
+"The Nextcloud agent says the selected file changed" = "files-and-context"
+"The Nextcloud agent says my sign-in expired" = "signing-in-and-starting"
+"The Nextcloud agent says my organisation turned it off" = "signing-in-and-starting"
+"The Nextcloud agent saved a file without an AI mark" = "changes"
+"Why is Undo not offered in Nextcloud?" = "changes"
+
+["more-help.md"]
+"Where are the instructions for use of the Nextcloud agent?" = "instructions-for-use"
+"Where is the privacy policy of the Nextcloud agent?" = "privacy-and-terms"
+"Where do I get help with the Nextcloud agent?" = "ask-for-help"
+"How do I report a security problem in the Nextcloud app?" = "ask-for-help"

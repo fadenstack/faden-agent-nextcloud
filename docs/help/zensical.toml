@@ -1,0 +1,17 @@
+# The Nextcloud agent's Help, mounted by Fadenstack's public Help at agents/nextcloud/.
+# Layout: the core's docs/help/README.md, "Help from other repositories (agents)".
+[project]
+nav = [
+  { "Nextcloud agent" = [
+    { "Overview" = "index.md" },
+    { "Get started" = "get-started.md" },
+    { "Your own AI" = "own-ai.md" },
+    { "Sign in" = "sign-in.md" },
+    { "Ask and approve" = "ask-and-approve.md" },
+    { "What it can do" = "what-it-can-do.md" },
+    { "Your data" = "your-data.md" },
+    { "AI marks" = "ai-marks.md" },
+    { "When it does not work" = "troubleshooting.md" },
+    { "More help" = "more-help.md" },
+  ] },
+]
