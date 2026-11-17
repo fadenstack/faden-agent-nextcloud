@@ -171,8 +171,11 @@ jeden Ordner, den er anlegt. Es enthält den Text vor und nach der Änderung,
 verschlüsselt mit dem Instanzgeheimnis (`ICrypto`), in der Datenbank von Nextcloud,
 zugeordnet über einen Hashwert der Benutzerkennung. Der Text bleibt höchstens 7 Tage,
 der Eintrag ohne Text weitere 30 Tage; ein unklares Ergebnis bleibt bis zur Prüfung.
-Diese Fristen stehen fest im Code; es gibt keinen Schalter. Deaktivieren oder
-Entfernen der App und Löschen eines Benutzers entfernen davon vorher nichts. Nehmen
+Diese Fristen stehen fest im Code; es gibt keinen Schalter. Das Löschen eines
+Benutzers entfernt dessen Einträge sofort. Deaktivieren oder Entfernen der App
+entfernt das ganze Journal, alle offenen Freigaben und die gespeicherten
+Workflow-Schlüssel aller Benutzer; die Einstellungen der Organisation bleiben.
+`occ app:remove --keep-data fadenstack_agent` behält alles. Nehmen
 Sie die Journaltabellen in Ihre Sicherungen und Ihr Verzeichnis der
 Verarbeitungstätigkeiten auf. Optional sind nur die Werkzeuge zum Rückgängigmachen
 und Wiederholen (`history_enabled`).
