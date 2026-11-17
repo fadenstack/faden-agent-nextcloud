@@ -1,5 +1,9 @@
 name: Quality and pilot package
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  # The first run after the repository went public is started by hand (no new push).
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
