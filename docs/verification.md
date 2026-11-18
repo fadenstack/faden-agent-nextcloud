@@ -23,6 +23,17 @@ another Vue app's `v-` ids on the same Nextcloud page. Measured: `aria-described
 `fadenstack-agent-3`, no `v-` ids on the page, and UI Automation's `FullDescription`
 is the notice.
 
+**On SDK 0.3.0 (from npm), 18 November.** 0.3.0 is rc.4's code with About's new "Help
+and contact" link. The lockfile changes only the seven `@fadenstack` packages; `npm audit
+signatures`: 963 verified, 160 with attestations. `tests/unit/agent.test.ts` checks
+About: the link sits between "Fadenstack" and "Developer docs", goes to
+`https://fadenstack.com/support/?ref=nextcloud-about&v=0.3` (the app's `refSource`
+`nextcloud`), and reads "Hilfe und Kontakt" in German; the footer link says
+`ref=nextcloud-panel`. vitest 839, vue-tsc, eslint, stylelint and the build pass. The
+runtime audit now lists picomatch's ReDoS advisory (GHSA-fc5q-39xc-vjpf) through vite
+and vue-router's build plugins; it is new, unrelated to the SDK, and not in the built
+bundle.
+
 ## 17 November: erasure on account deletion and on app removal (0.2 preview)
 
 `tests/integration/data-erasure.php` runs in the disposable development container

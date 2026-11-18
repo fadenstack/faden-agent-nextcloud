@@ -737,7 +737,7 @@ describe('The SDK panel in Nextcloud', () => {
 		}
 	})
 
-	it('names this app in its links to fadenstack.com: ref nextcloud-panel in the footer, nextcloud-about in About', async () => {
+	it('names this app in its links to fadenstack.com, and About has Help and contact to the support page', async () => {
 		const { host } = fixture()
 		await host.signIn('alice', 'test')
 		try {
@@ -747,7 +747,18 @@ describe('The SDK panel in Nextcloud', () => {
 			const ours = host.chat.about.links.map(link => new URL(link.href)).filter(url => url.hostname.endsWith('fadenstack.com'))
 			expect(ours.length).toBeGreaterThan(0)
 			for (const url of ours) expect(url.searchParams.get('ref')).toBe('nextcloud-about')
-		} finally { await host.dispose() }
+			// SDK 0.3.0: About's "Help and contact" sits between Fadenstack and Developer docs and opens the support page.
+			const labels = host.chat.about.links.map(link => link.label)
+			const support = labels.indexOf('Help and contact')
+			expect(labels[support - 1]).toBe('Fadenstack')
+			expect(labels[support + 1]).toBe('Developer docs')
+			expect(host.chat.about.links[support]!.href).toBe('https://fadenstack.com/support/?ref=nextcloud-about&v=0.3')
+			await host.chat.setLanguage('de')
+			expect(host.chat.about.links.map(link => link.label)).toContain('Hilfe und Kontakt')
+		} finally {
+			// The language choice is this user's stored preference; the next test starts in English again.
+			localStorage.clear(); await host.dispose()
+		}
 	})
 
 	it('the SDK gives the composer the AI notice as its description, so a screen reader reads it on focus (Art. 50(5))', async () => {

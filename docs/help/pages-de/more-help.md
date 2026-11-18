@@ -32,7 +32,8 @@ erklären die Teile, die er mit dem Server gemeinsam hat:
 
 - **Bei der Arbeit**: Fragen Sie zuerst Ihren Administrator. Er sieht die Einstellungen Ihrer Organisation für den
   Agenten.
-- **Der Support von Fadenstack**: [fadenstack.com/de/support](https://fadenstack.com/de/support/).
+- **Der Support von Fadenstack**: [fadenstack.com/de/support](https://fadenstack.com/de/support/). Im Panel öffnet
+  ihn auch **Hilfe und Kontakt** unter **Info** (in den Einstellungen).
 - **Ein Problem im Code der App**: Die App ist freie Software, ihr Quellcode und ihr Issue-Tracker liegen unter
   [github.com/fadenstack/faden-agent-nextcloud](https://github.com/fadenstack/faden-agent-nextcloud).
 - **Ein Sicherheitsproblem**: Melden Sie es, wie die Support-Seite es beschreibt, nicht in einem öffentlichen Issue.

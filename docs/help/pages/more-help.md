@@ -29,7 +29,8 @@ parts it shares with the server:
 ## Ask for help
 
 - **At work**: ask your administrator first. They can see your organisation's settings for the agent.
-- **Fadenstack's support**: [fadenstack.com/support](https://fadenstack.com/support/).
+- **Fadenstack's support**: [fadenstack.com/support](https://fadenstack.com/support/). In the panel, **Help and
+  contact** under **About** (in the settings) opens it too.
 - **A problem in the app's code**: the app is free software, and its source and issue tracker are at
   [github.com/fadenstack/faden-agent-nextcloud](https://github.com/fadenstack/faden-agent-nextcloud).
 - **A security problem**: report it as the support page says, not in a public issue.

@@ -19,12 +19,12 @@
     "extends @nextcloud/browserslist-config"
   ],
   "dependencies": {
-    "@fadenstack/agents": "0.3.0-rc.4",
-    "@fadenstack/client": "0.3.0-rc.4",
-    "@fadenstack/provenance": "0.3.0-rc.4",
-    "@fadenstack/ui": "0.3.0-rc.4",
-    "@fadenstack/ui-vue": "0.3.0-rc.4",
-    "@fadenstack/ui-web": "0.3.0-rc.4",
+    "@fadenstack/agents": "0.3.0",
+    "@fadenstack/client": "0.3.0",
+    "@fadenstack/provenance": "0.3.0",
+    "@fadenstack/ui": "0.3.0",
+    "@fadenstack/ui-vue": "0.3.0",
+    "@fadenstack/ui-web": "0.3.0",
     "@nextcloud/auth": "^2.5.0",
     "@nextcloud/axios": "^2.5.0",
     "@nextcloud/event-bus": "^3.3.2",
@@ -40,7 +40,7 @@
     "vue": "^3.5.42"
   },
   "devDependencies": {
-    "@fadenstack/testing": "0.3.0-rc.4",
+    "@fadenstack/testing": "0.3.0",
     "@nextcloud/browserslist-config": "^3.1.2",
     "@nextcloud/eslint-config": "^8.4.2",
     "@nextcloud/stylelint-config": "^3.1.1",
@@ -63,13 +63,13 @@
       "minimatch": "^11.0.1",
       "fast-xml-parser": "^5.12.0"
     },
-    "@fadenstack/client": "0.3.0-rc.4",
-    "@fadenstack/agents": "0.3.0-rc.4",
-    "@fadenstack/ui": "0.3.0-rc.4",
-    "@fadenstack/ui-web": "0.3.0-rc.4",
-    "@fadenstack/ui-vue": "0.3.0-rc.4",
-    "@fadenstack/ui-react": "0.3.0-rc.4",
-    "@fadenstack/testing": "0.3.0-rc.4",
-    "@fadenstack/provenance": "0.3.0-rc.4"
+    "@fadenstack/client": "0.3.0",
+    "@fadenstack/agents": "0.3.0",
+    "@fadenstack/ui": "0.3.0",
+    "@fadenstack/ui-web": "0.3.0",
+    "@fadenstack/ui-vue": "0.3.0",
+    "@fadenstack/ui-react": "0.3.0",
+    "@fadenstack/testing": "0.3.0",
+    "@fadenstack/provenance": "0.3.0"
   }
 }

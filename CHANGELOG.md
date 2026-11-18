@@ -48,8 +48,8 @@ only with a Fadenstack server (governed mode). See
 
 ### Changed
 
-- The Fadenstack TypeScript SDK 0.3.0, as the `0.3.0-rc.4` pre-release from npm
-  (registry signatures and provenance verified on install). The chat's copy, link
+- The Fadenstack TypeScript SDK 0.3.0 from npm (registry signatures and
+  provenance verified on install). The chat's copy, link
   and file-saving services come from `@fadenstack/ui-web`.
 - Every app tool call the model makes is checked by the Fadenstack server before
   it runs (see Data fields). The app refuses a server that does not offer the check. Each native
@@ -63,6 +63,8 @@ only with a Fadenstack server (governed mode). See
 - The administrator guide says that the action journal is written for every
   approved change, whether history is on or off, and for how long.
 - German texts address the reader as "Sie" throughout.
+- About (in the panel's settings) has "Help and contact", which opens Fadenstack's
+  support page in a new tab (SDK 0.3.0).
 - The panel's links to fadenstack.com (the line under the composer, About) say
   they came from the Nextcloud agent (`ref=nextcloud-panel`, `ref=nextcloud-about`)
   instead of the SDK's default `sdk`.

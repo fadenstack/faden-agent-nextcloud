@@ -59,7 +59,7 @@ including a user-tested real-server conversation from the full-screen Text edito
 
 ## Build and install
 
-Use Node 24, npm 11 and Composer 2. Published SDK 0.3.0-rc.2 dependencies are pinned in the
+Use Node 24, npm 11 and Composer 2. The Fadenstack SDK 0.3.0 packages from npm are pinned in the
 lockfile; sibling repositories are not needed to build.
 
 ```sh
