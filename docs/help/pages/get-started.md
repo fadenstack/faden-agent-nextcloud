@@ -53,8 +53,8 @@ Nextcloud address to call the server from the browser.
       administrator password and no shared account.
     - **Experimental: development mode** is off by default. It is for testing only, never for production: it unlocks
       tools for other Nextcloud apps (among them Mail and Talk, which send content to other people) and outside
-      workflow services. It can also switch off the AI marks on files. See the
-      [instructions for use](more-help.md#instructions-for-use).
+      workflow services. It can also switch off the AI marks on files. See
+      [Product information](product-information.md).
     - Disabling or removing the app erases its records of the agent's changes and the keys people stored for outside
       workflow services (see [Your data](your-data.md)). The organisation's settings stay. To remove the app and keep
       them, use `occ app:remove --keep-data fadenstack_agent`.

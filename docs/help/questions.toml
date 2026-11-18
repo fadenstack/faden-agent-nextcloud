@@ -67,7 +67,15 @@
 "Why is Undo not offered in Nextcloud?" = "changes"
 
 ["more-help.md"]
-"Where are the instructions for use of the Nextcloud agent?" = "instructions-for-use"
 "Where is the privacy policy of the Nextcloud agent?" = "privacy-and-terms"
 "Where do I get help with the Nextcloud agent?" = "ask-for-help"
 "How do I report a security problem in the Nextcloud app?" = "ask-for-help"
+
+["product-information.md"]
+"What is the Nextcloud agent for?" = "what-it-is-for"
+"Where are the instructions for use of the Nextcloud agent?" = ""
+"What are the limits of the Nextcloud agent?" = "limits"
+"What are the risks of the Nextcloud agent?" = "known-risks"
+"What does the Nextcloud agent log?" = "what-is-logged"
+"Which settings can the administrator fix for the Nextcloud agent?" = "settings-your-administrator-can-fix"
+"How long does the Nextcloud app get security updates?" = "security-updates-and-support"

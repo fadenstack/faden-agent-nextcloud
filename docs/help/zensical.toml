@@ -13,5 +13,6 @@ nav = [
     { "AI marks" = "ai-marks.md" },
     { "When it does not work" = "troubleshooting.md" },
     { "More help" = "more-help.md" },
+    { "Product information" = "product-information.md" },
   ] },
 ]

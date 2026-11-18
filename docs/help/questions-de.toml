@@ -67,7 +67,15 @@
 "Warum wird in Nextcloud kein Rückgängigmachen angeboten?" = "changes"
 
 ["more-help.md"]
-"Wo finde ich die Gebrauchsanweisung des Nextcloud-Agenten?" = "instructions-for-use"
 "Wo ist die Datenschutzerklärung des Nextcloud-Agenten?" = "privacy-and-terms"
 "Wo bekomme ich Hilfe zum Nextcloud-Agenten?" = "ask-for-help"
 "Wie melde ich ein Sicherheitsproblem in der Nextcloud-App?" = "ask-for-help"
+
+["product-information.md"]
+"Wofür ist der Nextcloud-Agent gedacht?" = "what-it-is-for"
+"Wo finde ich die Gebrauchsanweisung des Nextcloud-Agenten?" = ""
+"Welche Grenzen hat der Nextcloud-Agent?" = "limits"
+"Welche Risiken hat der Nextcloud-Agent?" = "known-risks"
+"Was protokolliert der Nextcloud-Agent?" = "what-is-logged"
+"Welche Einstellungen kann der Administrator für den Nextcloud-Agenten festlegen?" = "settings-your-administrator-can-fix"
+"Wie lange bekommt die Nextcloud-App Sicherheitsupdates?" = "security-updates-and-support"

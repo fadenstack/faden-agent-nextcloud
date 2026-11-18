@@ -56,4 +56,4 @@ Ihr Nextcloud-Administrator kann außerdem mit dem Nextcloud-Befehl `occ` einsch
     Ordner erstellen, Dateien kopieren, verschieben und teilen und externe Workflow-Dienste aufrufen. Diese Tools
     sind ungetestet, können sich ändern, und manche senden Inhalte an andere Personen. Er kann auch die
     KI-Kennzeichnung von Dateien ausschalten. Er ist nicht für die
-    tägliche Arbeit gedacht. Die [Gebrauchsanweisung](more-help.md#instructions-for-use) beschreibt ihn.
+    tägliche Arbeit gedacht. Die Seite [Produktinformationen](product-information.md) beschreibt ihn.

@@ -4,9 +4,9 @@ Wo Sie mehr über den Nextcloud-Agenten lesen können und wo Sie fragen können.
 
 ## Die Gebrauchsanweisung {#instructions-for-use}
 
-Die Gebrauchsanweisung beschreibt, wofür der Agent gedacht ist, was er kann, seine Grenzen, die Einstellungen des
-Administrators, was wo protokolliert wird und die bekannten Risiken. Sie wird bei den rechtlichen Dokumenten des
-Agenten veröffentlicht: [fadenstack.com/de/legal/nextcloud](https://fadenstack.com/de/legal/nextcloud/).
+Die Gebrauchsanweisung des Agenten ist die Seite [Produktinformationen](product-information.md): wofür er da ist,
+seine Grenzen, die bekannten Risiken, was protokolliert wird, die Einstellungen, die Ihr Administrator festlegen
+kann, und die Sicherheitsupdates und der Support.
 
 ## Datenschutz und Bedingungen {#privacy-and-terms}
 

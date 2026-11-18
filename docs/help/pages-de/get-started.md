@@ -58,7 +58,7 @@ erlaubt der Nextcloud-Adresse, den Server aus dem Browser aufzurufen.
     - **Experimentell: Entwicklungsmodus** ist standardmäßig aus. Er dient nur zum Testen, nie für den
       Produktivbetrieb: Er schaltet Tools für andere Nextcloud-Apps frei (darunter Mail und Talk, die Inhalte an
       andere Personen senden) und für externe Workflow-Dienste. Er kann auch die KI-Kennzeichnung von Dateien
-      ausschalten. Siehe die [Gebrauchsanweisung](more-help.md#instructions-for-use).
+      ausschalten. Siehe [Produktinformationen](product-information.md).
     - Wird die App deaktiviert oder entfernt, löscht sie ihre Aufzeichnungen der Änderungen des Agenten und die
       Schlüssel, die Benutzer für externe Workflow-Dienste gespeichert haben (siehe [Ihre Daten](your-data.md)). Die
       Einstellungen der Organisation bleiben. Um die App zu entfernen und dies zu behalten, verwenden Sie

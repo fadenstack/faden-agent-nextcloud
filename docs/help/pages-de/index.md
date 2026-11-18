@@ -28,7 +28,8 @@ dem Fadenstack-Server Ihrer Organisation und den Modellen, die Ihre Organisation
 | [Ihre Daten](your-data.md) | Was wohin geht, was gespeichert wird und wie lange |
 | [KI-Kennzeichnung](ai-marks.md) | Wie Antworten und Dateien als KI-generiert gekennzeichnet werden |
 | [Wenn es nicht funktioniert](troubleshooting.md) | Die Meldungen, die Sie sehen können, und was zu tun ist |
-| [Weitere Hilfe](more-help.md) | Die Gebrauchsanweisung, die Datenschutzerklärung, die Hilfe von Fadenstack und der Support |
+| [Weitere Hilfe](more-help.md) | Die Datenschutzerklärung, die Hilfe von Fadenstack und der Support |
+| [Produktinformationen](product-information.md) | Die Gebrauchsanweisung: Zweck, Grenzen, bekannte Risiken, was protokolliert wird, Einstellungen, Support |
 
 !!! note "Eine Vorschau"
     Diese Version ist eine Vorschau. Sie funktioniert nur mit einem Fadenstack-Server, den Ihre Organisation

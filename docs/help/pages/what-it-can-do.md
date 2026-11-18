@@ -52,4 +52,4 @@ Your Nextcloud administrator can also turn on, with Nextcloud's `occ` command:
     agent use other Nextcloud apps (such as Calendar, Contacts, Deck, Tables, Mail and Talk), create folders, copy,
     move and share files, and call outside workflow services. These tools are untested, may change, and some send
     content to other people. It can also switch off the AI marks on files. It is not meant for everyday work. The
-    [instructions for use](more-help.md#instructions-for-use) describe it.
+    [Product information](product-information.md) page describes it.

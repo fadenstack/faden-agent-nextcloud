@@ -11,5 +11,6 @@ nav = [
     { "KI-Kennzeichnung" = "ai-marks.md" },
     { "Wenn es nicht funktioniert" = "troubleshooting.md" },
     { "Weitere Hilfe" = "more-help.md" },
+    { "Produktinformationen" = "product-information.md" },
   ] },
 ]

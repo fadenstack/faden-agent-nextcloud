@@ -4,9 +4,9 @@ Where to read more about the Nextcloud agent, and where to ask.
 
 ## The instructions for use {#instructions-for-use}
 
-The instructions for use describe what the agent is for, what it can do, its limits, the administrator's settings,
-what is logged and where, and the known risks. They will be published with the agent's legal documents:
-[fadenstack.com/legal/nextcloud](https://fadenstack.com/legal/nextcloud/).
+The agent's instructions for use are the page [Product information](product-information.md): what it is for, its
+limits, the known risks, what is logged, the settings your administrator can fix, and the security updates and
+support.
 
 ## Privacy and terms
 

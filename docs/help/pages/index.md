@@ -27,7 +27,8 @@ server and the models your organisation offers there.
 | [Your data](your-data.md) | What goes where, what is kept, and for how long |
 | [AI marks](ai-marks.md) | How answers and files are marked as made by AI |
 | [When it does not work](troubleshooting.md) | The messages you may see, and what to do |
-| [More help](more-help.md) | The instructions for use, the privacy policy, Fadenstack's Help and support |
+| [More help](more-help.md) | The privacy policy, Fadenstack's Help and support |
+| [Product information](product-information.md) | The instructions for use: purpose, limits, known risks, what is logged, settings, support |
 
 !!! note "A preview"
     This version is a preview. It works only with a Fadenstack server that your organisation runs.
