@@ -95,6 +95,12 @@ only with a Fadenstack server (governed mode). See
 - The "Stop everything" result line shows under the button for its 8 seconds.
   Before, it wrapped letter by letter in the narrow panel's header and pushed the
   header's buttons down.
+- "Write a summary next to this file" works when the agent names the included
+  file's folder: the new file goes into that folder, as when it names none.
+  Before, naming the folder was refused ("Use a resource returned by search or
+  explicitly attached by the user first."). The folder is a place to create in
+  only: the agent cannot list or read it through this, and creating never
+  overwrites a file that exists. The approval card shows the full path.
 - `appinfo/info.xml` validates against the App Store's schema.
 - A sign-in revocation is no longer cut off when the person stops the agent.
 - Shell scripts and the development containers' files are checked out with LF

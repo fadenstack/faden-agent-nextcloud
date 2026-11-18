@@ -29,7 +29,7 @@ Type your question and select **Send**. For example:
 - "Find the latest supplier contract."
 - "Find all PDFs in the folder Engineering."
 - "What is the notice period in this contract?"
-- With a folder included: "Write a summary of the contract in this folder as a new Markdown file here."
+- "Write a summary of this document as a Markdown file in the same folder."
 
 The agent finds and reads files on its own: those tools only read and need no approval. An answer that rests on a
 document shows the passage, with the page or line, and a link to it. Check the passages for what matters.
@@ -48,10 +48,9 @@ After **Allow**, the chat says **Saved:** and the file's name, with a line about
 [AI marks](ai-marks.md)).
 
 ??? info "More about approvals"
-    - To create a file, include the folder it should go into. The folder of an included file does not count: then
-      the agent says it needs a folder you included.
     - Every change asks, one at a time. There is no "allow for this chat" or "allow always" for changes in this agent.
-    - Creating never overwrites a file that exists. Replacing works only if the file has not changed since the
+    - A new file goes into the folder you included, or into the folder of the file you included. Creating never
+      overwrites a file that exists. Replacing works only if the file has not changed since the
       agent read it.
     - A card that waits too long expires; nothing is saved. Ask again for a new card.
     - If a file is open in an editor with unsaved changes, Nextcloud keeps your editor as it is: save or cancel your

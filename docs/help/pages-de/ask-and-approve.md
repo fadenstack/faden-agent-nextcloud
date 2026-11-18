@@ -34,7 +34,7 @@ Tippen Sie Ihre Frage und wählen Sie **Senden**. Zum Beispiel:
 - „Suche den neuesten Lieferantenvertrag.“
 - „Suche alle PDFs im Ordner Engineering.“
 - „Wie lang ist die Kündigungsfrist in diesem Vertrag?“
-- Mit einem aufgenommenen Ordner: „Schreibe eine Zusammenfassung des Vertrags in diesem Ordner als neue Markdown-Datei hier.“
+- „Schreibe eine Zusammenfassung dieses Dokuments als Markdown-Datei im selben Ordner.“
 
 Der Agent findet und liest Dateien selbstständig: Diese Tools lesen nur und brauchen keine Freigabe. Beruht eine
 Antwort auf einem Dokument, zeigt sie die Textstelle mit Seite oder Zeile und einen Link darauf. Prüfen Sie die
@@ -54,11 +54,10 @@ Nach **Zulassen** steht im Chat **Gespeichert:** und der Name der Datei, mit ein
 KI-Kennzeichnung (siehe [KI-Kennzeichnung](ai-marks.md)).
 
 ??? info "Mehr zu den Freigaben"
-    - Um eine Datei zu erstellen, nehmen Sie den Ordner auf, in den sie soll. Der Ordner einer aufgenommenen Datei
-      zählt nicht: Dann sagt der Agent, dass er einen von Ihnen aufgenommenen Ordner braucht.
     - Jede Änderung fragt nach, eine nach der anderen. In diesem Agenten gibt es für Änderungen kein „für diesen
       Chat erlauben“ und kein „immer erlauben“.
-    - Erstellen überschreibt nie eine Datei, die es schon gibt. Ersetzen klappt nur, wenn sich die Datei seit dem
+    - Eine neue Datei kommt in den Ordner, den Sie aufgenommen haben, oder in den Ordner der Datei, die Sie
+      aufgenommen haben. Erstellen überschreibt nie eine Datei, die es schon gibt. Ersetzen klappt nur, wenn sich die Datei seit dem
       Lesen durch den Agenten nicht geändert hat.
     - Eine Karte, die zu lange wartet, läuft ab; es wird nichts gespeichert. Fragen Sie erneut nach einer neuen
       Karte.

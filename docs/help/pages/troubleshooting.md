@@ -29,7 +29,6 @@ nothing was saved unless the chat says **Saved:**.
 
 | You see | What to do |
 |---|---|
-| The agent cannot create a file next to the file you included | Include the folder instead (tick it in Files), then ask again |
 | The card is gone, or says it expired | A card waits up to ten minutes. Ask again for a new card |
 | **The native view did not finish loading. Nothing was changed. Try again.** | Nextcloud's page was not ready. Nothing was saved. Ask again |
 | **Saved in Nextcloud. Refresh the native view after saving or cancelling your edits.** | The file was saved while you had it open with unsaved edits. Save or cancel your edits, then reload the view |

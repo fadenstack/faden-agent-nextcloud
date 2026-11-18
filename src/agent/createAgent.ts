@@ -837,9 +837,12 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	private async writeContext(tool: string, id: unknown, signal: AbortSignal): Promise<FileContext> {
-		const selected = id === undefined ? this.context() : undefined
-		const key = id ?? `nextcloud:files:${selected!.file.id}`
-		if (id === undefined) this.discovery.remember(selected!.file)
+		// A new file may go into the included file's own folder, also when the model names that folder: it goes through
+		// the included file's context, which the server creates beside, never over an existing name. The folder is a
+		// place to create only; it is not remembered as a resource the agent may list or read.
+		const selected = id === undefined || (tool === 'nc_create_text_file' && this.isIncludedFilesFolder(id)) ? this.context() : undefined
+		const key = selected ? `nextcloud:files:${selected.file.id}` : id
+		if (selected) this.discovery.remember(selected.file)
 		await this.discovery.metadata(key, signal, selected)
 		if (tool === 'nc_update_text_file') {
 			const cache = this.discovery.cache.get(String(key))
@@ -847,6 +850,13 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			return cache.context
 		}
 		return selected ?? this.files.select(resourceId(key), signal)
+	}
+
+	/** Whether id names the folder of the file included in this turn (not a folder the person included). */
+	private isIncludedFilesFolder(id: unknown): boolean {
+		const included = this.#active
+		if (!included || included.file.folder) return false
+		try { return resourceId(id) === included.parentId } catch { return false }
 	}
 
 	async write(args: WriteArguments, call: ToolCallContext, resourceId?: unknown): Promise<unknown> {

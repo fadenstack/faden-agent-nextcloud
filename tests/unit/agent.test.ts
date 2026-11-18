@@ -65,6 +65,35 @@ describe('SDK integration and file boundary', () => {
 		try { await expect(host.signIn('alice', 'test')).rejects.toThrow(/fresh central host-tool dispatch checks/) }
 		finally { await host.dispose() }
 	})
+	it('creates a new file in the included file\'s folder when the model names that folder, and still refuses unknown folders', async () => {
+		const create = (id: string, resource: string) => {
+			let round = 0
+			return fixture({ model: () => ++round === 1
+				? { toolCalls: [{ id, name: 'nc_create_text_file', arguments: { filename: 'Summary.md', content: 'Synthetic summary', resource_id: resource } }] }
+				: { text: 'Nothing was saved.' } })
+		}
+		// The folder of the included file (parentId 1): a card, proposed through the included file's context.
+		const beside = create('beside', 'nextcloud:files:1')
+		try {
+			await beside.host.signIn('alice', 'test'); beside.host.offerSelection(await beside.host.selection.select(2))
+			const sending = beside.host.send('Write a summary next to the included file', true)
+			const part = await pending(beside.host)
+			expect(beside.files.propose).toHaveBeenCalledTimes(1)
+			expect(vi.mocked(beside.files.propose).mock.calls[0]![0]).toBe('opaque-context')
+			expect(vi.mocked(beside.files.propose).mock.calls[0]![1]).toMatchObject({ operation: 'create', filename: 'Summary.md' })
+			expect(beside.files.select).not.toHaveBeenCalledWith(1, expect.anything())
+			await beside.host.deny(part); await sending
+			expect(beside.files.commit).not.toHaveBeenCalled()
+		} finally { await beside.host.dispose() }
+		// Any other folder the person did not include or a search did not return: refused before a proposal.
+		const elsewhere = create('elsewhere', 'nextcloud:files:99')
+		try {
+			await elsewhere.host.signIn('alice', 'test'); elsewhere.host.offerSelection(await elsewhere.host.selection.select(2))
+			await elsewhere.host.send('Write a summary into folder 99', true)
+			expect(elsewhere.files.propose).not.toHaveBeenCalled()
+			expect(elsewhere.host.chat.turns.flatMap(t => [...t.parts]).find(p => p instanceof ApprovalPart)).toBeUndefined()
+		} finally { await elsewhere.host.dispose() }
+	})
 	it('refuses native dispatch when central policy denies the already approved model call', async () => {
 		let round = 0
 		const { host, files, gateway } = fixture({ model: () => ++round === 1
