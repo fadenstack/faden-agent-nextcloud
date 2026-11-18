@@ -47,6 +47,11 @@ Pflichten, die dazugehören. Den vollständigen Text finden Sie unter
   kann und wie groß: siehe [Was er kann](what-it-can-do.md).
 - Er schreibt nur Textdateien (`.txt` und `.md`). Jede Änderung fragt zuerst, mit dem ganzen Text auf der Karte, was auch
   immer der Tool-Modus (**Tool-Modus**) sagt: siehe [Fragen und freigeben](ask-and-approve.md).
+- Eine neue Datei kommt in einen Ordner, den Sie aufgenommen haben, oder in den Ordner der Datei, die Sie aufgenommen
+  haben, neben die Dateien dort und nie über eine; die Karte zeigt ihren vollständigen Pfad. Jeden anderen Ordner
+  lehnt er ab.
+- Die eigenen Bildschirme der App gibt es auf Englisch, Deutsch, Spanisch, Französisch und Chinesisch. Manche Meldungen
+  der Nextcloud-Serverseite und des Fadenstack-Servers bleiben englisch.
 - Eine Datei, die Sie auswählen, geht nur, wenn Sie sie aufnehmen und Ihre Nachricht senden; der Chip zeigt **Nächste
   Nachricht**, oder **Nicht enthalten**, wenn Sie die Datei herausgenommen haben.
 - Ihr Browser erreicht nur den Fadenstack-Server Ihrer Organisation.

@@ -42,6 +42,10 @@ The full text is in [Privacy policy and terms](https://fadenstack.com/legal/next
   [What it can do](what-it-can-do.md).
 - It writes only text files (`.txt` and `.md`). Every change asks first, with the whole text on the card, whatever the
   tool mode (**Tool mode**) says: see [Ask and approve](ask-and-approve.md).
+- A new file goes into a folder you included, or into the folder of the file you included, beside the files there and
+  never over one; the card shows its full path. Any other folder is refused.
+- The app's own screens are in English, German, Spanish, French and Chinese. Some messages from Nextcloud's server side
+  and from the Fadenstack server stay in English.
 - A file you select is sent only when you include it and send your message; the chip shows **Next message**, or
   **Not included** when you took the file out.
 - Your browser can reach only your organisation's Fadenstack server.
