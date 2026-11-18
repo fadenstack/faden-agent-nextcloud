@@ -4,7 +4,7 @@ Der Fadenstack-Agent arbeitet in Nextcloud unter Dateien. Er findet Ihre Dateien
 aufnehmen, beantwortet Fragen dazu und schreibt Textdateien für Sie, jede erst nach Ihrer Freigabe. Er arbeitet mit
 dem Fadenstack-Server Ihrer Organisation und den Modellen, die Ihre Organisation dort anbietet.
 
-<!-- picture: index/drawer.png — Files with the agent's panel open on the right: a file included, a question, an answer with a passage and its source -->
+![Dateien mit dem Panel des Agenten: der Vertrag aufgenommen, eine Frage dazu und die Antwort, die Abschnitt 5.3 mit Quelle zitiert](images/index/drawer.png)
 
 ## Was Sie damit tun können {#what-you-can-do-with-it}
 

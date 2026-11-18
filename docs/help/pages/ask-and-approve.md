@@ -1,9 +1,9 @@
 # Ask and approve
 
 Include a file or folder, ask in your own words, and check each change before the agent makes it. No file is created or
-changed until you select **Allow once**, and you can stop the agent at any time.
+changed until you select **Allow**, and you can stop the agent at any time.
 
-<!-- picture: ask/panel.png — the panel with a file included (the chip above the message box), a question and an answer -->
+![The panel: a question about the included agreement, the answer with the quoted passage and its source, and the file chip above the message box](images/ask/panel.png)
 
 ## Include a file or folder
 
@@ -29,7 +29,7 @@ Type your question and select **Send**. For example:
 - "Find the latest supplier contract."
 - "Find all PDFs in the folder Engineering."
 - "What is the notice period in this contract?"
-- "Write a summary of this document as a Markdown file in the same folder."
+- With a folder included: "Write a summary of the contract in this folder as a new Markdown file here."
 
 The agent finds and reads files on its own: those tools only read and need no approval. An answer that rests on a
 document shows the passage, with the page or line, and a link to it. Check the passages for what matters.
@@ -38,16 +38,18 @@ document shows the passage, with the page or line, and a link to it. Check the p
 
 When the agent wants to create or change a file, it shows an approval card first.
 
-<!-- picture: ask/card.png — the approval card Create file: the target path, the proposed content with its front matter, Allow once and Deny -->
+![The approval card Create file: the path in the folder Projects, the proposed content starting with its front matter, Allow and Deny](images/ask/card.png)
 
 1. Read the card: **Create file** or **Replace file**, where it goes, and the whole text under **Proposed content**.
    For a replacement, **Current content** shows what is there now.
-2. Select **Allow once** to save exactly this text, or **Deny** to save nothing.
+2. Select **Allow** to save exactly this text, or **Deny** to save nothing.
 
-After **Allow once**, the chat says **Saved:** and the file's name, with a line about its AI mark (see
+After **Allow**, the chat says **Saved:** and the file's name, with a line about its AI mark (see
 [AI marks](ai-marks.md)).
 
 ??? info "More about approvals"
+    - To create a file, include the folder it should go into. The folder of an included file does not count: then
+      the agent says it needs a folder you included.
     - Every change asks, one at a time. There is no "allow for this chat" or "allow always" for changes in this agent.
     - Creating never overwrites a file that exists. Replacing works only if the file has not changed since the
       agent read it.
@@ -86,7 +88,7 @@ A change you already allowed may have been saved before you stopped: look at the
 - cancels every change waiting for your approval, so nothing of it is saved,
 - ends any permission for a limited time that the agent has on your organisation's server.
 
-<!-- picture: ask/stop-everything.png — the panel header with Stop everything and its result line under the button -->
+![The panel header after Stop everything: the line Stopped 1 chat. under the button](images/ask/stop-everything.png)
 
 A short line under the button says what was stopped. Use it when the agent does something you did not ask for.
 
@@ -94,7 +96,7 @@ A short line under the button says what was stopped. Use it when the agent does 
 
 If your administrator turned on the agent's history, the **Agent actions** button in the header lists what the
 agent changed, and offers **Undo file change** and **Redo file change** for a text file's update. Each undo or redo shows its own card and
-needs **Allow once**.
+needs **Allow**.
 
 ??? info "More about Undo"
     - Undo works for up to 7 days after the change, and only while nobody has edited the file since.

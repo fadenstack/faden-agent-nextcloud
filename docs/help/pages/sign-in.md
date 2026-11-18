@@ -3,7 +3,7 @@
 The panel signs in to your Fadenstack account on your organisation's server. Sign in with a code: you approve it on
 the Fadenstack server, so your Fadenstack password is never typed into Nextcloud.
 
-<!-- picture: sign-in/panel.png — the panel's Sign in to Fadenstack screen with Sign in with a code, and Email and Password below -->
+![The panel before sign-in: Sign in to Fadenstack, the server, Sign in with a code, Email and Password](images/sign-in/panel.png)
 
 ## Before you start
 
@@ -20,7 +20,7 @@ the Fadenstack server, so your Fadenstack password is never typed into Nextcloud
 4. Check that the **Code** is the one the panel shows, then select **Continue**.
 5. Check that the app asking is **Nextcloud Files**, then select **Approve**.
 
-<!-- picture: sign-in/code.png — the panel showing the code, Open sign-in page, Waiting for approval… and The code expires at … -->
+![The panel showing a sign-in code, Open sign-in page, Waiting for approval, the time the code expires, and Cancel](images/sign-in/code.png)
 
 Go back to Nextcloud. The panel finishes signing in by itself and shows the chat.
 

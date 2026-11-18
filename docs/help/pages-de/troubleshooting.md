@@ -29,6 +29,7 @@ abgelehnt oder gestoppt, wurde nichts gespeichert, außer der Chat sagt **Gespei
 
 | Sie sehen | Was zu tun ist |
 |---|---|
+| Der Agent kann keine Datei neben der aufgenommenen Datei erstellen | Nehmen Sie stattdessen den Ordner auf (Kästchen in Dateien anhaken) und fragen Sie erneut |
 | Die Karte ist weg oder sagt, sie sei abgelaufen | Eine Karte wartet bis zu zehn Minuten. Fragen Sie erneut nach einer neuen Karte |
 | **Die Ansicht der App wurde nicht fertig geladen. Es wurde nichts geändert. Versuchen Sie es erneut.** | Die Seite von Nextcloud war nicht bereit. Es wurde nichts gespeichert. Fragen Sie erneut |
 | **In Nextcloud gespeichert. Aktualisieren Sie die Ansicht, nachdem Sie Ihre Änderungen gespeichert oder verworfen haben.** | Die Datei wurde gespeichert, während Sie sie mit ungespeicherten Änderungen geöffnet hatten. Speichern oder verwerfen Sie Ihre Änderungen und laden Sie dann die Ansicht neu |

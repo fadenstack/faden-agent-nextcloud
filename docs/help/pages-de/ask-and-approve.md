@@ -1,10 +1,10 @@
 # Fragen und freigeben {#ask-and-approve}
 
 Nehmen Sie eine Datei oder einen Ordner auf, fragen Sie in Ihren eigenen Worten und prüfen Sie jede Änderung, bevor
-der Agent sie vornimmt. Keine Datei wird erstellt oder geändert, bis Sie **Einmal erlauben** wählen, und Sie können
+der Agent sie vornimmt. Keine Datei wird erstellt oder geändert, bis Sie **Zulassen** wählen, und Sie können
 den Agenten jederzeit stoppen.
 
-<!-- picture: ask/panel.png — the panel with a file included (the chip above the message box), a question and an answer -->
+![Das Panel: eine Frage zum aufgenommenen Vertrag, die Antwort mit der zitierten Textstelle und ihrer Quelle und der Datei-Chip über dem Nachrichtenfeld](images/ask/panel.png)
 
 ## Eine Datei oder einen Ordner aufnehmen {#include-a-file-or-folder}
 
@@ -34,7 +34,7 @@ Tippen Sie Ihre Frage und wählen Sie **Senden**. Zum Beispiel:
 - „Suche den neuesten Lieferantenvertrag.“
 - „Suche alle PDFs im Ordner Engineering.“
 - „Wie lang ist die Kündigungsfrist in diesem Vertrag?“
-- „Schreibe eine Zusammenfassung dieses Dokuments als Markdown-Datei im selben Ordner.“
+- Mit einem aufgenommenen Ordner: „Schreibe eine Zusammenfassung des Vertrags in diesem Ordner als neue Markdown-Datei hier.“
 
 Der Agent findet und liest Dateien selbstständig: Diese Tools lesen nur und brauchen keine Freigabe. Beruht eine
 Antwort auf einem Dokument, zeigt sie die Textstelle mit Seite oder Zeile und einen Link darauf. Prüfen Sie die
@@ -44,16 +44,18 @@ Textstellen bei allem, was wichtig ist.
 
 Will der Agent eine Datei erstellen oder ändern, zeigt er zuerst eine Freigabekarte.
 
-<!-- picture: ask/card.png — the approval card Create file: the target path, the proposed content with its front matter, Allow once and Deny -->
+![Die Freigabekarte Datei erstellen: der Pfad im Ordner Projects, der vorgeschlagene Inhalt mit seinem Front Matter am Anfang, Zulassen und Ablehnen](images/ask/card.png)
 
 1. Lesen Sie die Karte: **Datei erstellen** oder **Datei ersetzen**, wohin sie kommt, und den ganzen Text unter
    **Vorgeschlagener Inhalt**. Bei einem Ersetzen zeigt **Aktueller Inhalt**, was jetzt dort steht.
-2. Wählen Sie **Einmal erlauben**, um genau diesen Text zu speichern, oder **Ablehnen**, um nichts zu speichern.
+2. Wählen Sie **Zulassen**, um genau diesen Text zu speichern, oder **Ablehnen**, um nichts zu speichern.
 
-Nach **Einmal erlauben** steht im Chat **Gespeichert:** und der Name der Datei, mit einer Zeile zu ihrer
+Nach **Zulassen** steht im Chat **Gespeichert:** und der Name der Datei, mit einer Zeile zu ihrer
 KI-Kennzeichnung (siehe [KI-Kennzeichnung](ai-marks.md)).
 
 ??? info "Mehr zu den Freigaben"
+    - Um eine Datei zu erstellen, nehmen Sie den Ordner auf, in den sie soll. Der Ordner einer aufgenommenen Datei
+      zählt nicht: Dann sagt der Agent, dass er einen von Ihnen aufgenommenen Ordner braucht.
     - Jede Änderung fragt nach, eine nach der anderen. In diesem Agenten gibt es für Änderungen kein „für diesen
       Chat erlauben“ und kein „immer erlauben“.
     - Erstellen überschreibt nie eine Datei, die es schon gibt. Ersetzen klappt nur, wenn sich die Datei seit dem
@@ -96,7 +98,7 @@ die Datei an.
 - bricht jede Änderung ab, die auf Ihre Freigabe wartet, sodass nichts davon gespeichert wird,
 - beendet jede zeitlich begrenzte Berechtigung, die der Agent auf dem Server Ihrer Organisation hat.
 
-<!-- picture: ask/stop-everything.png — the panel header with Stop everything and its result line under the button -->
+![Die Kopfzeile des Panels nach Alles stoppen: die Zeile unter der Schaltfläche, dass ein Chat gestoppt wurde](images/ask/stop-everything.png)
 
 Eine kurze Zeile unter der Schaltfläche sagt, was gestoppt wurde. Nutzen Sie sie, wenn der Agent etwas tut, worum
 Sie nicht gebeten haben.
@@ -106,7 +108,7 @@ Sie nicht gebeten haben.
 Hat Ihr Administrator den Verlauf des Agenten eingeschaltet, listet die Schaltfläche **Agent actions** in der
 Kopfzeile auf, was der Agent geändert hat, und bietet bei der Aktualisierung einer Textdatei **Undo file change** und
 **Redo file change** an. Jedes Rückgängigmachen oder Wiederholen zeigt eine eigene Karte und braucht
-**Einmal erlauben**.
+**Zulassen**.
 
 ??? info "Mehr zum Rückgängigmachen"
     - Rückgängigmachen klappt bis zu 7 Tage nach der Änderung und nur, solange niemand die Datei seither bearbeitet

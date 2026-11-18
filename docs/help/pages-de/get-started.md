@@ -4,7 +4,7 @@ Um den Agenten zu nutzen, installiert Ihr Nextcloud-Administrator die App und ve
 Fadenstack-Server Ihrer Organisation, und der Fadenstack-Administrator gibt Ihnen Zugriff auf den Agenten. Dann
 öffnen Sie Dateien und melden sich einmal pro Besuch an.
 
-<!-- picture: start/top-bar.png — the Files top bar with the Fadenstack button that opens the agent -->
+![Die obere Leiste von Dateien mit der Fadenstack-Schaltfläche links neben den Benachrichtigungen](images/start/top-bar.png)
 
 ## Was Sie brauchen {#what-you-need}
 
@@ -47,7 +47,7 @@ Der Nextcloud-Administrator tut das einmal für alle.
    Nextcloud veröffentlicht hat.
 6. Wählen Sie **Speichern**. Die Benutzer laden Dateien neu, um die neuen Einstellungen zu verwenden.
 
-<!-- picture: start/admin-settings.png — Additional settings with the Fadenstack Agent form: Enable integration, Fadenstack server origin, Published agent identifier, Save -->
+![Das Formular Fadenstack Agent unter Zusätzliche Einstellungen: Integration aktivieren, Fadenstack-Serveradresse, Kennung des veröffentlichten Agenten, Experimentell: Entwicklungsmodus (aus) und Speichern](images/start/admin-settings.png)
 
 Auf dem Fadenstack-Server veröffentlicht der Administrator den Agenten, gibt den Benutzern Zugriff darauf und
 erlaubt der Nextcloud-Adresse, den Server aus dem Browser aufzurufen.

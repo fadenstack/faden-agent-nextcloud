@@ -4,7 +4,7 @@ What the agent writes is marked as made by AI, so that you and others can tell. 
 record in Nextcloud, a Markdown file also shows the mark at its top, and formatted text you copy out of the chat
 carries a hidden mark. Keep these marks when you edit or pass the text on.
 
-<!-- picture: marks/front-matter.png — a Markdown file the agent wrote, open in Nextcloud Text, with the front matter box holding ai-generated: true and the ai-record-id -->
+![A summary the agent wrote, open in Nextcloud Text: the FRONT MATTER box with ai-generated: true and the ai-record-id above the text](images/marks/front-matter.png)
 
 ## In the chat
 

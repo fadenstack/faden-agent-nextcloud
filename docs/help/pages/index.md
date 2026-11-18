@@ -4,7 +4,7 @@ The Fadenstack agent works in Nextcloud Files. It finds your files, reads the on
 it, and writes text files for you, each one only after you allow it. It works with your organisation's Fadenstack
 server and the models your organisation offers there.
 
-<!-- picture: index/drawer.png — Files with the agent's panel open on the right: a file included, a question, an answer with a passage and its source -->
+![Files with the agent's panel open: the agreement included, a question about it, and the answer quoting clause 5.3 with its source](images/index/drawer.png)
 
 ## What you can do with it
 

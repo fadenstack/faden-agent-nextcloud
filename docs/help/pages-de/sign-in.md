@@ -4,7 +4,7 @@ Das Panel meldet sich bei Ihrem Fadenstack-Konto auf dem Server Ihrer Organisati
 Code an: Sie genehmigen ihn auf dem Fadenstack-Server, sodass Ihr Fadenstack-Passwort nie in Nextcloud eingetippt
 wird.
 
-<!-- picture: sign-in/panel.png — the panel's Sign in to Fadenstack screen with Sign in with a code, and Email and Password below -->
+![Das Panel vor der Anmeldung: Bei Fadenstack anmelden, der Server, Mit einem Code anmelden, E-Mail und Passwort](images/sign-in/panel.png)
 
 ## Bevor Sie beginnen {#before-you-start}
 
@@ -21,7 +21,7 @@ wird.
 4. Prüfen Sie, ob der **Code** der ist, den das Panel zeigt, und wählen Sie **Weiter**.
 5. Prüfen Sie, ob die anfragende App **Nextcloud Files** ist, und wählen Sie dann **Genehmigen**.
 
-<!-- picture: sign-in/code.png — the panel showing the code, Open sign-in page, Waiting for approval… and The code expires at … -->
+![Das Panel mit einem Anmeldecode, Anmeldeseite öffnen, Warten auf Bestätigung, der Ablaufzeit des Codes und Abbrechen](images/sign-in/code.png)
 
 Gehen Sie zurück zu Nextcloud. Das Panel schließt die Anmeldung selbst ab und zeigt den Chat.
 

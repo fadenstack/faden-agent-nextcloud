@@ -4,7 +4,7 @@ To use the agent, your Nextcloud administrator installs the app and connects it 
 server, and the Fadenstack administrator gives you access to the agent. Then you open Files and sign in once per
 visit.
 
-<!-- picture: start/top-bar.png — the Files top bar with the Fadenstack button that opens the agent -->
+![The Files top bar with the Fadenstack button, left of the notifications](images/start/top-bar.png)
 
 ## What you need
 
@@ -43,7 +43,7 @@ The Nextcloud administrator does this once for everyone.
 5. In **Published agent identifier**, enter the agent that the Fadenstack administrator published for Nextcloud.
 6. Select **Save**. People reload Files to use the new settings.
 
-<!-- picture: start/admin-settings.png — Additional settings with the Fadenstack Agent form: Enable integration, Fadenstack server origin, Published agent identifier, Save -->
+![The Fadenstack Agent form in Additional settings: Enable integration, Fadenstack server origin, Published agent identifier, Experimental: development mode (off) and Save](images/start/admin-settings.png)
 
 On the Fadenstack server, the administrator publishes the agent and gives people access to it, and allows the
 Nextcloud address to call the server from the browser.

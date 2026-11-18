@@ -5,7 +5,7 @@ die er speichert, trägt in Nextcloud einen signierten Nachweis, eine Markdown-D
 zusätzlich an ihrem Anfang, und formatierter Text, den Sie aus dem Chat kopieren, trägt eine verborgene Kennzeichnung.
 Behalten Sie diese Kennzeichnungen bei, wenn Sie den Text bearbeiten oder weitergeben.
 
-<!-- picture: marks/front-matter.png — a Markdown file the agent wrote, open in Nextcloud Text, with the front matter box holding ai-generated: true and the ai-record-id -->
+![Eine vom Agenten geschriebene Zusammenfassung in Nextcloud Text: der Kasten FRONT MATTER mit ai-generated: true und der ai-record-id über dem Text](images/marks/front-matter.png)
 
 ## Im Chat {#in-the-chat}
 
