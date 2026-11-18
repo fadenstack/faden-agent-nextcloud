@@ -6,58 +6,63 @@
 	<summary lang="en">An AI agent in Nextcloud Files: ask about your files and let it write text files, each change with your approval</summary>
 	<summary lang="de">Ein KI-Agent in Nextcloud Dateien: Fragen Sie zu Ihren Dateien und lassen Sie ihn Textdateien schreiben, mit Ihrer Freigabe</summary>
 	<summary lang="es">Un agente de IA en Archivos de Nextcloud: pregunte por sus archivos y deje que escriba textos, cada cambio con su aprobación</summary>
-	<summary lang="fr">Un agent IA dans Fichiers de Nextcloud : interrogez vos fichiers et faites écrire des textes, chaque modification approuvée</summary>
+	<summary lang="fr">Un agent IA dans Fichiers de Nextcloud : interrogez vos fichiers et faites écrire des textes, chaque modification approuvée</summary>
 	<summary lang="zh-hans">Nextcloud 文件中的 AI 智能体：询问您的文件，并让它编写文本文件，每次更改都需经您审批</summary>
 	<description lang="en"><![CDATA[Fadenstack Agent brings your organisation's Fadenstack AI agent into Nextcloud Files, in a panel beside your files.
 
 * **Find and ask:** find files by name, type, folder or date, and ask about the file you include. Answers quote the passage and link to it.
-* **Write with your approval:** the agent writes summaries, notes and drafts as Markdown or text files. Every change shows the whole text on an approval card first; nothing is saved until you allow it.
-* **AI marks:** files the agent writes are marked as AI-generated, in the file's metadata and, for Markdown, in its front matter.
+* **Write with your approval:** the agent writes summaries, notes and drafts as Markdown or text files. Every change shows the whole text on an approval card first; no file is created or changed until you allow it.
+* **AI marks:** files the agent writes are marked as AI-generated, in the file's metadata and, for Markdown, in its front matter, unless a file needs no mark (a translation, a correction or a short label).
 * **Stop everything:** one button stops the agent at once.
 
-**It needs your organisation's Fadenstack server.** The text of the files you include, and what the agent's tools read, go to that server and on to the AI model it uses. The server checks every tool call before it runs.
+**It needs your organisation's Fadenstack server.** Your messages, the chat so far, the text of the files you include and what the agent's tools read go to that server and on to the AI model your organisation chose. The server checks every tool call before it runs.
 
-The panel speaks English, German, Spanish, French and Chinese. This version is a preview. Help: https://help.fadenstack.com/agents/nextcloud/]]></description>
+The panel speaks English, German, Spanish, French and Chinese. This version is a preview. Help: https://help.fadenstack.com/agents/nextcloud/
+Privacy policy and terms: https://fadenstack.com/legal/nextcloud/]]></description>
 	<description lang="de"><![CDATA[Fadenstack Agent bringt den Fadenstack-KI-Agenten Ihrer Organisation in Nextcloud Dateien, in einem Panel neben Ihren Dateien.
 
 * **Finden und fragen:** Finden Sie Dateien nach Name, Typ, Ordner oder Datum, und fragen Sie zu der Datei, die Sie aufnehmen. Antworten zitieren die Textstelle und verlinken sie.
-* **Schreiben mit Ihrer Freigabe:** Der Agent schreibt Zusammenfassungen, Notizen und Entwürfe als Markdown- oder Textdateien. Jede Änderung zeigt zuerst den ganzen Text auf einer Freigabekarte; gespeichert wird erst, wenn Sie zulassen.
-* **KI-Kennzeichnung:** Dateien, die der Agent schreibt, sind als KI-generiert gekennzeichnet, in den Metadaten der Datei und bei Markdown in ihrem Front Matter.
+* **Schreiben mit Ihrer Freigabe:** Der Agent schreibt Zusammenfassungen, Notizen und Entwürfe als Markdown- oder Textdateien. Jede Änderung zeigt zuerst den ganzen Text auf einer Freigabekarte; keine Datei wird angelegt oder geändert, bevor Sie zulassen.
+* **KI-Kennzeichnung:** Dateien, die der Agent schreibt, sind als KI-generiert gekennzeichnet, in den Metadaten der Datei und bei Markdown in ihrem Front Matter, außer eine Datei braucht keine Kennzeichnung (eine Übersetzung, eine Korrektur oder eine kurze Bezeichnung).
 * **Alles stoppen:** Eine Schaltfläche stoppt den Agenten sofort.
 
-**Er braucht den Fadenstack-Server Ihrer Organisation.** Der Text der Dateien, die Sie aufnehmen, und was die Tools des Agenten lesen, gehen an diesen Server und weiter an das KI-Modell, das er nutzt. Der Server prüft jeden Tool-Aufruf, bevor er läuft.
+**Er braucht den Fadenstack-Server Ihrer Organisation.** Ihre Nachrichten, der bisherige Chat, der Text der Dateien, die Sie aufnehmen, und was die Tools des Agenten lesen, gehen an diesen Server und weiter an das KI-Modell, das Ihre Organisation gewählt hat. Der Server prüft jeden Tool-Aufruf, bevor er läuft.
 
-Das Panel spricht Deutsch, Englisch, Spanisch, Französisch und Chinesisch. Diese Version ist eine Vorschau. Hilfe: https://help.fadenstack.com/de/agents/nextcloud/]]></description>
+Das Panel spricht Deutsch, Englisch, Spanisch, Französisch und Chinesisch. Diese Version ist eine Vorschau. Hilfe: https://help.fadenstack.com/de/agents/nextcloud/
+Datenschutzerklärung und Bedingungen: https://fadenstack.com/de/legal/nextcloud/]]></description>
 	<description lang="es"><![CDATA[Fadenstack Agent lleva el agente de IA de Fadenstack de su organización a Archivos de Nextcloud, en un panel junto a sus archivos.
 
 * **Buscar y preguntar:** busque archivos por nombre, tipo, carpeta o fecha, y pregunte por el archivo que incluya. Las respuestas citan el pasaje y enlazan a él.
-* **Escribir con su aprobación:** el agente escribe resúmenes, notas y borradores como archivos Markdown o de texto. Cada cambio muestra primero el texto completo en una tarjeta de aprobación; no se guarda nada hasta que usted lo permita.
-* **Marcas de IA:** los archivos que escribe el agente se marcan como generados por IA, en los metadatos del archivo y, en Markdown, en su front matter.
+* **Escribir con su aprobación:** el agente escribe resúmenes, notas y borradores como archivos Markdown o de texto. Cada cambio muestra primero el texto completo en una tarjeta de aprobación; no se crea ni se modifica ningún archivo hasta que usted lo permita.
+* **Marcas de IA:** los archivos que escribe el agente se marcan como generados por IA, en los metadatos del archivo y, en Markdown, en su front matter, salvo que un archivo no necesite marca (una traducción, una corrección o una etiqueta breve).
 * **Detenerlo todo:** un botón detiene el agente al instante.
 
-**Necesita el servidor Fadenstack de su organización.** El texto de los archivos que incluya y lo que leen las herramientas del agente van a ese servidor y de ahí al modelo de IA que utiliza. El servidor comprueba cada llamada a una herramienta antes de que se ejecute.
+**Necesita el servidor Fadenstack de su organización.** Sus mensajes, el chat hasta ahora, el texto de los archivos que incluya y lo que leen las herramientas del agente van a ese servidor y de ahí al modelo de IA que eligió su organización. El servidor comprueba cada llamada a una herramienta antes de que se ejecute.
 
-El panel está en español, alemán, inglés, francés y chino. Esta versión es una vista previa. Ayuda (en inglés): https://help.fadenstack.com/agents/nextcloud/]]></description>
+El panel está en español, alemán, inglés, francés y chino. Esta versión es una vista previa. Ayuda (en inglés): https://help.fadenstack.com/agents/nextcloud/
+Privacidad y condiciones (en inglés): https://fadenstack.com/legal/nextcloud/]]></description>
 	<description lang="fr"><![CDATA[Fadenstack Agent apporte l’agent IA Fadenstack de votre organisation dans Fichiers de Nextcloud, dans un panneau à côté de vos fichiers.
 
-* **Trouver et demander :** trouvez des fichiers par nom, type, dossier ou date, et posez des questions sur le fichier que vous incluez. Les réponses citent le passage et y renvoient.
-* **Écrire avec votre approbation :** l’agent écrit des résumés, des notes et des brouillons en fichiers Markdown ou texte. Chaque modification affiche d’abord le texte complet sur une carte d’approbation ; rien n’est enregistré avant que vous l’autorisiez.
-* **Marques d’IA :** les fichiers écrits par l’agent sont marqués comme générés par IA, dans les métadonnées du fichier et, pour Markdown, dans son front matter.
-* **Tout arrêter :** un bouton arrête l’agent immédiatement.
+* **Trouver et demander :** trouvez des fichiers par nom, type, dossier ou date, et posez des questions sur le fichier que vous incluez. Les réponses citent le passage et y renvoient.
+* **Écrire avec votre approbation :** l’agent écrit des résumés, des notes et des brouillons en fichiers Markdown ou texte. Chaque modification affiche d’abord le texte complet sur une carte d’approbation ; aucun fichier n’est créé ni modifié avant que vous l’autorisiez.
+* **Marques d’IA :** les fichiers écrits par l’agent sont marqués comme générés par IA, dans les métadonnées du fichier et, pour Markdown, dans son front matter, sauf si un fichier n’a pas besoin de marque (une traduction, une correction ou un libellé court).
+* **Tout arrêter :** un bouton arrête l’agent immédiatement.
 
-**Il a besoin du serveur Fadenstack de votre organisation.** Le texte des fichiers que vous incluez et ce que lisent les outils de l’agent vont à ce serveur, puis au modèle d’IA qu’il utilise. Le serveur vérifie chaque appel d’outil avant son exécution.
+**Il a besoin du serveur Fadenstack de votre organisation.** Vos messages, la conversation jusqu’ici, le texte des fichiers que vous incluez et ce que lisent les outils de l’agent vont à ce serveur, puis au modèle d’IA choisi par votre organisation. Le serveur vérifie chaque appel d’outil avant son exécution.
 
-Le panneau est disponible en français, allemand, anglais, espagnol et chinois. Cette version est une préversion. Aide (en anglais) : https://help.fadenstack.com/agents/nextcloud/]]></description>
+Le panneau est disponible en français, allemand, anglais, espagnol et chinois. Cette version est une préversion. Aide (en anglais) : https://help.fadenstack.com/agents/nextcloud/
+Confidentialité et conditions (en anglais) : https://fadenstack.com/legal/nextcloud/]]></description>
 	<description lang="zh-hans"><![CDATA[Fadenstack Agent 将贵组织的 Fadenstack AI 智能体带入 Nextcloud 文件，以面板形式显示在您的文件旁边。
 
 * **查找与提问：**按名称、类型、文件夹或日期查找文件，并就您纳入的文件提问。回答会引用相关段落并附上链接。
-* **经您审批后写入：**智能体以 Markdown 或文本文件的形式编写摘要、笔记和草稿。每次更改都会先在审批卡片上显示完整文本；在您允许之前不会保存任何内容。
-* **AI 标记：**智能体编写的文件会被标记为人工智能生成，标记写在文件元数据中，Markdown 文件还会写在其 front matter 中。
+* **经您审批后写入：**智能体以 Markdown 或文本文件的形式编写摘要、笔记和草稿。每次更改都会先在审批卡片上显示完整文本；在您允许之前，不会创建或更改任何文件。
+* **AI 标记：**智能体编写的文件会被标记为人工智能生成，标记写在文件元数据中，Markdown 文件还会写在其 front matter 中；无需标记的文件（翻译、更正或简短标签）除外。
 * **全部停止：**一个按钮即可立即停止智能体。
 
-**需要贵组织的 Fadenstack 服务器。**您纳入的文件文本以及智能体工具读取的内容会发送到该服务器，再发送到其使用的 AI 模型。服务器会在每次工具调用运行前进行检查。
+**需要贵组织的 Fadenstack 服务器。**您的消息、到目前为止的聊天、您纳入的文件文本以及智能体工具读取的内容会发送到该服务器，再发送到贵组织选择的 AI 模型。服务器会在每次工具调用运行前进行检查。
 
-面板支持中文、英文、德文、西班牙文和法文。此版本为预览版。帮助（英文）：https://help.fadenstack.com/agents/nextcloud/]]></description>
+面板支持中文、英文、德文、西班牙文和法文。此版本为预览版。帮助（英文）：https://help.fadenstack.com/agents/nextcloud/
+隐私政策和条款（英文）：https://fadenstack.com/legal/nextcloud/]]></description>
 	<version>0.2.0-beta.1</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author homepage="https://fadenstack.com">Fadenstack</author>

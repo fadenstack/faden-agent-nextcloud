@@ -32,5 +32,8 @@ certificate Nextcloud issued for it (`fadenstack_agent.crt`) never enter this re
    fadenstack_agent-<version>-signed.tar.gz | openssl base64 -A`.
 6. Add the signed package to the GitHub release, and say in the release notes that it is the release's package plus
    `appinfo/signature.json`, with its SHA-256.
-7. On apps.nextcloud.com, under **Upload app release**, give its download address and the signature from step 5. A
-   version with a suffix is a pre-release in the store too.
+7. Before the store shows the listing, check that every address it names answers: the user help
+   (`https://help.fadenstack.com/agents/nextcloud/` and `/de/…`), the legal pages (`https://fadenstack.com/legal/nextcloud/`
+   and `/de/…`) and the three screenshots in `appinfo/info.xml`. Then, on apps.nextcloud.com, under **Upload app
+   release**, give the signed package's download address and the signature from step 5. A version with a suffix is a
+   pre-release in the store too.
