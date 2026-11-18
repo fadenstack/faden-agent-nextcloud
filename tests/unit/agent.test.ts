@@ -737,6 +737,19 @@ describe('The SDK panel in Nextcloud', () => {
 		}
 	})
 
+	it('names this app in its links to fadenstack.com: ref nextcloud-panel in the footer, nextcloud-about in About', async () => {
+		const { host } = fixture()
+		await host.signIn('alice', 'test')
+		try {
+			const footer = new URL(host.chat.footerLink!.href)
+			expect(footer.origin).toBe('https://fadenstack.com')
+			expect(footer.searchParams.get('ref')).toBe('nextcloud-panel')
+			const ours = host.chat.about.links.map(link => new URL(link.href)).filter(url => url.hostname.endsWith('fadenstack.com'))
+			expect(ours.length).toBeGreaterThan(0)
+			for (const url of ours) expect(url.searchParams.get('ref')).toBe('nextcloud-about')
+		} finally { await host.dispose() }
+	})
+
 	it('the SDK gives the composer the AI notice as its description, so a screen reader reads it on focus (Art. 50(5))', async () => {
 		vi.stubGlobal('ResizeObserver', class {
 

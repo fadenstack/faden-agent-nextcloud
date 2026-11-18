@@ -615,6 +615,9 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			automaticLanguage: locale,
 			languages: nextcloudLanguages,
 			preferences: userPreferences(config.userId),
+			// The panel's links to fadenstack.com (the footer, About) say they came from this app: ref=nextcloud-panel,
+			// ref=nextcloud-about. The support page names the agent in its mail's subject from it.
+			refSource: 'nextcloud',
 			// Every message, from the composer, a suggestion or Retry, first checks the Nextcloud session and
 			// takes the file context it includes; the turn's tools read that context until it ends.
 			beforeSend: (_message, signal) => this.#prepare(signal).catch(error => this.#refused(error, signal)),

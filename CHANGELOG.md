@@ -63,6 +63,9 @@ only with a Fadenstack server (governed mode). See
 - The administrator guide says that the action journal is written for every
   approved change, whether history is on or off, and for how long.
 - German texts address the reader as "Sie" throughout.
+- The panel's links to fadenstack.com (the line under the composer, About) say
+  they came from the Nextcloud agent (`ref=nextcloud-panel`, `ref=nextcloud-about`)
+  instead of the SDK's default `sdk`.
 - Routine "not marked" notices follow the shared preference; real marking
   failures stay visible.
 - The browser CORS helper covers pairing, sign-in revocation and the SDK's
@@ -113,6 +116,7 @@ of this release.
 | Added | Record of tool calls: one entry per call, with `time`, `app`, `agent`, `chat`, `turn`, `tool`, `class`, `source`, `server`, `decision`, `scope`, `outcome` and `argumentsSha256` (no content) | Kept in the page's memory only (the SDK's `MemoryAuditLog`); no browser database | G | Shows the person what the agent did and who allowed it | On; no switch | Gone when the page closes | Yes |
 | Changed | Action journal (`fdn_journal` and its `fdn_jr_*` tables: which change the agent made for whom, when, its state and an encrypted snapshot) and open approvals (`fdn_provider_tickets`) | Nextcloud's database | G | Undo and Redo of approved changes | On; no one | Was: 7 days for snapshots, 30 days for the rest, also after the account was deleted. Now also erased when the account is deleted, and when the app is disabled or removed | Yes (it records what a person had the agent do) |
 | Changed | A person's workflow-engine keys (user preferences `engine_connection_*`) | Nextcloud's database, sealed with the instance secret | G | Run n8n and Windmill workflows under the person's own key | Set by the person | Was: until the person disconnects or the account is deleted. Now also erased when the app is disabled or removed | No |
+| Changed | Link parameter `ref` (`nextcloud-panel`, `nextcloud-about`; before, `sdk-panel` and `sdk-about`) and `v` (the SDK's major.minor) | In the address of a fadenstack.com page the person opens from the panel; reaches fadenstack.com only when they open it | G | Lets the website and its support page tell which agent a visit came from | On; no one | Per fadenstack.com's privacy policy | No |
 | Changed | App manifest `version` | Sent to the organisation's Fadenstack server, `PUT /v1/agents/{agent}/manifest` | G | Now the app's own version; before, a fixed "0.1.5" | On; no one | Per the server's manifest records | No |
 
 **Kept on the device: nothing new.** The record of tool calls above stays in the
