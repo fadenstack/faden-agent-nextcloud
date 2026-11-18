@@ -60,9 +60,10 @@ The details below record earlier versions' limits and remain valid where they st
   streamed writes require separate acceptance; this is not a universal transaction
   around other installed apps' hooks.
 - Folder output is bounded, but Nextcloud materializes the underlying directory.
-- Primary German elements are translated; server/profile/error text can remain English.
-  The AI-mark line under a write is translated into German, French, Spanish and
-  Simplified Chinese; the app's other texts have German only.
+- The app's own screens are in English, German, Spanish, French and Simplified
+  Chinese, as the SDK's panel is. Messages that come from the Nextcloud server's
+  side of the app (for example "The selected file changed. Select and include it
+  again.") and from the Fadenstack server can remain English.
 - Historical carrier measurements on 31.0.14 and 35.0.1 found metadata surviving rename,
   move, copy (the app's listener, also in a copied folder), new versions, Text's
   saves, shares and the trash. A recipient of a single-file share does not see it

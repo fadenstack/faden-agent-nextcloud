@@ -63,6 +63,12 @@ only with a Fadenstack server (governed mode). See
 - The administrator guide says that the action journal is written for every
   approved change, whether history is on or off, and for how long.
 - German texts address the reader as "Sie" throughout.
+- The app's own screens are in German, Spanish, French and Simplified Chinese:
+  all 416 of its strings (German had 89 of them, the others 16), in the SDK
+  panel's words wherever the meaning is the same, so panel and app read alike.
+  A test keeps every catalogue complete, with the same placeholders. 21 German
+  strings and one in each other language that the app no longer shows were
+  removed, among them "Allow once" (the card says "Allow").
 - About (in the panel's settings) has "Help and contact", which opens Fadenstack's
   support page in a new tab (SDK 0.3.0).
 - The panel's links to fadenstack.com (the line under the composer, About) say

@@ -68,7 +68,7 @@ erlaubt der Nextcloud-Adresse, den Server aus dem Browser aufzurufen.
 
 | Sie sehen | Was zu tun ist |
 |---|---|
-| **Bitten Sie Ihren Administrator, Fadenstack Agent unter Zusätzliche Einstellungen einzurichten und zu aktivieren.** | Die App ist installiert, aber noch nicht verbunden. Ihr Nextcloud-Administrator führt die obigen Schritte aus |
+| **Bitten Sie Ihre Administration, Fadenstack Agent unter Zusätzliche Einstellungen einzurichten und zu aktivieren.** | Die App ist installiert, aber noch nicht verbunden. Ihr Nextcloud-Administrator führt die obigen Schritte aus |
 | Keine Fadenstack-Schaltfläche in der oberen Leiste | Die App ist für Sie nicht aktiviert. Fragen Sie Ihren Nextcloud-Administrator |
 | **Verbindung nicht verfügbar** in **Details zum Assistenten** | Die Adresse des Fadenstack-Servers in den Einstellungen von Nextcloud ist nicht gültig. Fragen Sie Ihren Nextcloud-Administrator |
 

@@ -7,7 +7,7 @@ abgelehnt oder gestoppt, wurde nichts gespeichert, außer der Chat sagt **Gespei
 
 | Sie sehen | Was zu tun ist |
 |---|---|
-| **Bitten Sie Ihren Administrator, Fadenstack Agent unter Zusätzliche Einstellungen einzurichten und zu aktivieren.** | Die App ist noch nicht mit einem Fadenstack-Server verbunden. Ihr Nextcloud-Administrator führt [die Einrichtung](get-started.md#install) durch |
+| **Bitten Sie Ihre Administration, Fadenstack Agent unter Zusätzliche Einstellungen einzurichten und zu aktivieren.** | Die App ist noch nicht mit einem Fadenstack-Server verbunden. Ihr Nextcloud-Administrator führt [die Einrichtung](get-started.md#install) durch |
 | **Verbindung nicht verfügbar** in **Details zum Assistenten** | Die Adresse des Fadenstack-Servers in den Einstellungen von Nextcloud ist nicht gültig. Fragen Sie Ihren Nextcloud-Administrator |
 | Das Panel erreicht den Fadenstack-Server Ihrer Organisation nicht | Versuchen Sie es später noch einmal. Bleibt es so, sagen Sie Ihrem Administrator Bescheid |
 | **Ihre Anmeldung ist abgelaufen. Melden Sie sich erneut an.** | Melden Sie sich erneut an: siehe [Anmelden](sign-in.md) |
@@ -36,7 +36,7 @@ abgelehnt oder gestoppt, wurde nichts gespeichert, außer der Chat sagt **Gespei
 | **Nextcloud confirmed the file save. Start a new conversation; …** | Die Datei wurde gespeichert, aber der Chat kann nicht sicher weitergehen. Wählen Sie **Neuer Chat** |
 | **Nextcloud confirmed the Files action. Start a new conversation; …** | Dasselbe, nach einer Aktion an Dateien. Wählen Sie **Neuer Chat** |
 | **Ohne KI-Kennzeichnung gespeichert:** und ein Grund | Die Datei wurde gespeichert, aber nicht gekennzeichnet: siehe [KI-Kennzeichnung](ai-marks.md) |
-| **Undo file change** wird nicht angeboten | Rückgängigmachen braucht den Verlauf des Agenten (Ihr Administrator schaltet ihn ein), klappt bis zu 7 Tage nach der Änderung und nur, solange niemand die Datei seither bearbeitet hat. Nutzen Sie stattdessen die **Versionen** der Datei in Nextcloud |
+| **Dateiänderung rückgängig machen** wird nicht angeboten | Rückgängigmachen braucht den Verlauf des Agenten (Ihr Administrator schaltet ihn ein), klappt bis zu 7 Tage nach der Änderung und nur, solange niemand die Datei seither bearbeitet hat. Nutzen Sie stattdessen die **Versionen** der Datei in Nextcloud |
 
 ## Antworten {#answers}
 

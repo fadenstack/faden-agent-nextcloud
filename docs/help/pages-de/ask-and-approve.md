@@ -104,15 +104,15 @@ Sie nicht gebeten haben.
 
 ## Eine Änderung rückgängig machen {#undo}
 
-Hat Ihr Administrator den Verlauf des Agenten eingeschaltet, listet die Schaltfläche **Agent actions** in der
-Kopfzeile auf, was der Agent geändert hat, und bietet bei der Aktualisierung einer Textdatei **Undo file change** und
-**Redo file change** an. Jedes Rückgängigmachen oder Wiederholen zeigt eine eigene Karte und braucht
+Hat Ihr Administrator den Verlauf des Agenten eingeschaltet, listet die Schaltfläche **Aktionen des Agenten** in der
+Kopfzeile auf, was der Agent geändert hat, und bietet bei der Aktualisierung einer Textdatei **Dateiänderung rückgängig machen** und
+**Dateiänderung wiederholen** an. Jedes Rückgängigmachen oder Wiederholen zeigt eine eigene Karte und braucht
 **Zulassen**.
 
 ??? info "Mehr zum Rückgängigmachen"
     - Rückgängigmachen klappt bis zu 7 Tage nach der Änderung und nur, solange niemand die Datei seither bearbeitet
       hat.
-    - Ist das Ergebnis einer Änderung unklar, bietet der Eintrag **Inspect outcome** an: Er vergleicht die Datei mit
+    - Ist das Ergebnis einer Änderung unklar, bietet der Eintrag **Ergebnis prüfen** an: Er vergleicht die Datei mit
       dem, was beabsichtigt war, und hält fest, was er findet, ohne die Datei zu ändern.
     - Ohne den Verlauf des Agenten nutzen Sie die Dateiversionen von Nextcloud (**Versionen** in den Details der
       Datei).
