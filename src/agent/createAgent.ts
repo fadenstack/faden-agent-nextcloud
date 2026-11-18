@@ -101,6 +101,7 @@ import { CONTENT_MUTATIONS, nativeContentTools, nativeEngineReadTools, nativeEng
 import { nativeCalendarDate } from '../providers/davDate.ts'
 import { reportEnginePlacement, type PlacementReporter } from '../providers/enginePlacement.ts'
 import { currentEngineSurface, workflowSource, type EngineSurface, type WorkflowTarget } from '../workspace/engineSurface.ts'
+import { APP_VERSION } from '../version.ts'
 
 export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentWithContacts {
 
@@ -604,7 +605,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			})
 			// What the app brings, for the agent's Apps tab: its tools, the context it offers, and the greeting and
 			// suggestions an administrator can take in, so the empty chat starts with ready questions.
-			.describeApp({ name: 'Nextcloud Files', version: '0.1.17', context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
+			.describeApp({ name: 'Nextcloud Files', version: APP_VERSION, context: [{ id: 'nextcloud:selected', title: 'User-included file or folder', kind: 'document' }], ui: { greeting: APP_UI.greeting, suggestions: [...APP_UI.suggestions] } })
 			.build()
 		this.chat = new AgentChatViewModel(this.agent, this.approvals, {
 			// The browser's clipboard, link opener and file saving (SDK 0.3.0 asks the host for them); the
@@ -644,7 +645,7 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	}
 
 	startPairing(signal?: AbortSignal): Promise<PairingStart> {
-		return this.#pairing.start(this.config.agent, 'Nextcloud Files', { name: 'Fadenstack Nextcloud', version: '0.1.17', os: 'Browser' },
+		return this.#pairing.start(this.config.agent, 'Nextcloud Files', { name: 'Fadenstack Nextcloud', version: APP_VERSION, os: 'Browser' },
 			{ signal: signal ? AbortSignal.any([signal, this.#stop.signal]) : this.#stop.signal })
 	}
 

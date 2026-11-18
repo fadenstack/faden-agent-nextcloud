@@ -45,6 +45,13 @@ only with a Fadenstack server (governed mode). See
   until 8 December 2031.
 - The release package carries `SECURITY.md` and `CHANGELOG.md`, and its
   third-party inventory names a licence for every component.
+- A release workflow: a tag builds the package and a GitHub release, and core's
+  shared supply-chain workflow adds the SBOM (CycloneDX, BSI TR-03183-2), the
+  vulnerability report (OpenVEX, CSAF), a keyless cosign signature and GitHub's
+  attestations. Run by hand it is a dry run. RELEASING.md says how the package
+  is signed with the app's key for the App Store, which stays outside GitHub.
+- `scripts/version.mjs` sets and checks the version in package.json, its lock,
+  `appinfo/info.xml` and what the app reports to the Fadenstack server.
 
 ### Changed
 
@@ -57,9 +64,10 @@ only with a Fadenstack server (governed mode). See
 - The administrator's development checkbox is now "Experimental: development
   mode", off by default, with a warning in five languages: Mail, Talk and the
   workflow engines are untested in this mode and send content to other people.
-- The store description says that the text of the files you include, and what
-  the agent's tools read, go to the organisation's Fadenstack server and on to its
-  model.
+- The store listing is in English, German, Spanish, French and Simplified
+  Chinese, with three screenshots and links to the user help and the source.
+  It says that the text of the files you include, and what the agent's tools
+  read, go to the organisation's Fadenstack server and on to its model.
 - The administrator guide says that the action journal is written for every
   approved change, whether history is on or off, and for how long.
 - German texts address the reader as "Sie" throughout.
