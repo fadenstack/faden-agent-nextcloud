@@ -29,6 +29,16 @@ to be written), so that your organisation's rules can allow or refuse it.
 - **The record of tool calls**: each tool call shows in the chat, with what was decided. The agent's record of them
   stays in the page's memory and is gone with the page. The lasting records are the server's (above) and
   Nextcloud's (below).
+- **A log of the agent's own work**: which requests it made to the server and when, which tools ran, and errors,
+  never your messages, the answers, file contents or what a tool was given. It keeps at most 500 entries for up to
+  7 days, in your browser and for your account only. **Report a problem** copies its last entries for your IT.
+
+## Your data in this browser {#your-data-in-this-browser}
+
+Open the settings (the gear in the panel's header) and select **Your data in this browser**:
+
+- **Export my data** saves what the agent keeps for you in this browser as a file.
+- **Remove my data…** deletes it, after asking: the log and the panel's settings.
 
 ## Export a chat
 
@@ -54,6 +64,8 @@ content of your files or chats.
 ## Remove your data
 
 - **Chats**: close or reload the page.
+- **The log and the panel's settings**: **Remove my data…** in **Your data in this browser** (above). The log also
+  removes its own entries after 7 days.
 - **Your Nextcloud account deleted**: Nextcloud erases your records of the agent's changes at once. If that fails,
   they expire as the table above says.
 - **The app disabled or removed** by your administrator: Nextcloud erases all records of the agent's changes and the

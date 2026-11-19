@@ -2,7 +2,8 @@
 import { computed, h, nextTick, ref, watch } from 'vue'
 import { t } from '@nextcloud/l10n'
 import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
-import { AgentAvatar, ChatPanel, Icon, StopEverythingButton, ToolCallView, type ChatTheme, type PartRenderer } from '@fadenstack/ui-vue'
+import { AgentAvatar, ChatPanel, Icon, MyDataSettings, StopEverythingButton, ToolCallView, type ChatTheme, type PartRenderer } from '@fadenstack/ui-vue'
+import NcDialog from '@nextcloud/vue/components/NcDialog'
 import '@fadenstack/ui-web/styles.css'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { useObservable } from '../agent/useObservable.ts'
@@ -82,6 +83,14 @@ const contextLabel = computed(() => {
 const detailsOpen = ref(false)
 const actionsOpen = ref(false)
 const engineConnectionsOpen = ref(false)
+// "Your data in this browser" (the SDK's control): its view model reads the stores once, then on each opening.
+const myDataOpen = ref(false)
+let myDataLoaded = false
+function openMyData() {
+	chat.setSettingsOpen(false)
+	myDataOpen.value = true
+	if (!myDataLoaded) { myDataLoaded = true; void props.host.myData.load() }
+}
 const detailsButton = ref<HTMLButtonElement>()
 let detailsTrigger: HTMLElement | undefined
 function openDetails(event: Event) {
@@ -138,6 +147,7 @@ function escape(event: KeyboardEvent) {
 	event.stopPropagation()
 	if (detailsOpen.value) void closeDetails()
 	else if (engineConnectionsOpen.value) engineConnectionsOpen.value = false
+	else if (myDataOpen.value) myDataOpen.value = false
 	else if (actionsOpen.value) actionsOpen.value = false
 	else if (chat.isSettingsOpen || chat.isModeMenuOpen || chat.isHistoryOpen) {
 		chat.setSettingsOpen(false)
@@ -194,6 +204,14 @@ function signOut() {
 					@click="chat.setSettingsOpen(false); engineConnectionsOpen = true">
 					<span class="fdn-menu-check" />
 					<span class="fdn-menu-label">{{ t('fadenstack_agent', 'Workflow connections') }}</span>
+				</button>
+				<button type="button"
+					role="menuitem"
+					class="fdn-menu-item"
+					aria-haspopup="dialog"
+					@click="openMyData">
+					<span class="fdn-menu-check" />
+					<span class="fdn-menu-label">{{ chat.strings.myDataTitle }}</span>
 				</button>
 				<button type="button"
 					role="menuitem"
@@ -257,6 +275,12 @@ function signOut() {
 			</template>
 		</ChatPanel>
 		<ActionHistory v-if="actionsOpen" :host="host" @close="actionsOpen = false" />
+		<NcDialog v-if="myDataOpen"
+			:open="true"
+			:name="chat.strings.myDataTitle"
+			@update:open="myDataOpen = $event; chat.requestComposerFocus()">
+			<MyDataSettings :settings="host.myData" :theme="theme" />
+		</NcDialog>
 		<EngineConnections v-if="engineConnectionsOpen && host.files.nativeProviders"
 			:api="host.files.nativeProviders"
 			@close="engineConnectionsOpen = false; chat.requestComposerFocus()" />

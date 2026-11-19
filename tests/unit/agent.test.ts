@@ -6,6 +6,7 @@ import { ApprovalPart } from '@fadenstack/ui'
 import { createApp, markRaw, nextTick } from 'vue'
 import AgentChat from '../../src/components/AgentChat.vue'
 import { NextcloudAgent } from '../../src/agent/createAgent.ts'
+import { APP_VERSION } from '../../src/version.ts'
 import { APP_UI } from '../../src/agent/appUi.ts'
 import contract from '../../contracts/nextcloud-pilot.json'
 import { SelectedContext } from '../../src/integrations/nextcloud/context.ts'
@@ -764,6 +765,87 @@ describe('The SDK panel in Nextcloud', () => {
 			await sending?.catch(() => {})
 			app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals()
 		}
+	})
+
+	it('keeps the SDK\'s browser log; "Copy details" in Report a problem adds its entries, without tool names, and governed without an address writes no mail', async () => {
+		const clipboard = { writeText: vi.fn(async (_text: string) => {}), write: vi.fn(async () => {}) }
+		Object.defineProperty(navigator, 'clipboard', { value: clipboard, configurable: true })
+		let round = 0
+		const { host } = fixture({ model: () => ++round === 1 ? { toolCalls: [{ id: 'read', name: 'nc_read_file', arguments: {} }] } : { text: 'Read.' } })
+		try {
+			await host.signIn('alice', 'test'); host.offerSelection(await host.selection.select(2))
+			await host.send('Read the included file', true)
+			expect(host.agent.browserLog).toBeDefined()
+			host.chat.openReportProblem()
+			expect(host.chat.reportProblem).toMatchObject({ canWriteMail: false, address: undefined, help: { href: 'https://faden.test/help/' } })
+			expect(await host.chat.copyReportDetails()).toBe(true)
+			const copied = clipboard.writeText.mock.calls.at(-1)![0]
+			expect(copied).toContain('Recent log:')
+			expect(copied).toContain('POST /v1/agents/nc/chat/completions answered 200')
+			// Tool names are names somebody chose: the copy says [tool], never the name; no chat text either.
+			expect(copied).toContain('Tool [tool]')
+			expect(copied).not.toMatch(/nc_[a-z_]+/)
+			expect(copied).not.toContain('Read the included file')
+			expect(copied).not.toContain('Source text')
+		} finally {
+			Reflect.deleteProperty(navigator, 'clipboard')
+			await host.dispose()
+		}
+	})
+
+	it('opens links in an answer only for http and https', async () => {
+		vi.stubGlobal('ResizeObserver', class {
+
+			observe() {} disconnect() {}
+
+		})
+		const { host } = fixture({ model: () => ({ text: 'See [mail](mailto:alex@example.com), [file](file:///etc/hosts) and [site](https://example.com/a).' }) })
+		await host.signIn('alice', 'test')
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(AgentChat, { host: markRaw(host), context: selected })
+		app.mount(root)
+		try {
+			await host.send('Links, please')
+			await nextTick()
+			const answer = [...root.querySelectorAll('.fdn-md')].at(-1)!
+			expect([...answer.querySelectorAll('a')].map(a => a.getAttribute('href'))).toEqual(['https://example.com/a'])
+			expect(answer.textContent).toContain('mail')
+			expect(answer.textContent).toContain('file')
+		} finally { app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals() }
+	})
+
+	it('names the app in quotes in About, with its version', async () => {
+		const { host } = fixture()
+		try {
+			await host.signIn('alice', 'test')
+			expect(host.chat.about.environment[0]).toBe(`Runs in the app "Nextcloud Files" ${APP_VERSION}`)
+		} finally { await host.dispose() }
+	})
+
+	it('offers "Your data in this browser" in the settings, which exports and removes what the SDK keeps here', async () => {
+		vi.stubGlobal('ResizeObserver', class {
+
+			observe() {} disconnect() {}
+
+		})
+		const { host } = fixture()
+		await host.signIn('alice', 'test')
+		const root = document.createElement('div')
+		document.body.append(root)
+		const app = createApp(AgentChat, { host: markRaw(host), context: selected })
+		app.mount(root)
+		try {
+			host.chat.setSettingsOpen(true)
+			await nextTick()
+			const item = [...root.querySelectorAll<HTMLButtonElement>('.fdn-menu-item')].find(button => button.textContent?.trim() === host.chat.strings.myDataTitle)
+			expect(item).toBeDefined()
+			item!.click()
+			await vi.waitFor(() => expect(document.body.textContent).toContain(host.chat.strings.myDataExport))
+			expect(document.body.textContent).toContain(host.chat.strings.myDataRemove)
+			// Nextcloud's dialog sets up its focus trap after it opens; let it, so unmounting does not race it.
+			await new Promise(resolve => setTimeout(resolve, 100))
+		} finally { app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals() }
 	})
 
 	it('names this app in its links to fadenstack.com, and About has Help and contact to the support page', async () => {

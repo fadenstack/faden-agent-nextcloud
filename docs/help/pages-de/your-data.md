@@ -34,6 +34,18 @@ ablehnen können.
 - **Die Aufzeichnung der Tool-Aufrufe**: Jeder Tool-Aufruf erscheint im Chat, mit dem, was entschieden wurde. Die
   Aufzeichnung des Agenten dazu bleibt im Speicher der Seite und ist mit der Seite weg. Die dauerhaften
   Aufzeichnungen sind die des Servers (oben) und die von Nextcloud (unten).
+- **Ein Protokoll der Arbeit des Agenten**: welche Anfragen er wann an den Server gestellt hat, welche Tools liefen,
+  und Fehler, nie Ihre Nachrichten, die Antworten, Dateiinhalte oder was ein Tool bekommen hat. Es hält höchstens
+  500 Einträge für bis zu 7 Tage, in Ihrem Browser und nur für Ihr Konto. **Problem melden** kopiert seine letzten
+  Einträge für Ihre IT.
+
+## Ihre Daten in diesem Browser {#your-data-in-this-browser}
+
+Öffnen Sie die Einstellungen (das Zahnrad in der Kopfzeile des Panels) und wählen Sie **Ihre Daten in diesem
+Browser**:
+
+- **Meine Daten exportieren** speichert, was der Agent in diesem Browser für Sie aufbewahrt, als Datei.
+- **Meine Daten entfernen…** löscht es nach einer Rückfrage: das Protokoll und die Einstellungen des Panels.
 
 ## Einen Chat exportieren {#export-a-chat}
 
@@ -60,6 +72,8 @@ eigene Protokoll von Nextcloud enthält keine Inhalte Ihrer Dateien oder Chats.
 ## Ihre Daten entfernen {#remove-your-data}
 
 - **Chats**: Schließen Sie die Seite oder laden Sie sie neu.
+- **Das Protokoll und die Einstellungen des Panels**: **Meine Daten entfernen…** unter **Ihre Daten in diesem
+  Browser** (oben). Das Protokoll entfernt seine Einträge außerdem nach 7 Tagen selbst.
 - **Ihr Nextcloud-Konto wird gelöscht**: Nextcloud löscht Ihre Aufzeichnungen der Änderungen des Agenten sofort.
   Schlägt das fehl, laufen sie ab, wie die Tabelle oben sagt.
 - **Die App wird von Ihrem Administrator deaktiviert oder entfernt**: Nextcloud löscht alle Aufzeichnungen der

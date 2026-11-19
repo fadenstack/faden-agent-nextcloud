@@ -31,7 +31,9 @@ erklären die Teile, die er mit dem Server gemeinsam hat:
 ## Hilfe bekommen {#ask-for-help}
 
 - **Bei der Arbeit**: Fragen Sie zuerst Ihren Administrator. Er sieht die Einstellungen Ihrer Organisation für den
-  Agenten.
+  Agenten. Im Panel sagt **Problem melden** unter **Info** (in den Einstellungen), wen Sie fragen, und **Details
+  kopieren** kopiert, was dabei hilft: die Versionen, die Zeit und das letzte Protokoll des Agenten, nichts aus
+  Ihren Chats.
 - **Der Support von Fadenstack**: [fadenstack.com/de/support](https://fadenstack.com/de/support/). Im Panel öffnet
   ihn auch **Hilfe und Kontakt** unter **Info** (in den Einstellungen).
 - **Ein Problem im Code der App**: Die App ist freie Software, ihr Quellcode und ihr Issue-Tracker liegen unter

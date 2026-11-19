@@ -104,18 +104,6 @@
 }
 /* stylelint-enable csstools/use-logical */
 
-/* Keep the SDK's menu state/dismissal, but anchor popovers to the whole narrow header. */
-.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header > .fdn-menu-anchor {
-	position: static;
-}
-
-.fadenstack-panel .fdn-chat[data-theme=nextcloud] .fdn-header > .fdn-menu-anchor > .fdn-menu {
-	inset-inline-end: calc(var(--default-grid-baseline, 4px) * 2);
-	min-width: min(260px, calc(100% - 16px));
-	max-width: calc(100% - 16px);
-	overflow-wrap: anywhere;
-}
-
 /* Nextcloud styles every button and text field; only this embedded instance resets them. */
 .fadenstack-panel .fdn-chat[data-theme=nextcloud] button {
 	min-height: var(--default-clickable-area, 34px);
@@ -290,16 +278,13 @@
 }
 
 /*
- * "Stop everything" in the panel header. The SDK's root also carries .fdn-chat (a column with the panel's height and
- * background), so it is set back to a button of the header's size. Its result line shows under the button for its
- * 8 seconds, like the header's menus, so the narrow drawer's header neither wraps nor moves.
+ * "Stop everything" in the panel header: its result line shows under the button for its 8 seconds, like the header's
+ * menus. Beside the button, where the SDK puts it, it does not fit Nextcloud's header, which also holds Agent actions,
+ * the assistant's details and room for the native close button: the header would grow and push the settings button
+ * out of the panel (checked at 420 px with SDK 0.3.1-rc.1).
  */
 .fadenstack-panel .fdn-header .fdn-stop-everything {
 	position: relative;
-	flex: 0 0 auto;
-	flex-direction: row;
-	height: auto;
-	background: transparent;
 }
 
 .fadenstack-panel .fdn-header .fdn-stop-everything-result:not(:empty) {

@@ -48,6 +48,8 @@
 "Wo werden meine Chats in Nextcloud gespeichert?" = "what-stays-in-your-browser"
 "Gibt es in Nextcloud eine Aufzeichnung der Tool-Aufrufe des Agenten?" = "what-stays-in-your-browser"
 "Wie exportiere ich einen Chat aus dem Nextcloud-Agenten?" = "export-a-chat"
+"Führt der Nextcloud-Agent ein Protokoll in meinem Browser?" = "what-stays-in-your-browser"
+"Wie entferne ich die Daten des Nextcloud-Agenten aus meinem Browser?" = "your-data-in-this-browser"
 "Was speichert Nextcloud zu den Änderungen des Agenten?" = "what-nextcloud-keeps"
 "Wie lösche ich meine Daten aus dem Nextcloud-Agenten?" = "remove-your-data"
 
@@ -69,6 +71,7 @@
 ["more-help.md"]
 "Wo ist die Datenschutzerklärung des Nextcloud-Agenten?" = "privacy-and-terms"
 "Wo bekomme ich Hilfe zum Nextcloud-Agenten?" = "ask-for-help"
+"Wie melde ich ein Problem mit dem Nextcloud-Agenten?" = "ask-for-help"
 "Wie melde ich ein Sicherheitsproblem in der Nextcloud-App?" = "ask-for-help"
 
 ["product-information.md"]

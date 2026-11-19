@@ -34,6 +34,8 @@ runtime audit now lists picomatch's ReDoS advisory (GHSA-fc5q-39xc-vjpf) through
 and vue-router's build plugins; it is new, unrelated to the SDK, and not in the built
 bundle.
 
+**On SDK 0.3.1-rc.1 (from npm), 19 November.** The lockfile changes only the seven `@fadenstack` packages. The agent keeps the SDK's browser log (`useBrowserLog`); `tests/unit/agent.test.ts` checks that "Copy details" in "Report a problem" adds its entries with tool names replaced (`Tool [tool]`) and routes as templates (`POST /v1/agents/nc/chat/completions`), nothing of the chat, and that governed mode without an address from the organisation writes no mail and points to the server's Help; that an answer's links open only for http and https (`mailto:` and `file:` show as text); that About says `Runs in the app "Nextcloud Files" <version>`; and that "Your data in this browser" opens from the settings with "Export my data" and "Remove my data…". In a 420 px panel (the real AgentChat with the SDK's fake server, Chrome): the tool-mode, thinking, history and settings menus stay inside the panel without the app's old anchoring CSS. Stop everything's result line beside the button (the SDK's place) grew the header from 44 to 65 px and pushed the settings button out of the panel, so the app keeps it under the button (header 44 px, nothing out of the panel). The app has no logger of its own, so the SDK's Route template is all there is. vitest 859, vue-tsc, eslint, stylelint, build.
+
 ## 17 November: erasure on account deletion and on app removal (0.2 preview)
 
 `tests/integration/data-erasure.php` runs in the disposable development container

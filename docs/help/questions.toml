@@ -48,6 +48,8 @@
 "Where are my chats in Nextcloud kept?" = "what-stays-in-your-browser"
 "Is there a record of the agent's tool calls in Nextcloud?" = "what-stays-in-your-browser"
 "How do I export a chat from the Nextcloud agent?" = "export-a-chat"
+"Does the Nextcloud agent keep a log in my browser?" = "what-stays-in-your-browser"
+"How do I remove the Nextcloud agent's data from my browser?" = "your-data-in-this-browser"
 "What does Nextcloud keep about the agent's changes?" = "what-nextcloud-keeps"
 "How do I delete my data from the Nextcloud agent?" = "remove-your-data"
 
@@ -69,6 +71,7 @@
 ["more-help.md"]
 "Where is the privacy policy of the Nextcloud agent?" = "privacy-and-terms"
 "Where do I get help with the Nextcloud agent?" = "ask-for-help"
+"How do I report a problem with the Nextcloud agent?" = "ask-for-help"
 "How do I report a security problem in the Nextcloud app?" = "ask-for-help"
 
 ["product-information.md"]

@@ -73,8 +73,8 @@ können, entscheidet Ihre Organisation.
 |---|---|
 | **Aus** | Keine Tools: Der Agent antwortet nur |
 | **Nur lesen** | Nur Tools, die nichts ändern |
-| **Nachfragen** | Fragt, bevor etwas geändert wird (der übliche Modus) |
-| **Automatisch** | Führt Tools aus, die etwas ändern; fragt weiterhin vor allem, was sich nicht rückgängig machen lässt |
+| **Nachfragen** | Dateiaktionen einzeln freigeben (der übliche Modus) |
+| **Automatisch** | Führt Lese-Tools aus; Dateiaktionen benötigen weiterhin Ihre einzelne Freigabe |
 
 In diesem Agenten fragt jede Änderung an einer Datei nach Ihrer Freigabe, in jedem Modus. Mehr unter
 [Tools im Chat](../../use/tools.md).

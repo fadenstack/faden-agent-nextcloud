@@ -1,7 +1,7 @@
 import { FadenstackClient, AgentTokenProvider, AgentPairing, MemoryTokenStore, loginWithPassword, type FetchLike, type ChatUpdate, type PairingStart } from '@fadenstack/client'
 import { FadenstackAgent, MemoryAuditLog, MemorySessionStore, MemoryApprovalStore, StageOrder, type ToolCallContext, type MessageAttachment } from '@fadenstack/agents'
-import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, StopEverythingViewModel, type ApprovalPart, type PreferenceStore, type ToolCallPart } from '@fadenstack/ui'
-import { browserChatServices } from '@fadenstack/ui-web'
+import { AgentChatViewModel, ApprovalBroker, AttachmentViewModel, MyDataSettingsViewModel, StopEverythingViewModel, type ApprovalPart, type PreferenceStore, type ToolCallPart } from '@fadenstack/ui'
+import { browserChatServices, browserSaveFile } from '@fadenstack/ui-web'
 import { SelectedContext } from '../integrations/nextcloud/context.ts'
 import { nativeProvenanceSummary, type ProvenanceSummary } from '../integrations/nextcloud/provenance.ts'
 import { markStringsFor, provenanceModule, readerTextSha256 } from '@fadenstack/provenance'
@@ -113,6 +113,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 	readonly chat: AgentChatViewModel
 	/** "Stop everything" in the panel's header (release plan 8.11): every running turn, then the agent's grants. */
 	readonly stopEverything: StopEverythingViewModel
+	/** "Your data" in the panel's settings: export or remove what the SDK keeps for this person in this browser. */
+	readonly myData: MyDataSettingsViewModel
 	readonly approvals = new ApprovalBroker()
 	readonly #stop = new AbortController()
 	readonly #proposals = new Map<string, Proposal>()
@@ -318,6 +320,10 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			.useAuditLog(new MemoryAuditLog())
 			// "Remove my data" also takes the app's own per-user panel preferences in this browser (userPreferences below).
 			.useHostData({ localStoragePrefixes: [preferencePrefix(config.userId)] })
+			// The SDK's own log in this browser (IndexedDB, at most 500 entries for 7 days): requests by route template,
+			// errors and timings, never a prompt, an answer, an argument or a result. "Copy details" in "Report a problem"
+			// adds its last entries; "Your data" exports and removes it.
+			.useBrowserLog()
 			// The SDK's marking: what the person copies out of the chat carries the AI mark in its HTML, signed by the
 			// organisation's server, in the panel's language. Native writes keep their own marking below.
 			.use(provenanceModule({ strings: () => markStringsFor(this.chat.language === 'auto' ? locale : this.chat.language) }))
@@ -634,6 +640,8 @@ export class NextcloudAgent implements AgentWithCalendar, AgentWithTasks, AgentW
 			// stops the turns and ends the agent's grants. No confirmation: it is the emergency stop.
 			stop: agents => { this.#cancelNative(); return FadenstackAgent.stopAll(agents) },
 		})
+		this.myData = new MyDataSettingsViewModel({ agent: this.agent, strings: () => this.chat.strings })
+		this.myData.onSaveRequest(request => browserSaveFile({ name: request.fileName, type: request.kind === 'audit' ? 'text/html' : 'application/json', content: request.text }))
 	}
 
 	async signIn(email: string, password: string): Promise<void> {

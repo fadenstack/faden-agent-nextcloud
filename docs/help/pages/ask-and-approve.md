@@ -65,8 +65,8 @@ modes you can choose.
 |---|---|
 | **Off** | No tools: the agent only answers |
 | **Read only** | Only tools that change nothing |
-| **Ask** | Asks before anything that changes something (the usual mode) |
-| **Auto** | Runs tools that change things; still asks before anything that cannot be undone |
+| **Ask** | Approve file actions one at a time (the usual mode) |
+| **Auto** | Runs reading tools; file actions still need your individual approval |
 
 In this agent every change of a file asks for your approval, whatever the mode. More in
 [Tools in the chat](../../use/tools.md).

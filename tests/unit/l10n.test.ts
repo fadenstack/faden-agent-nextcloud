@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { builtInStrings } from '@fadenstack/ui'
+import { nextcloudLanguages } from '../../src/agent/strings.ts'
 
 // The app's own screens in the SDK panel's five languages (owner, 18 Nov): every string the app shows through t() or
 // n() has a translation in each catalogue, with the same placeholders, and the catalogues hold nothing else.
@@ -50,5 +52,19 @@ describe('the app\'s translations', () => {
 		const catalogue = JSON.parse(readFileSync(join(root, 'l10n', `${language}.json`), 'utf8')) as { translations: Record<string, unknown>; pluralForm: string }
 		const script = readFileSync(join(root, 'l10n', `${language}.js`), 'utf8')
 		expect(script).toBe(`OC.L10N.register("fadenstack_agent", ${JSON.stringify(catalogue.translations, null, 2)}, ${JSON.stringify(catalogue.pluralForm)});\n`)
+	})
+})
+
+// The SDK's panel texts, with what is different in Nextcloud, in every language the panel offers: a file action always
+// needs its own approval (also in Auto) and Nextcloud keeps earlier versions, so it is not "cannot be undone".
+describe('the panel texts in Nextcloud', () => {
+	it.each(Object.keys(builtInStrings))('%s says that file actions need individual approval', language => {
+		const sdk = builtInStrings[language]!, app = nextcloudLanguages[language]!
+		expect(app).toBeDefined()
+		expect(app.approvalClass.destructive).not.toBe(sdk.approvalClass.destructive)
+		expect(app.approvalWhy.destructive).not.toBe(sdk.approvalWhy.destructive)
+		expect(app.modes.ask.description).not.toBe(sdk.modes.ask.description)
+		expect(app.modes.auto.description).not.toBe(sdk.modes.auto.description)
+		expect(app.modes.ask.label).toBe(sdk.modes.ask.label)
 	})
 })

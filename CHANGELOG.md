@@ -55,8 +55,8 @@ only with a Fadenstack server (governed mode). See
 
 ### Changed
 
-- The Fadenstack TypeScript SDK 0.3.0 from npm (registry signatures and
-  provenance verified on install). The chat's copy, link
+- The Fadenstack TypeScript SDK 0.3.1, as the `0.3.1-rc.1` pre-release from npm
+  (registry signatures and provenance verified on install). The chat's copy, link
   and file-saving services come from `@fadenstack/ui-web`.
 - Every app tool call the model makes is checked by the Fadenstack server before
   it runs (see Data fields). The app refuses a server that does not offer the check. Each native
@@ -71,12 +71,33 @@ only with a Fadenstack server (governed mode). See
 - The administrator guide says that the action journal is written for every
   approved change, whether history is on or off, and for how long.
 - German texts address the reader as "Sie" throughout.
+- The approval card and the tool modes say in Spanish, French and Chinese too that
+  a file action needs your individual approval (also in Auto), as in English and
+  German; before, those three said a file change "cannot be undone", which
+  Nextcloud's file versions contradict.
+- Links in an answer open only for http and https; any other address shows as
+  text (SDK 0.3.1). The app's name is quoted in About (SDK 0.3.1).
+- The header's menus stay inside the narrow panel by the SDK's own placement
+  (0.3.1); the app's anchoring CSS for them is gone. Stop everything's result
+  line keeps the app's placement under the button: beside it, where the SDK puts
+  it, Nextcloud's fuller header would grow and push the settings out of a 420 px
+  panel.
 - The app's own screens are in German, Spanish, French and Simplified Chinese:
   all 416 of its strings (German had 89 of them, the others 16), in the SDK
   panel's words wherever the meaning is the same, so panel and app read alike.
   A test keeps every catalogue complete, with the same placeholders. 21 German
   strings and one in each other language that the app no longer shows were
   removed, among them "Allow once" (the card says "Allow").
+- "Your data in this browser" in the panel's settings (the SDK's control):
+  "Export my data" saves what the agent keeps for this person in this browser,
+  "Remove my data…" deletes it after asking: the agent's log and the panel's
+  settings.
+- A small log of the agent's own work in the browser (the SDK's `useBrowserLog`):
+  at most 500 entries for 7 days, never a message, an answer, a file's text or
+  a tool's arguments (see Data fields). "Report a problem" under About copies
+  its last entries with "Copy details", tool names replaced and routes as
+  templates; in governed mode without an address from the organisation it
+  writes no mail and points to the organisation's Help (SDK 0.3.1).
 - About (in the panel's settings) has "Help and contact", which opens Fadenstack's
   support page in a new tab (SDK 0.3.0).
 - The panel's links to fadenstack.com (the line under the composer, About) say
@@ -138,13 +159,14 @@ of this release.
 | Added | Record of tool calls: one entry per call, with `time`, `app`, `agent`, `chat`, `turn`, `tool`, `class`, `source`, `server`, `decision`, `scope`, `outcome` and `argumentsSha256` (no content) | Kept in the page's memory only (the SDK's `MemoryAuditLog`); no browser database | G | Shows the person what the agent did and who allowed it | On; no switch | Gone when the page closes | Yes |
 | Changed | Action journal (`fdn_journal` and its `fdn_jr_*` tables: which change the agent made for whom, when, its state and an encrypted snapshot) and open approvals (`fdn_provider_tickets`) | Nextcloud's database | G | Undo and Redo of approved changes | On; no one | Was: 7 days for snapshots, 30 days for the rest, also after the account was deleted. Now also erased when the account is deleted, and when the app is disabled or removed | Yes (it records what a person had the agent do) |
 | Changed | A person's workflow-engine keys (user preferences `engine_connection_*`) | Nextcloud's database, sealed with the instance secret | G | Run n8n and Windmill workflows under the person's own key | Set by the person | Was: until the person disconnects or the account is deleted. Now also erased when the app is disabled or removed | No |
+| Added | The agent's log in the browser: per entry the time, level, category, event, message and fields such as a tool's name, a request's route (as a template), status and duration, and turn and conversation ids; never a prompt, an answer, a file's text or a tool's arguments or result | The person's browser, IndexedDB `fadenstack-log:<tenant>:<user>` | G | Troubleshooting: "Report a problem" copies its last 50 entries (tool names replaced) for the organisation's IT, on the person's click; nothing is sent | On; no switch. "Remove my data…" in "Your data in this browser" deletes it | At most 500 entries and 7 days, the oldest dropped first | Yes (it records which tools the agent ran for the person, and when) |
 | Changed | Link parameter `ref` (`nextcloud-panel`, `nextcloud-about`; before, `sdk-panel` and `sdk-about`) and `v` (the SDK's major.minor) | In the address of a fadenstack.com page the person opens from the panel; reaches fadenstack.com only when they open it | G | Lets the website and its support page tell which agent a visit came from | On; no one | Per fadenstack.com's privacy policy | No |
 | Changed | App manifest `version` | Sent to the organisation's Fadenstack server, `PUT /v1/agents/{agent}/manifest` | G | Now the app's own version; before, a fixed "0.1.5" | On; no one | Per the server's manifest records | No |
 
-**Kept on the device: nothing new.** The record of tool calls above stays in the
-page's memory; the app opens no browser database for it. Its row is "Yes" all the
-same, because it records what a person had the agent do. Chats and approvals stay
-in memory as before.
+**Kept on the device:** the agent's log above, in the browser's IndexedDB, new with
+SDK 0.3.1. The record of tool calls stays in the page's memory; its row is "Yes"
+because it records what a person had the agent do. Chats and approvals stay in
+memory as before.
 
 **Not determined:** the SDK's other fields (its remaining events and approval
 answers). The SDK has no "Data fields" section yet; the rows above were read from
