@@ -42,16 +42,17 @@
   "devDependencies": {
     "@fadenstack/testing": "0.3.1-rc.1",
     "@nextcloud/browserslist-config": "^3.1.2",
-    "@nextcloud/eslint-config": "^8.4.2",
+    "@nextcloud/eslint-config": "^9.0.1",
     "@nextcloud/stylelint-config": "^3.1.1",
     "@nextcloud/vite-config": "^2.5.2",
     "@types/node": "^24.0.0",
     "@vitejs/plugin-vue": "^6.0.11",
     "@vue/tsconfig": "^0.9.1",
+    "eslint": "^10.15.0",
     "jsdom": "^31.0.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.7",
-    "vitest": "^4.0.0",
+    "vitest": "^4.1.12",
     "vue-tsc": "^3.1.0"
   },
   "engines": {
@@ -70,6 +71,9 @@
     "@fadenstack/ui-vue": "0.3.1-rc.1",
     "@fadenstack/ui-react": "0.3.1-rc.1",
     "@fadenstack/testing": "0.3.1-rc.1",
-    "@fadenstack/provenance": "0.3.1-rc.1"
+    "@fadenstack/provenance": "0.3.1-rc.1",
+    "vite-plugin-dts": {
+      "minimatch": "^11.0.1"
+    }
   }
 }

@@ -13,7 +13,7 @@ const phpLock = JSON.parse(await readFile('composer.lock', 'utf8'))
 const phpInstalled = JSON.parse(await readFile('build/php-runtime/vendor/composer/installed.json', 'utf8'))
 if (phpInstalled.dev !== false || JSON.stringify(phpInstalled.packages.map(p => p.name).sort()) !== JSON.stringify(phpLock.packages.map(p => p.name).sort())) throw new Error('Package only the exact production PHP dependency set.')
 await cp('build/php-runtime/vendor', join(app, 'vendor'), { recursive: true })
-for (const item of ['appinfo', 'lib', 'templates', 'img', 'js', 'css', 'dist', 'l10n', 'docs', 'contracts', 'src', 'tests', 'vite.config.ts', 'vitest.config.ts', 'tsconfig.json', '.eslintrc.cjs', 'stylelint.config.cjs', '.php-cs-fixer.dist.php', 'README.md', 'LICENSE', 'SECURITY.md', 'CHANGELOG.md', 'composer.json', 'composer.lock', 'package.json', 'package-lock.json']) {
+for (const item of ['appinfo', 'lib', 'templates', 'img', 'js', 'css', 'dist', 'l10n', 'docs', 'contracts', 'src', 'tests', 'vite.config.ts', 'vitest.config.ts', 'tsconfig.json', 'eslint.config.js', 'stylelint.config.cjs', '.php-cs-fixer.dist.php', 'README.md', 'LICENSE', 'SECURITY.md', 'CHANGELOG.md', 'composer.json', 'composer.lock', 'package.json', 'package-lock.json']) {
   await cp(item, join(app, item), { recursive: true, filter: source => !source.endsWith('.map') })
 }
 await mkdir(join(app, 'scripts'))
