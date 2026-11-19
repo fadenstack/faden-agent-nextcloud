@@ -30,6 +30,8 @@ erklären die Teile, die er mit dem Server gemeinsam hat:
 
 ## Hilfe bekommen {#ask-for-help}
 
+![Problem melden unter Info: der Hinweis, Ihre IT um Hilfe zu bitten, ein Link zur Hilfe, die Zeilen des Berichts (die App, das SDK, das System, der Modus, der Agent und sein Modell, der Server), der Hinweis, dass nichts aus Ihren Chats enthalten ist, und Details kopieren](images/help/report-problem.png)
+
 - **Bei der Arbeit**: Fragen Sie zuerst Ihren Administrator. Er sieht die Einstellungen Ihrer Organisation für den
   Agenten. Im Panel sagt **Problem melden** unter **Info** (in den Einstellungen), wen Sie fragen, und **Details
   kopieren** kopiert, was dabei hilft: die Versionen, Ihren Browser und Ihr System, den Modus, den Agenten und

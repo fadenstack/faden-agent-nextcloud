@@ -28,6 +28,8 @@ parts it shares with the server:
 
 ## Ask for help
 
+![Report a problem under About: Ask your organisation's IT for help, a Help link, the report's lines (the app, the SDK, the system, the mode, the agent and its model, the server), Nothing from your chats is included, and Copy details](images/help/report-problem.png)
+
 - **At work**: ask your administrator first. They can see your organisation's settings for the agent. In the panel,
   **Report a problem** under **About** (in the settings) says whom to ask, and **Copy details** copies what helps
   them: the versions, your browser and system, the mode, the agent and its model, your server's address, the time

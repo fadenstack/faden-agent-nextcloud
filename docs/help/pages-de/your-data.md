@@ -55,6 +55,8 @@ Browser**:
 - **Protokoll der Tool-Aufrufe exportieren…** speichert die Aufzeichnung der Tool-Aufrufe als Webseite, solange
   die Seite offen ist. Eine Zeile darüber sagt, wie viele Einträge sie hat und ob sie unversehrt ist.
 
+![Der Dialog Ihre Daten in diesem Browser: Meine Daten exportieren, Meine Daten entfernen…, Alle meine Fadenstack-Daten exportieren, Alle meine Fadenstack-Daten in diesem Browser entfernen…, die Zeile zur Aufzeichnung der Tool-Aufrufe mit ihren Einträgen und deren Export](images/data/your-data.png)
+
 ## Einen Chat exportieren {#export-a-chat}
 
 1. Öffnen Sie die Einstellungen (das Zahnrad in der Kopfzeile des Panels).

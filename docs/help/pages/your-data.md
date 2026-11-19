@@ -47,6 +47,8 @@ Open the settings (the gear in the panel's header) and select **Your data in thi
 - **Export the record of tool calls…** saves the agent's record of tool calls as a web page, while the page is
   open. A line above it says how many entries the record holds and whether it is intact.
 
+![The dialog Your data in this browser: Export my data, Remove my data…, Export all my Fadenstack data, Remove all my Fadenstack data in this browser…, the line Record of tool calls with its entries, and Export the record of tool calls…](images/data/your-data.png)
+
 ## Export a chat
 
 1. Open the settings (the gear in the panel's header).
