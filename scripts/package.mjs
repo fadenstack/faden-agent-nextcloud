@@ -30,7 +30,8 @@ const lock = JSON.parse(await readFile('package-lock.json', 'utf8'))
 const inventory = []
 for (const dependency of JSON.parse(await readFile('composer.lock', 'utf8')).packages) inventory.push(`PHP ${dependency.name}: ${dependency.version}; ${dependency.license.join(', ')}`)
 for (const [path, metadata] of Object.entries(lock.packages)) {
-  if (!path.startsWith('node_modules/') || metadata.dev || metadata.devOptional) continue
+  // npm 11 marks what only an optional peer reaches (sass's watcher under vite) as optional; production never installs it.
+  if (!path.startsWith('node_modules/') || metadata.dev || metadata.devOptional || (metadata.optional && metadata.peer)) continue
   const name = path.replaceAll('node_modules/', '').replaceAll('/', '_')
   // The lock omits some licences; the package's own manifest then names it.
   const declared = metadata.license || await readFile(join(path, 'package.json'), 'utf8').then(text => JSON.parse(text).license, () => undefined)
