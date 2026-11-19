@@ -279,7 +279,9 @@ function signOut() {
 			:open="true"
 			:name="chat.strings.myDataTitle"
 			@update:open="myDataOpen = $event; chat.requestComposerFocus()">
-			<MyDataSettings :settings="host.myData" :theme="theme" />
+			<div class="fadenstack-my-data">
+				<MyDataSettings :settings="host.myData" :theme="theme" />
+			</div>
 		</NcDialog>
 		<EngineConnections v-if="engineConnectionsOpen && host.files.nativeProviders"
 			:api="host.files.nativeProviders"

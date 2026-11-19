@@ -303,3 +303,12 @@
 	line-height: 1.4;
 	overflow-wrap: normal;
 }
+
+/*
+ * "Your data in this browser" opens in Nextcloud's dialog, whose header already names it (as the app's other dialogs
+ * do). The SDK's control has its own heading as well; inside the dialog it would say the same thing twice. Focus goes
+ * to the control's first button, not to this heading.
+ */
+.fadenstack-my-data .fdn-wizard-title {
+	display: none;
+}

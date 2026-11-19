@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { FakeGateway } from '../helpers/gateway071.ts'
 import { FakeGateway as LegacyGateway } from '@fadenstack/testing'
@@ -843,6 +845,10 @@ describe('The SDK panel in Nextcloud', () => {
 			item!.click()
 			await vi.waitFor(() => expect(document.body.textContent).toContain(host.chat.strings.myDataExport))
 			expect(document.body.textContent).toContain(host.chat.strings.myDataRemove)
+			// The dialog's header names it; the SDK's own heading sits in the wrapper the stylesheet hides, so the title shows once.
+			expect(document.querySelector('.fadenstack-my-data .fdn-wizard-title')?.textContent).toBe(host.chat.strings.myDataTitle)
+			expect(readFileSync(resolve(process.cwd(), 'src/styles/nextcloud.css'), 'utf8'))
+				.toMatch(/\.fadenstack-my-data \.fdn-wizard-title \{\s*display: none;\s*\}/)
 			// Nextcloud's dialog sets up its focus trap after it opens; let it, so unmounting does not race it.
 			await new Promise(resolve => setTimeout(resolve, 100))
 		} finally { app.unmount(); root.remove(); await host.dispose(); vi.unstubAllGlobals() }
