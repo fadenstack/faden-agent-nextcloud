@@ -1,8 +1,9 @@
-import { createApp, watch, type App } from 'vue'
+import { createApp, watch } from 'vue'
+import type { App } from 'vue'
 import { emit } from '@nextcloud/event-bus'
 import HeaderButton from '../../components/HeaderButton.vue'
 
-export interface ViewedDocument { fileId?: number; name: string }
+export interface ViewedDocument { fileId?: number, name: string }
 
 /**
  * Viewer 31–35 has no header-action registration API. Use its visible modal
@@ -10,7 +11,9 @@ export interface ViewedDocument { fileId?: number; name: string }
  */
 export function viewedDocument(viewer: HTMLElement): ViewedDocument | undefined {
 	const name = viewer.querySelector('.modal-header__name')?.textContent?.trim()
-	if (!name) return undefined
+	if (!name) {
+		return undefined
+	}
 	const query = new URLSearchParams(location.search)
 	const id = Number(/^\d+$/.test(query.get('openfile') || '')
 		? query.get('openfile')
@@ -34,7 +37,7 @@ export function installViewerIntegration(options: {
 	function sync() {
 		// Only Nextcloud's actual modal, outside our rendered Markdown, is eligible.
 		const viewer = [...document.querySelectorAll<HTMLElement>('#viewer.modal-mask.viewer[role="dialog"]')]
-			.find(element => !element.closest('#fadenstack-agent-drawer'))
+			.find((element) => !element.closest('#fadenstack-agent-drawer'))
 		const header = viewer?.querySelector<HTMLElement>('.modal-header .icons-menu')
 		if (owner !== viewer || (button && !button.isConnected)) {
 			app?.unmount()
@@ -53,8 +56,12 @@ export function installViewerIntegration(options: {
 			app.mount(button)
 		}
 		const parent = viewer ?? document.body
-		if (options.drawer.parentElement !== parent) parent.append(options.drawer)
-		if (options.activity && options.activity.parentElement !== parent) parent.append(options.activity)
+		if (options.drawer.parentElement !== parent) {
+			parent.append(options.drawer)
+		}
+		if (options.activity && options.activity.parentElement !== parent) {
+			parent.append(options.activity)
+		}
 		if (viewer) {
 			// The modal may have made its former siblings inert before relocation.
 			options.drawer.removeAttribute('inert')
@@ -71,10 +78,15 @@ export function installViewerIntegration(options: {
 			}
 		}
 		const inViewer = !!viewer
-		if (document.body.classList.contains('fadenstack-agent-in-viewer') !== inViewer) document.body.classList.toggle('fadenstack-agent-in-viewer', inViewer)
+		if (document.body.classList.contains('fadenstack-agent-in-viewer') !== inViewer) {
+			document.body.classList.toggle('fadenstack-agent-in-viewer', inViewer)
+		}
 		const current = viewer ? viewedDocument(viewer) : undefined
 		const key = current ? `${current.fileId}:${current.name}` : ''
-		if (key !== documentKey) { documentKey = key; options.changed(current) }
+		if (key !== documentKey) {
+			documentKey = key
+			options.changed(current)
+		}
 	}
 	const observer = new MutationObserver(sync)
 	const stopWatchingOpen = watch(() => options.state.open, sync, { flush: 'post' })
@@ -88,7 +100,9 @@ export function installViewerIntegration(options: {
 		app?.unmount()
 		button?.remove()
 		document.body.append(options.drawer)
-		if (options.activity) document.body.append(options.activity)
+		if (options.activity) {
+			document.body.append(options.activity)
+		}
 		document.body.classList.remove('fadenstack-agent-in-viewer')
 	}
 }

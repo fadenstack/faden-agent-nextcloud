@@ -1,6 +1,7 @@
-import { defineTool, type ToolCallContext } from '@fadenstack/agents'
+import { defineTool } from '@fadenstack/agents'
+import type { ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
-import type { FileContext, WriteArguments, SearchFilters, HistoryDirection } from './types.ts'
+import type { FileContext, HistoryDirection, SearchFilters, WriteArguments } from './types.ts'
 import historyContract from '../../../contracts/history-tools.json'
 
 export interface ToolHost {
@@ -34,13 +35,15 @@ export function writeArguments(name: string, args: Readonly<Record<string, unkno
 export const CREATE_EDIT_KINDS = ['generated', 'summarised', 'translated'] as const
 export const UPDATE_EDIT_KINDS = ['rewritten', 'corrected', 'summarised', 'translated'] as const
 export function editKindOf(kinds: readonly string[], value: unknown): string {
-	if (typeof value !== 'string' || !kinds.includes(value)) throw new Error('Unsupported file edit kind.')
+	if (typeof value !== 'string' || !kinds.includes(value)) {
+		throw new Error('Unsupported file edit kind.')
+	}
 	return value
 }
 export const WRITE_TOOLS = new Set(['nc_create_text_file', 'nc_update_text_file'])
 export const HISTORY_TOOLS = new Set(['nc_actions_undo', 'nc_actions_redo', 'nc_actions_reconcile', 'nc_actions_revalidate'])
 export function historyTools(host: ToolHost) {
-	return (['undo', 'redo', 'reconcile', 'revalidate'] as const).map(direction => defineTool({
+	return (['undo', 'redo', 'reconcile', 'revalidate'] as const).map((direction) => defineTool({
 		name: `nc_actions_${direction}`,
 		toolClass: 'destructive',
 		description: direction === 'revalidate'
@@ -50,7 +53,9 @@ export function historyTools(host: ToolHost) {
 				: `${direction === 'undo' ? 'Undo' : 'Redo'} one recorded whole-text file update by its action ID. Requires current native access, central policy and an individual exact-content preview. Refuses changed files, later dependent actions, unknown outcomes and unavailable inverses. Never undoes delivery or external workflow effects.`,
 		parameters: historyContract.parameters as JsonSchema,
 		run: (args, call) => {
-			if (!host.reverse) throw new Error('Action history is unavailable.')
+			if (!host.reverse) {
+				throw new Error('Action history is unavailable.')
+			}
 			return host.reverse(direction, args.action_id, call)
 		},
 	}))

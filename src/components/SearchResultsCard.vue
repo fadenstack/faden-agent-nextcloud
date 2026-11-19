@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { t } from '@nextcloud/l10n'
-import type { SearchViewResults, FileResource } from '../integrations/nextcloud/types.ts'
+import type { FileResource, SearchViewResults } from '../integrations/nextcloud/types.ts'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { Icon } from '@fadenstack/ui-vue'
 import { useObservable } from '../agent/useObservable.ts'
 
-const props = defineProps<{ result: SearchViewResults; host: NextcloudAgent }>()
+const props = defineProps<{ result: SearchViewResults, host: NextcloudAgent }>()
 const version = useObservable(props.host.chat)
 const problem = ref('')
 const adding = ref('')
@@ -24,9 +24,16 @@ function modified(date: string | null) {
 async function attach(file: FileResource) {
 	adding.value = file.resource_id
 	problem.value = ''
-	try { await props.host.addSearchContext(file.resource_id) } catch (error) { problem.value = errorMessage(error) } finally { adding.value = '' }
+	try {
+		await props.host.addSearchContext(file.resource_id)
+	} catch (error) {
+		problem.value = errorMessage(error)
+	} finally {
+		adding.value = ''
+	}
 }
 </script>
+
 <template>
 	<section class="fdn-search-results" :data-version="version" :aria-label="t('fadenstack_agent', 'Search results')">
 		<header class="fdn-search-title">

@@ -5,18 +5,29 @@ import { strongEtagHeader } from './adapterGuards.ts'
 
 /** Consistency validation only; this does not replace the native dispatch release gate. */
 export function folderDavPlan(value: DavFolderCreatePlan, id: string, user: string): DavFolderCreatePlan {
-	const fail = () => { throw new Error('Invalid approved Nextcloud creation plan.') }
+	const fail = () => {
+		throw new Error('Invalid approved Nextcloud creation plan.')
+	}
 	if (!value || value.kind !== 'dav-create-folder' || value.receiptId !== id
 		|| !/^nextcloud:files:[1-9][0-9]{0,14}$/.test(value.parent_resource_id)
 		|| typeof value.parent_path !== 'string' || !value.parent_path.startsWith('/') || value.parent_path.length > 4096
-		|| /[\x00-\x1f\x7f\\]/.test(value.parent_path)) return fail()
+		|| /[\x00-\x1f\x7f\\]/.test(value.parent_path)) { return fail() }
 	const parts = value.parent_path === '/' ? [] : value.parent_path.slice(1).split('/')
-	if (parts.some(part => !part || part === '.' || part === '..')) return fail()
-	try { validateFolderName(value.name); strongEtagHeader(value.parent_etag) } catch { return fail() }
+	if (parts.some((part) => !part || part === '.' || part === '..')) {
+		return fail()
+	}
+	try {
+		validateFolderName(value.name)
+		strongEtagHeader(value.parent_etag)
+	} catch {
+		return fail()
+	}
 	const target = (value.parent_path === '/' ? '' : value.parent_path) + '/' + value.name
-	const encode = (part: string) => encodeURIComponent(part).replace(/[!'()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+	const encode = (part: string) => encodeURIComponent(part).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
 	const path = '/files/' + [user, ...parts, value.name].map(encode).join('/')
-	if (value.target !== target || value.dav_path !== path) return fail()
+	if (value.target !== target || value.dav_path !== path) {
+		return fail()
+	}
 	return { kind: value.kind, receiptId: id, dav_path: path, parent_resource_id: value.parent_resource_id, parent_path: value.parent_path, parent_etag: value.parent_etag, name: value.name, target }
 }
 
@@ -26,17 +37,19 @@ export function folderProposal(value: FolderCreateProposal, reference: string, n
 		|| !Number.isSafeInteger(value.folderId) || reference !== `nextcloud:files:${value.folderId}`
 		|| value.name !== name || value.parentEtag !== revision || value.expectedRevision !== revision
 		|| typeof value.target !== 'string' || !value.target.startsWith('/') || !value.target.endsWith(`/${name}`)
-		|| /[\x00-\x1f\x7f]/.test(value.target) || value.target.split('/').some(part => part === '.' || part === '..')
+		|| /[\x00-\x1f\x7f]/.test(value.target) || value.target.split('/').some((part) => part === '.' || part === '..')
 		|| value.target.length > 4096 || value.approved !== false || !Number.isSafeInteger(value.expires)
-		|| value.expires <= Math.floor(Date.now() / 1000) || value.expires > Math.floor(Date.now() / 1000) + 610) throw new Error('Invalid native folder proposal.')
+		|| value.expires <= Math.floor(Date.now() / 1000) || value.expires > Math.floor(Date.now() / 1000) + 610) { throw new Error('Invalid native folder proposal.') }
 	return structuredClone(value)
 }
 
 export function folderOutcome(value: FolderCreateOutcome, proposal: FolderCreateProposal): FolderCreateOutcome {
 	if (!value || value.proposalId !== proposal.id || !['not-integrated', 'audit-only'].includes(value.history)
-		|| value.name !== proposal.name || value.parentResourceId !== proposal.resourceId) throw new Error('Invalid native folder receipt. Inspect the destination before trying again.')
+		|| value.name !== proposal.name || value.parentResourceId !== proposal.resourceId) { throw new Error('Invalid native folder receipt. Inspect the destination before trying again.') }
 	if (value.outcome === 'not-dispatched' || value.outcome === 'ambiguous') {
-		if (value.target !== proposal.target || typeof value.message !== 'string' || !value.message || value.message.length > 1000) throw new Error('Invalid native folder receipt.')
+		if (value.target !== proposal.target || typeof value.message !== 'string' || !value.message || value.message.length > 1000) {
+			throw new Error('Invalid native folder receipt.')
+		}
 		return { outcome: value.outcome, history: value.history, proposalId: value.proposalId, name: value.name, parentResourceId: value.parentResourceId, target: value.target, message: value.message }
 	}
 	if (value.outcome !== 'verified' || !value.folder || !value.observedState
@@ -45,10 +58,10 @@ export function folderOutcome(value: FolderCreateOutcome, proposal: FolderCreate
 		|| value.folder.path !== proposal.target || !value.folder.etag
 		|| (value.parentPath !== proposal.target.slice(0, -(proposal.name.length + 1)) && !(value.parentPath === '/' && proposal.target === `/${proposal.name}`))
 		|| value.observedState.id !== value.folder.id || value.observedState.name !== proposal.name || value.observedState.path !== proposal.target
-		|| value.observedState.etag !== value.folder.etag || value.observedState.is_directory !== true) throw new Error('Invalid native folder receipt. Inspect the destination before trying again.')
+		|| value.observedState.etag !== value.folder.etag || value.observedState.is_directory !== true) { throw new Error('Invalid native folder receipt. Inspect the destination before trying again.') }
 	if (typeof value.folder.etag !== 'string' || value.folder.etag.length > 150
 		|| !Number.isInteger(value.folder.permissions) || value.folder.permissions < 0 || value.folder.permissions > 31
-		|| value.observedState.permissions !== value.folder.permissions || !Number.isFinite(value.folder.size) || value.folder.size < -1) throw new Error('Invalid native folder metadata.')
+		|| value.observedState.permissions !== value.folder.permissions || !Number.isFinite(value.folder.size) || value.folder.size < -1) { throw new Error('Invalid native folder metadata.') }
 	return {
 		outcome: 'verified',
 		history: value.history,

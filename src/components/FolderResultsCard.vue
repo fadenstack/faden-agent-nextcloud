@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { t } from '@nextcloud/l10n'
-import type { FolderOverviewResults, FolderListingEntry } from '../integrations/nextcloud/types.ts'
+import type { FolderListingEntry, FolderOverviewResults } from '../integrations/nextcloud/types.ts'
 import { nativeFileLink } from '../integrations/nextcloud/fileReadResults.ts'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { errorMessage } from '../integrations/nextcloud/files.ts'
 import { Icon } from '@fadenstack/ui-vue'
 import { useObservable } from '../agent/useObservable.ts'
 
-const props = defineProps<{ result: FolderOverviewResults; host: NextcloudAgent }>()
+const props = defineProps<{ result: FolderOverviewResults, host: NextcloudAgent }>()
 const version = typeof props.host?.chat?.subscribe === 'function' ? useObservable(props.host.chat) : ref(0)
 const problem = ref('')
 const adding = ref('')
@@ -18,14 +18,22 @@ function link(entry: FolderListingEntry): string | undefined {
 }
 
 function formatSize(bytes?: number): string {
-	if (bytes === undefined || bytes === null || !Number.isFinite(bytes) || bytes < 0) return ''
-	if (bytes < 1024) return `${bytes} B`
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+	if (bytes === undefined || bytes === null || !Number.isFinite(bytes) || bytes < 0) {
+		return ''
+	}
+	if (bytes < 1024) {
+		return `${bytes} B`
+	}
+	if (bytes < 1024 * 1024) {
+		return `${(bytes / 1024).toFixed(1)} KB`
+	}
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function formatTime(timestamp?: number): string {
-	if (!timestamp || !Number.isFinite(timestamp)) return ''
+	if (!timestamp || !Number.isFinite(timestamp)) {
+		return ''
+	}
 	try {
 		return new Intl.DateTimeFormat(props.host.config.locale ?? navigator.language, { dateStyle: 'medium' }).format(new Date(timestamp * 1000))
 	} catch {
@@ -34,13 +42,17 @@ function formatTime(timestamp?: number): string {
 }
 
 function dateValue(timestamp?: number): string | undefined {
-	if (!timestamp || !Number.isFinite(timestamp)) return undefined
+	if (!timestamp || !Number.isFinite(timestamp)) {
+		return undefined
+	}
 	const date = new Date(timestamp * 1000)
 	return Number.isFinite(date.getTime()) ? date.toISOString() : undefined
 }
 
 async function attach(entry: FolderListingEntry) {
-	if (!entry.resourceId) return
+	if (!entry.resourceId) {
+		return
+	}
 	adding.value = entry.resourceId
 	problem.value = ''
 	try {

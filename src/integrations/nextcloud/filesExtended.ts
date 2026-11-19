@@ -1,6 +1,7 @@
-import { defineTool, type ToolCallContext } from '@fadenstack/agents'
+import { defineTool } from '@fadenstack/agents'
+import type { ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
-import type { FileApi, FileContext, ShareEntry, FolderOverviewResults, ShareOverviewResults, FileOperationProposal } from './types.ts'
+import type { FileApi, FileContext, FileOperationProposal, FolderOverviewResults, ShareEntry, ShareOverviewResults } from './types.ts'
 import { fileReference } from '../../platform/scope.ts'
 import { folderReadResult } from './fileReadResults.ts'
 
@@ -18,7 +19,7 @@ export interface ExtendedFilesHost {
 	files: FileApi
 	context?(): FileContext
 	recordResult(callId: string, value: unknown, context: ToolCallContext): void
-	resolvePath?(pathOrId: unknown, signal?: AbortSignal): Promise<{ path: string; etag: string; folder: boolean }>
+	resolvePath?(pathOrId: unknown, signal?: AbortSignal): Promise<{ path: string, etag: string, folder: boolean }>
 	proposeMutation?(name: string, args: Readonly<Record<string, unknown>>, callId: string, signal: AbortSignal): Promise<ExtendedProposal>
 	commitMutation?(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown>
 	authorizeSource?(reference: string, signal: AbortSignal, purpose?: 'read' | 'metadata' | 'shares'): Promise<void>
@@ -32,27 +33,35 @@ export function validateFolderName(name: unknown): string {
 	return name
 }
 
-export function validateCopyMoveArgs(args: Readonly<Record<string, unknown>>): { source: string; destination: string; expectedEtag: string } {
+export function validateCopyMoveArgs(args: Readonly<Record<string, unknown>>): { source: string, destination: string, expectedEtag: string } {
 	const source = String(args.source ?? args.source_resource_id ?? '').trim()
 	const destination = String(args.destination ?? args.destination_name ?? '').trim()
 	const expectedEtag = String(args.expectedEtag ?? args.expected_etag ?? '').trim()
-	if (!source) throw new Error('A source path or resource ID is required.')
+	if (!source) {
+		throw new Error('A source path or resource ID is required.')
+	}
 	if (!destination || /[\x00-\x1f\x7f/\\:<>"|?*]/.test(destination) || destination === '.' || destination === '..') {
 		throw new Error('A destination filename without path separators is required.')
 	}
-	if (!expectedEtag) throw new Error('The expected source ETag is required to prevent overwriting modified data.')
+	if (!expectedEtag) {
+		throw new Error('The expected source ETag is required to prevent overwriting modified data.')
+	}
 	return { source, destination, expectedEtag }
 }
 
-export function validateShareReadonlyArgs(args: Readonly<Record<string, unknown>>): { path: string; recipientUserId: string; expectedEtag: string } {
+export function validateShareReadonlyArgs(args: Readonly<Record<string, unknown>>): { path: string, recipientUserId: string, expectedEtag: string } {
 	const path = String(args.path ?? args.filename ?? args.resource_id ?? '').trim()
 	const recipientUserId = String(args.recipientUserId ?? args.recipient_user_id ?? '').trim()
 	const expectedEtag = String(args.expectedEtag ?? args.expected_etag ?? '').trim()
-	if (!path) throw new Error('A target file path or resource ID is required.')
+	if (!path) {
+		throw new Error('A target file path or resource ID is required.')
+	}
 	if (!recipientUserId || recipientUserId.length > 80 || /[\x00-\x1f\x7f/\\:<>"|?*]/.test(recipientUserId)) {
 		throw new Error('A valid recipient Nextcloud user ID is required.')
 	}
-	if (!expectedEtag) throw new Error('The expected file ETag is required.')
+	if (!expectedEtag) {
+		throw new Error('The expected file ETag is required.')
+	}
 	return { path, recipientUserId, expectedEtag }
 }
 
@@ -64,9 +73,13 @@ export const EXTENDED_FILES_MUTATIONS = new Set([
 ])
 
 function readRevision(args: Readonly<Record<string, unknown>>): string | undefined {
-	if (Object.keys(args).some(key => !['resource_id', 'expectedRevision'].includes(key))) throw new Error('Use a canonical resource_id and optional expectedRevision.')
+	if (Object.keys(args).some((key) => !['resource_id', 'expectedRevision'].includes(key))) {
+		throw new Error('Use a canonical resource_id and optional expectedRevision.')
+	}
 	const value = args.expectedRevision
-	if (value !== undefined && (typeof value !== 'string' || !value || value.length > 150 || /[\x00-\x1f\x7f]/.test(value))) throw new Error('A valid expectedRevision is required.')
+	if (value !== undefined && (typeof value !== 'string' || !value || value.length > 150 || /[\x00-\x1f\x7f]/.test(value))) {
+		throw new Error('A valid expectedRevision is required.')
+	}
 	return value as string | undefined
 }
 
@@ -101,9 +114,13 @@ export function filesReadTools(host: ExtendedFilesHost) {
 					}
 					targetId = `nextcloud:files:${ctx.file.id}`
 				}
-				if (!targetId) throw new Error('Include a folder or provide a known folder resource_id.')
+				if (!targetId) {
+					throw new Error('Include a folder or provide a known folder resource_id.')
+				}
 				fileReference(targetId)
-				if (!host.files.organizeRead) throw new Error('Folder organization read is unavailable.')
+				if (!host.files.organizeRead) {
+					throw new Error('Folder organization read is unavailable.')
+				}
 				if (targetId && host.authorizeSource) {
 					await host.authorizeSource(targetId, c.signal, 'read')
 				}
@@ -153,16 +170,18 @@ export function filesReadTools(host: ExtendedFilesHost) {
 				}
 				fileReference(target)
 				await host.authorizeSource?.(target, c.signal, 'shares')
-				if (!host.files.sharesRead) throw new Error('Share inspection is unavailable.')
+				if (!host.files.sharesRead) {
+					throw new Error('Share inspection is unavailable.')
+				}
 				const listing = expectedRevision !== undefined
 					? await host.files.sharesRead(target, expectedRevision, c.signal)
 					: await host.files.sharesRead(target, c.signal)
 				c.signal.throwIfAborted()
 				if (listing.resourceId !== target || !listing.etag || !Array.isArray(listing.shares) || listing.shares.length > 50
-					|| typeof listing.complete !== 'boolean' || typeof listing.coverage !== 'string') throw new Error('Invalid native share response.')
-				const shares = listing.shares.map(s => {
+					|| typeof listing.complete !== 'boolean' || typeof listing.coverage !== 'string') { throw new Error('Invalid native share response.') }
+				const shares = listing.shares.map((s) => {
 					if (!Number.isSafeInteger(s.id) || s.id < 1 || ![0, 1, 3].includes(s.shareType)
-						|| !Number.isInteger(s.permissions) || s.permissions < 0 || s.permissions > 31) throw new Error('Invalid native share metadata.')
+						|| !Number.isInteger(s.permissions) || s.permissions < 0 || s.permissions > 31) { throw new Error('Invalid native share metadata.') }
 					const sanitized: ShareEntry = {
 						id: Number(s.id),
 						shareType: Number(s.shareType),
@@ -174,11 +193,19 @@ export function filesReadTools(host: ExtendedFilesHost) {
 						sanitized.shareWith = 'public-link'
 						sanitized.shareWithDisplayName = 'Public link'
 					} else {
-						if (s.shareWith !== undefined) sanitized.shareWith = String(s.shareWith)
-						if (s.shareWithDisplayName !== undefined) sanitized.shareWithDisplayName = String(s.shareWithDisplayName)
+						if (s.shareWith !== undefined) {
+							sanitized.shareWith = String(s.shareWith)
+						}
+						if (s.shareWithDisplayName !== undefined) {
+							sanitized.shareWithDisplayName = String(s.shareWithDisplayName)
+						}
 					}
-					if (s.expiration !== undefined) sanitized.expiration = s.expiration
-					if (s.inherited !== undefined) sanitized.inherited = s.inherited
+					if (s.expiration !== undefined) {
+						sanitized.expiration = s.expiration
+					}
+					if (s.inherited !== undefined) {
+						sanitized.inherited = s.inherited
+					}
 					return sanitized
 				})
 				const result: ShareOverviewResults = {
@@ -230,7 +257,9 @@ export function filesFolderCreateTool(host: ExtendedFilesHost) {
 					return result
 				}
 				const parent = String(args.resource_id ?? (host.context ? host.context().file.path : ''))
-				if (!host.files.createFolder) throw new Error('Folder creation is unavailable.')
+				if (!host.files.createFolder) {
+					throw new Error('Folder creation is unavailable.')
+				}
 				return host.files.createFolder(parent, String(args.name), c.signal)
 			},
 		}),
@@ -262,8 +291,12 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 			},
 			run: async (args, c) => {
 				const validated = validateCopyMoveArgs(args)
-				if (host.commitMutation) return host.commitMutation('nc_files_copy', args, c)
-				if (!host.files.copyFile) throw new Error('File copying is unavailable.')
+				if (host.commitMutation) {
+					return host.commitMutation('nc_files_copy', args, c)
+				}
+				if (!host.files.copyFile) {
+					throw new Error('File copying is unavailable.')
+				}
 				return host.files.copyFile(validated.source, validated.destination, validated.expectedEtag, c.signal)
 			},
 		}),
@@ -285,8 +318,12 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 			},
 			run: async (args, c) => {
 				const validated = validateCopyMoveArgs(args)
-				if (host.commitMutation) return host.commitMutation('nc_files_move', args, c)
-				if (!host.files.moveFile) throw new Error('File moving is unavailable.')
+				if (host.commitMutation) {
+					return host.commitMutation('nc_files_move', args, c)
+				}
+				if (!host.files.moveFile) {
+					throw new Error('File moving is unavailable.')
+				}
 				return host.files.moveFile(validated.source, validated.destination, validated.expectedEtag, c.signal)
 			},
 		}),
@@ -307,8 +344,12 @@ export function filesMutationTools(host: ExtendedFilesHost) {
 			},
 			run: async (args, c) => {
 				const validated = validateShareReadonlyArgs(args)
-				if (host.commitMutation) return host.commitMutation('nc_files_share_readonly', args, c)
-				if (!host.files.shareReadonly) throw new Error('Read-only sharing is unavailable.')
+				if (host.commitMutation) {
+					return host.commitMutation('nc_files_share_readonly', args, c)
+				}
+				if (!host.files.shareReadonly) {
+					throw new Error('Read-only sharing is unavailable.')
+				}
 				return host.files.shareReadonly(validated.path, validated.recipientUserId, validated.expectedEtag, c.signal)
 			},
 		}),

@@ -5,7 +5,8 @@
  * and RFC 6350 (vCard) component parsing and structured property manipulation.
  */
 import ICAL from 'ical.js'
-import { defineTool, type ToolCallContext } from '@fadenstack/agents'
+import { defineTool } from '@fadenstack/agents'
+import type { ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
 
 export const CALENDAR_MUTATIONS = new Set([
@@ -69,12 +70,18 @@ export function fold(line: string): string {
 
 export function escapeCalendarText(value: unknown): string {
 	if (typeof value !== 'string') {
-		if (value === undefined || value === null) return ''
+		if (value === undefined || value === null) {
+			return ''
+		}
 		value = String(value)
 	}
 	const str = value as string
-	if (str.length > 2000) throw new Error('Use text up to 2000 characters.')
-	if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(str)) throw new Error('Control characters are unavailable in calendar/contact text.')
+	if (str.length > 2000) {
+		throw new Error('Use text up to 2000 characters.')
+	}
+	if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(str)) {
+		throw new Error('Control characters are unavailable in calendar/contact text.')
+	}
 	return str
 		.replace(/\\/g, '\\\\')
 		.replace(/\r\n|\r|\n/g, '\\n')
@@ -95,11 +102,15 @@ export interface ParsedComponent {
 }
 
 /** The value separator can follow quoted parameters containing colons. */
-export function contentProperty(line: string): { key: string; header: string; value: string } | undefined {
+export function contentProperty(line: string): { key: string, header: string, value: string } | undefined {
 	let quoted = false
 	for (let i = 0; i < line.length; i++) {
-		if (line[i] === '"') quoted = !quoted
-		if (line[i] !== ':' || quoted) continue
+		if (line[i] === '"') {
+			quoted = !quoted
+		}
+		if (line[i] !== ':' || quoted) {
+			continue
+		}
 		const header = line.slice(0, i)
 		const key = header.split(';')[0].split('.').pop()!.toUpperCase()
 		return { key, header, value: line.slice(i + 1) }
@@ -108,45 +119,77 @@ export function contentProperty(line: string): { key: string; header: string; va
 }
 
 export function validateAllDayDate(value: unknown): asserts value is string {
-	if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) throw new Error('Use a valid all-day YYYY-MM-DD date.')
+	if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) {
+		throw new Error('Use a valid all-day YYYY-MM-DD date.')
+	}
 }
 
 function validUtc(value: string): boolean {
-	if (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?Z$/.test(value)) return false
-	try { validateAllDayDate(value.slice(0, 10)); return true } catch { return false }
+	if (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?Z$/.test(value)) {
+		return false
+	}
+	try {
+		validateAllDayDate(value.slice(0, 10))
+		return true
+	} catch {
+		return false
+	}
 }
 
 type JCalData = ConstructorParameters<typeof ICAL.Component>[0]
 
 /** Validate structure/version for reads as well as private edits. No scheduling restriction on reads. */
 export function parseDavDocument(raw: string): ICAL.Component {
-	if (typeof raw !== 'string' || !raw.trim()) throw new Error('Malformed component document.')
+	if (typeof raw !== 'string' || !raw.trim()) {
+		throw new Error('Malformed component document.')
+	}
 	const stack: string[] = []
 	let roots = 0
 	for (const line of unfold(raw).split(/\r?\n/).filter(Boolean)) {
 		const upper = line.toUpperCase()
-		if (upper.startsWith('BEGIN:')) { if (!stack.length) roots++; stack.push(upper.slice(6)) } else if (upper.startsWith('END:')) { if (stack.pop() !== upper.slice(4)) throw new Error('Malformed component nesting.') } else if (!stack.length) throw new Error('Malformed component content outside its root.')
+		if (upper.startsWith('BEGIN:')) {
+			if (!stack.length) {
+				roots++
+			}
+			stack.push(upper.slice(6))
+		} else if (upper.startsWith('END:')) {
+			if (stack.pop() !== upper.slice(4)) {
+				throw new Error('Malformed component nesting.')
+			}
+		} else if (!stack.length) {
+			throw new Error('Malformed component content outside its root.')
+		}
 	}
-	if (stack.length || roots !== 1) throw new Error('Malformed component nesting.')
+	if (stack.length || roots !== 1) {
+		throw new Error('Malformed component nesting.')
+	}
 	let root: ICAL.Component
 	try {
 		const data = ICAL.parse(raw)
-		if (!Array.isArray(data) || typeof data[0] !== 'string') throw new Error()
+		if (!Array.isArray(data) || typeof data[0] !== 'string') {
+			throw new Error()
+		}
 		root = new ICAL.Component(data as unknown as JCalData)
 	} catch { throw new Error('Malformed component document.') }
 	const version = root.getFirstPropertyValue('version')
-	if (root.getAllProperties('version').length !== 1 || (root.name === 'vcalendar' ? version !== '2.0' : root.name === 'vcard' ? version !== '3.0' && version !== '4.0' : true)) throw new Error('Unsupported component version.')
+	if (root.getAllProperties('version').length !== 1 || (root.name === 'vcalendar' ? version !== '2.0' : root.name === 'vcard' ? version !== '3.0' && version !== '4.0' : true)) {
+		throw new Error('Unsupported component version.')
+	}
 	return root
 }
 
 function componentText(value: string, limit = 2000): string {
 	escapeCalendarText(value)
-	if (typeof value !== 'string' || value.length > limit) throw new Error(`Use text up to ${limit} characters.`)
+	if (typeof value !== 'string' || value.length > limit) {
+		throw new Error(`Use text up to ${limit} characters.`)
+	}
 	return value.replace(/\r\n|\r/g, '\n')
 }
 
 function singleLineText(value: string, limit: number): string {
-	if (/[\r\n]/.test(value)) throw new Error('A single-line contact value is required.')
+	if (/[\r\n]/.test(value)) {
+		throw new Error('A single-line contact value is required.')
+	}
 	return componentText(value, limit)
 }
 
@@ -200,7 +243,7 @@ export function parseDavProperties(raw: string, component: string): ParsedCompon
 }
 
 /** Bounded private editor only; rejects recurrence, attendees, scheduling, and malformed structures. */
-export function assertPrivateComponent(raw: string, component: string): ParsedComponent & { root: ICAL.Component; target: ICAL.Component } {
+export function assertPrivateComponent(raw: string, component: string): ParsedComponent & { root: ICAL.Component, target: ICAL.Component } {
 	if (typeof raw !== 'string' || !raw.trim()) {
 		throw new Error('Malformed component nesting; no write sent.')
 	}
@@ -210,7 +253,9 @@ export function assertPrivateComponent(raw: string, component: string): ParsedCo
 	for (const line of lines) {
 		const upper = line.toUpperCase()
 		if (upper.startsWith('BEGIN:')) {
-			if (!stack.length) roots++
+			if (!stack.length) {
+				roots++
+			}
 			stack.push(upper.slice(6))
 		} else if (upper.startsWith('END:')) {
 			if (stack.pop() !== upper.slice(4)) {
@@ -233,6 +278,7 @@ export function assertPrivateComponent(raw: string, component: string): ParsedCo
 	}
 	const root = new ICAL.Component(jcal as unknown as JCalData)
 	let target: ICAL.Component | undefined
+	// eslint-disable-next-line no-useless-assignment -- the built app stays as it is until after 8 Dec
 	let instances = 0
 
 	if (component.toUpperCase() === 'VCARD') {
@@ -261,7 +307,9 @@ export function assertPrivateComponent(raw: string, component: string): ParsedCo
 		if (instances !== 1) {
 			throw new Error('Recurring resources and exceptions require a separate editor; no write sent.')
 		}
-		if (root.getAllSubcomponents().some(child => child.name !== component.toLowerCase() && child.name !== 'vtimezone')) throw new Error('Mixed component resources require a separate private editor.')
+		if (root.getAllSubcomponents().some((child) => child.name !== component.toLowerCase() && child.name !== 'vtimezone')) {
+			throw new Error('Mixed component resources require a separate private editor.')
+		}
 		target = subcomps[0]
 		const recurrenceProps = ['rrule', 'recurrence-id', 'rdate', 'exdate']
 		for (const rk of recurrenceProps) {
@@ -347,7 +395,9 @@ export function patchIcs(raw: string, component: string, changes: Record<string,
 			valueToSet = ICAL.Time.fromDateTimeString(iso)
 		}
 		const existing = target.getFirstProperty(propName)
-		if (existing && ['summary', 'description', 'location'].includes(propName) && existing.type !== 'text') throw new Error('Unsupported non-text property type for a private text edit.')
+		if (existing && ['summary', 'description', 'location'].includes(propName) && existing.type !== 'text') {
+			throw new Error('Unsupported non-text property type for a private text edit.')
+		}
 		if (existing) {
 			existing.setValue(valueToSet)
 		} else {
@@ -372,7 +422,9 @@ export function patchVcard(raw: string, changes: Record<string, string | null>):
 	}
 	for (const [rawKey, rawValue] of Object.entries(changes)) {
 		const propName = rawKey.toLowerCase()
-		if (rawValue !== null && ['email', 'tel'].includes(propName)) singleLineText(rawValue, propName === 'tel' ? 50 : 120)
+		if (rawValue !== null && ['email', 'tel'].includes(propName)) {
+			singleLineText(rawValue, propName === 'tel' ? 50 : 120)
+		}
 		if (rawValue === null) {
 			target.removeAllProperties(propName)
 			continue
@@ -404,7 +456,9 @@ export function patchVcard(raw: string, changes: Record<string, string | null>):
 			continue
 		}
 		const existing = target.getFirstProperty(propName)
-		if (existing && ['fn', 'note', 'email'].includes(propName) && existing.type !== 'text') throw new Error('Unsupported non-text contact property type.')
+		if (existing && ['fn', 'note', 'email'].includes(propName) && existing.type !== 'text') {
+			throw new Error('Unsupported non-text contact property type.')
+		}
 		if (existing) {
 			existing.setValue(normalized)
 		} else {
@@ -446,8 +500,12 @@ export function buildEventIcs(params: {
 	vevent.addPropertyWithValue('transp', 'OPAQUE')
 	vevent.addPropertyWithValue('x-fadenstack-ai-generated', 'TRUE')
 
-	if (params.description) vevent.addPropertyWithValue('description', componentText(params.description))
-	if (params.location) vevent.addPropertyWithValue('location', componentText(params.location, 120))
+	if (params.description) {
+		vevent.addPropertyWithValue('description', componentText(params.description))
+	}
+	if (params.location) {
+		vevent.addPropertyWithValue('location', componentText(params.location, 120))
+	}
 
 	cal.addSubcomponent(vevent)
 	return serializeDav(cal)
@@ -487,7 +545,9 @@ export function buildTaskIcs(params: {
 	vtodo.addPropertyWithValue('percent-complete', 0)
 	vtodo.addPropertyWithValue('x-fadenstack-ai-generated', 'TRUE')
 
-	if (params.description) vtodo.addPropertyWithValue('description', componentText(params.description))
+	if (params.description) {
+		vtodo.addPropertyWithValue('description', componentText(params.description))
+	}
 	if (params.priority !== undefined && params.priority >= 0 && params.priority <= 9) {
 		vtodo.addPropertyWithValue('priority', params.priority)
 	}
@@ -516,14 +576,18 @@ export function buildContactVcard(params: {
 	nProp.setValue([params.fn.trim(), '', '', '', ''])
 	vcard.addProperty(nProp)
 	vcard.addPropertyWithValue('x-fadenstack-ai-generated', 'TRUE')
-	if (params.email) vcard.addPropertyWithValue('email', singleLineText(params.email.trim(), 120))
+	if (params.email) {
+		vcard.addPropertyWithValue('email', singleLineText(params.email.trim(), 120))
+	}
 	if (params.tel) {
 		const telProp = new ICAL.Property('tel')
 		telProp.setParameter('type', 'VOICE')
 		telProp.setValue(singleLineText(params.tel.trim(), 50))
 		vcard.addProperty(telProp)
 	}
-	if (params.note) vcard.addPropertyWithValue('note', componentText(params.note))
+	if (params.note) {
+		vcard.addPropertyWithValue('note', componentText(params.note))
+	}
 	if (params.categories) {
 		const catProp = new ICAL.Property('categories')
 		catProp.setValues(componentText(params.categories, 120).split(','))
@@ -587,7 +651,9 @@ export function validateCalendarPatchArgs(args: Readonly<Record<string, unknown>
 			throw new Error(`Unsupported event field: ${key}.`)
 		}
 		const value = changes[key]
-		if (typeof value !== 'string' || value.length > (key === 'description' ? 2000 : 120) || (key === 'summary' && !value.trim())) throw new Error(`Invalid calendar ${key}.`)
+		if (typeof value !== 'string' || value.length > (key === 'description' ? 2000 : 120) || (key === 'summary' && !value.trim())) {
+			throw new Error(`Invalid calendar ${key}.`)
+		}
 	}
 	return {
 		calendarId: args.calendarId,
@@ -663,16 +729,26 @@ export function validateTasksPatchArgs(args: Readonly<Record<string, unknown>>) 
 			throw new Error(`Unsupported task field: ${key}.`)
 		}
 		const value = changes[key]
-		if (key === 'dueDate') validateAllDayDate(value)
-		if (key === 'completed' && typeof value !== 'boolean') throw new Error('Task completed must be a boolean.')
+		if (key === 'dueDate') {
+			validateAllDayDate(value)
+		}
+		if (key === 'completed' && typeof value !== 'boolean') {
+			throw new Error('Task completed must be a boolean.')
+		}
 		if (key === 'priority' || key === 'percentComplete') {
-			if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > (key === 'priority' ? 9 : 100)) throw new Error(`Invalid task ${key}.`)
+			if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > (key === 'priority' ? 9 : 100)) {
+				throw new Error(`Invalid task ${key}.`)
+			}
 		}
 		if (key === 'summary' || key === 'description') {
-			if (typeof value !== 'string' || value.length > (key === 'summary' ? 120 : 2000) || (key === 'summary' && !value.trim())) throw new Error(`Invalid task ${key}.`)
+			if (typeof value !== 'string' || value.length > (key === 'summary' ? 120 : 2000) || (key === 'summary' && !value.trim())) {
+				throw new Error(`Invalid task ${key}.`)
+			}
 		}
 	}
-	if (Object.hasOwn(changes, 'completed') && Object.hasOwn(changes, 'percentComplete') && changes.percentComplete !== (changes.completed ? 100 : 0)) throw new Error('Task completion fields conflict.')
+	if (Object.hasOwn(changes, 'completed') && Object.hasOwn(changes, 'percentComplete') && changes.percentComplete !== (changes.completed ? 100 : 0)) {
+		throw new Error('Task completion fields conflict.')
+	}
 	return {
 		calendarId: args.calendarId,
 		filename: args.filename,
@@ -751,7 +827,9 @@ export function validateContactsPatchArgs(args: Readonly<Record<string, unknown>
 		}
 		const value = changes[key]
 		const limit = key === 'note' ? 2000 : key === 'tel' ? 50 : 120
-		if (typeof value !== 'string' || value.length > limit || (key === 'fn' && !value.trim())) throw new Error(`Invalid contact ${key}.`)
+		if (typeof value !== 'string' || value.length > limit || (key === 'fn' && !value.trim())) {
+			throw new Error(`Invalid contact ${key}.`)
+		}
 	}
 	return {
 		bookId: args.bookId,

@@ -11,26 +11,46 @@ export function nativeFileLink(reference: unknown): string | undefined {
 	} catch { return undefined }
 }
 
-function text(value: unknown, max: number): value is string { return typeof value === 'string' && value.length > 0 && value.length <= max && !value.includes('\0') }
+function text(value: unknown, max: number): value is string {
+	return typeof value === 'string' && value.length > 0 && value.length <= max && !value.includes('\0')
+}
 
 /** Validate before lineage registration or rendering; never infer complete coverage from missing fields. */
 export function folderReadResult(value: unknown, target: string): FolderListing {
-	const fail = () => { throw new Error('Invalid native folder response.') }
-	if (!value || typeof value !== 'object') return fail()
+	const fail = () => {
+		throw new Error('Invalid native folder response.')
+	}
+	if (!value || typeof value !== 'object') {
+		return fail()
+	}
 	const listing = value as Record<string, unknown>
 	if (listing.resourceId !== target || !text(listing.etag, 150) || !text(listing.directory, 8192)
-		|| typeof listing.partial !== 'boolean' || !Array.isArray(listing.entries) || listing.entries.length > 100) return fail()
+		|| typeof listing.partial !== 'boolean' || !Array.isArray(listing.entries) || listing.entries.length > 100) { return fail() }
 	const seen = new Set<string>()
 	const entries = listing.entries.map((entry): FolderListingEntry => {
-		if (!entry || typeof entry !== 'object') return fail()
+		if (!entry || typeof entry !== 'object') {
+			return fail()
+		}
 		const row = entry as Record<string, unknown>
 		let reference: string
-		try { reference = fileReference(row.resourceId) } catch { return fail() }
-		if (reference === target || seen.has(reference) || !text(row.filename, 1024) || !text(row.etag, 150) || typeof row.folder !== 'boolean') return fail()
+		try {
+			reference = fileReference(row.resourceId)
+		} catch {
+			return fail()
+		}
+		if (reference === target || seen.has(reference) || !text(row.filename, 1024) || !text(row.etag, 150) || typeof row.folder !== 'boolean') {
+			return fail()
+		}
 		seen.add(reference)
-		if (row.size !== undefined && (typeof row.size !== 'number' || !Number.isFinite(row.size) || row.size < -1)) return fail()
-		if (row.modified !== undefined && (typeof row.modified !== 'number' || !Number.isSafeInteger(row.modified) || row.modified < 0 || row.modified > 8640000000000)) return fail()
-		if (row.permissions !== undefined && (!Number.isInteger(row.permissions) || Number(row.permissions) < 0 || Number(row.permissions) > 31)) return fail()
+		if (row.size !== undefined && (typeof row.size !== 'number' || !Number.isFinite(row.size) || row.size < -1)) {
+			return fail()
+		}
+		if (row.modified !== undefined && (typeof row.modified !== 'number' || !Number.isSafeInteger(row.modified) || row.modified < 0 || row.modified > 8640000000000)) {
+			return fail()
+		}
+		if (row.permissions !== undefined && (!Number.isInteger(row.permissions) || Number(row.permissions) < 0 || Number(row.permissions) > 31)) {
+			return fail()
+		}
 		return {
 			resourceId: reference,
 			filename: row.filename,

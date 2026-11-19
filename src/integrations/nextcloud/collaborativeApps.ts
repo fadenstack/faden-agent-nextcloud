@@ -5,9 +5,10 @@
  * boundaries and result transports still require implementation and acceptance.
  * Live collaborative body replacement is held without upstream changes.
  */
-import { defineTool, type ToolCallContext } from '@fadenstack/agents'
+import { defineTool } from '@fadenstack/agents'
+import type { ToolCallContext } from '@fadenstack/agents'
 import type { FileApi, FormQuestion } from './types.ts'
-import { positiveInteger, optionalPositiveInteger, stringArgument, optionalBoolean, jsonRecord } from './adapterGuards.ts'
+import { jsonRecord, optionalBoolean, optionalPositiveInteger, positiveInteger, stringArgument } from './adapterGuards.ts'
 
 export const COLLECTIVES_MUTATIONS = new Set([
 	'nc_collectives_create_page',
@@ -33,7 +34,9 @@ export function validateCollectivesCreatePageArgs(args: Readonly<Record<string, 
 } {
 	const collectiveId = positiveInteger(args.collectiveId, 'collectiveId')
 	const title = stringArgument(args.title, 'title').trim()
-	if (!title || title.length > 255) throw new Error('Page title must be between 1 and 255 characters.')
+	if (!title || title.length > 255) {
+		throw new Error('Page title must be between 1 and 255 characters.')
+	}
 	const parentId = optionalPositiveInteger(args.parentId, 'parentId')
 	return { collectiveId, title, parentId }
 }
@@ -48,28 +51,44 @@ export function validateFormsCreateFormArgs(args: Readonly<Record<string, unknow
 	questions: FormQuestion[]
 } {
 	const title = stringArgument(args.title, 'title').trim()
-	if (!title || title.length > 255) throw new Error('Form title must be between 1 and 255 characters.')
+	if (!title || title.length > 255) {
+		throw new Error('Form title must be between 1 and 255 characters.')
+	}
 	if (!Array.isArray(args.questions) || !args.questions.length || args.questions.length > 50) {
 		throw new Error('Provide 1 to 50 questions.')
 	}
 	const questions: FormQuestion[] = (args.questions as Array<Record<string, unknown>>).map((q, idx) => {
-		if (!q || typeof q !== 'object' || Array.isArray(q)) throw new Error('A structured question is required.')
+		if (!q || typeof q !== 'object' || Array.isArray(q)) {
+			throw new Error('A structured question is required.')
+		}
 		const text = stringArgument(q.text, 'text').trim()
-		if (!text || text.length > 500) throw new Error(`Question ${idx + 1} text must be between 1 and 500 characters.`)
+		if (!text || text.length > 500) {
+			throw new Error(`Question ${idx + 1} text must be between 1 and 500 characters.`)
+		}
 		const type = (q.type === undefined ? 'short' : stringArgument(q.type, 'type')).trim()
-		if (!['short', 'long', 'multiple', 'checkbox'].includes(type)) throw new Error('Unsupported question type.')
+		if (!['short', 'long', 'multiple', 'checkbox'].includes(type)) {
+			throw new Error('Unsupported question type.')
+		}
 		const mandatory = optionalBoolean(q.mandatory, 'mandatory') ?? false
-		if (q.options !== undefined && (!Array.isArray(q.options) || q.options.length > 50)) throw new Error('Provide at most 50 choice options.')
+		if (q.options !== undefined && (!Array.isArray(q.options) || q.options.length > 50)) {
+			throw new Error('Provide at most 50 choice options.')
+		}
 		const options = Array.isArray(q.options)
-			? q.options.map(o => {
-				const option = stringArgument(o, 'option').trim()
-				if (!option || option.length > 500) throw new Error('Choice options must contain 1 to 500 characters.')
-				return option
-			})
+			? q.options.map((o) => {
+					const option = stringArgument(o, 'option').trim()
+					if (!option || option.length > 500) {
+						throw new Error('Choice options must contain 1 to 500 characters.')
+					}
+					return option
+				})
 			: undefined
 		if (type === 'multiple' || type === 'checkbox') {
-			if (!options?.length || new Set(options).size !== options.length) throw new Error('Choice questions require distinct options.')
-		} else if (options?.length) throw new Error('Text questions cannot have choice options.')
+			if (!options?.length || new Set(options).size !== options.length) {
+				throw new Error('Choice questions require distinct options.')
+			}
+		} else if (options?.length) {
+			throw new Error('Text questions cannot have choice options.')
+		}
 		return { id: idx + 1, text, type, mandatory, options }
 	})
 	return { title, questions }
@@ -102,7 +121,9 @@ export function collectivesTools(host: CollaborativeAppsHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const collectiveId = optionalPositiveInteger(args.collectiveId, 'collectiveId')
-				if (!host.files.collectives) throw new Error('Collectives service is unavailable.')
+				if (!host.files.collectives) {
+					throw new Error('Collectives service is unavailable.')
+				}
 				const result = await host.files.collectives.readHierarchy(collectiveId, c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -125,7 +146,9 @@ export function collectivesTools(host: CollaborativeAppsHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateCollectivesCreatePageArgs(args)
-				if (!host.commitCollectivesMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitCollectivesMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitCollectivesMutation('nc_collectives_create_page', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -146,7 +169,9 @@ export function collectivesTools(host: CollaborativeAppsHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateCollectivesDeletePageArgs(args)
-				if (!host.commitCollectivesMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitCollectivesMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitCollectivesMutation('nc_collectives_delete_page', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -171,7 +196,9 @@ export function formsTools(host: CollaborativeAppsHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const formId = optionalPositiveInteger(args.formId, 'formId')
-				if (!host.files.forms) throw new Error('Nextcloud Forms service is unavailable.')
+				if (!host.files.forms) {
+					throw new Error('Nextcloud Forms service is unavailable.')
+				}
 				const result = await host.files.forms.readForm(formId, c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -207,7 +234,9 @@ export function formsTools(host: CollaborativeAppsHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateFormsCreateFormArgs(args)
-				if (!host.commitFormsMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitFormsMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitFormsMutation('nc_forms_create_form', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -229,7 +258,9 @@ export function formsTools(host: CollaborativeAppsHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateFormsSubmitResponseArgs(args)
-				if (!host.commitFormsMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitFormsMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitFormsMutation('nc_forms_submit_response', args, c)
 				host.recordResult(c.callId, result, c)
 				return result

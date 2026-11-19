@@ -4,7 +4,8 @@
  * Bounded native transports use server-owned previews and the current user's
  * native session. Providers remain behind administrator development gates.
  */
-import { defineTool, type ToolCallContext } from '@fadenstack/agents'
+import { defineTool } from '@fadenstack/agents'
+import type { ToolCallContext } from '@fadenstack/agents'
 import type { FileApi, MailDraft } from './types.ts'
 import { positiveInteger, stringArgument } from './adapterGuards.ts'
 
@@ -26,11 +27,15 @@ export interface MailTalkHost {
 	commitTalkMutation?(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown>
 }
 
-export function validateMailReadArgs(args: Readonly<Record<string, unknown>>): { query?: string; accountId?: string; mailboxId?: number; messageId?: number } {
+export function validateMailReadArgs(args: Readonly<Record<string, unknown>>): { query?: string, accountId?: string, mailboxId?: number, messageId?: number } {
 	const query = args.query !== undefined ? stringArgument(args.query, 'query').trim() : undefined
 	const accountId = args.accountId !== undefined ? stringArgument(args.accountId, 'accountId').trim() : undefined
-	if (query !== undefined && query.length > 200) throw new Error('Search query must be at most 200 characters.')
-	if (accountId !== undefined && !/^[0-9a-zA-Z_-]+$/.test(accountId)) throw new Error('Invalid accountId format.')
+	if (query !== undefined && query.length > 200) {
+		throw new Error('Search query must be at most 200 characters.')
+	}
+	if (accountId !== undefined && !/^[0-9a-zA-Z_-]+$/.test(accountId)) {
+		throw new Error('Invalid accountId format.')
+	}
 	return { query, accountId, ...(args.mailboxId !== undefined ? { mailboxId: positiveInteger(args.mailboxId, 'mailboxId') } : {}), ...(args.messageId !== undefined ? { messageId: positiveInteger(args.messageId, 'messageId') } : {}) }
 }
 
@@ -38,51 +43,71 @@ export function validateMailDraftArgs(args: Readonly<Record<string, unknown>>): 
 	const accountRef = stringArgument(args.accountRef, 'accountRef').trim()
 	const subject = stringArgument(args.subject, 'subject').trim()
 	const body = stringArgument(args.body, 'body')
-	if (!accountRef) throw new Error('A valid accountRef is required.')
-	if (!subject || subject.length > 255) throw new Error('Subject must be between 1 and 255 characters.')
-	if (!body || body.length > 65536) throw new Error('Draft body must be between 1 and 65,536 characters.')
+	if (!accountRef) {
+		throw new Error('A valid accountRef is required.')
+	}
+	if (!subject || subject.length > 255) {
+		throw new Error('Subject must be between 1 and 255 characters.')
+	}
+	if (!body || body.length > 65536) {
+		throw new Error('Draft body must be between 1 and 65,536 characters.')
+	}
 
 	const rawRecipients = args.recipients
 	if (!Array.isArray(rawRecipients) || !rawRecipients.length || rawRecipients.length > 50) {
 		throw new Error('Provide 1 to 50 recipients.')
 	}
-	const recipients = rawRecipients.map(r => {
+	const recipients = rawRecipients.map((r) => {
 		const email = stringArgument(r, 'recipient').trim()
-		if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(`Invalid recipient email address: ${email}`)
+		if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+			throw new Error(`Invalid recipient email address: ${email}`)
+		}
 		return email
 	})
 
-	if (args.attachments !== undefined && (!Array.isArray(args.attachments) || args.attachments.length > 20)) throw new Error('Provide at most 20 attachment references.')
+	if (args.attachments !== undefined && (!Array.isArray(args.attachments) || args.attachments.length > 20)) {
+		throw new Error('Provide at most 20 attachment references.')
+	}
 	const attachments = Array.isArray(args.attachments)
-		? args.attachments.map(a => {
-			const reference = stringArgument(a, 'attachment').trim()
-			if (!reference || reference.length > 256 || /[\x00-\x1f\x7f]/.test(reference)) throw new Error('A bounded attachment reference is required.')
-			return reference
-		})
+		? args.attachments.map((a) => {
+				const reference = stringArgument(a, 'attachment').trim()
+				if (!reference || reference.length > 256 || /[\x00-\x1f\x7f]/.test(reference)) {
+					throw new Error('A bounded attachment reference is required.')
+				}
+				return reference
+			})
 		: undefined
 	const draftId = args.draftId !== undefined ? positiveInteger(args.draftId, 'draftId') : undefined
 
 	return { id: draftId, accountRef, subject, body, recipients, attachments }
 }
 
-export function validateMailSendArgs(args: Readonly<Record<string, unknown>>): { draftId: number; expectedRevision: string } {
+export function validateMailSendArgs(args: Readonly<Record<string, unknown>>): { draftId: number, expectedRevision: string } {
 	const draftId = positiveInteger(args.draftId, 'draftId')
 	const expectedRevision = stringArgument(args.expectedRevision, 'expectedRevision').trim()
-	if (!expectedRevision || expectedRevision.length > 128) throw new Error('An exact expectedRevision is required before sending.')
+	if (!expectedRevision || expectedRevision.length > 128) {
+		throw new Error('An exact expectedRevision is required before sending.')
+	}
 	return { draftId, expectedRevision }
 }
 
 export function validateTalkReadArgs(args: Readonly<Record<string, unknown>>): { roomToken: string } {
 	const roomToken = stringArgument(args.roomToken, 'roomToken').trim()
-	if (!roomToken || !/^[0-9a-zA-Z_-]{4,64}$/.test(roomToken)) throw new Error('A valid roomToken (4-64 alphanumeric characters) is required.')
+	if (!roomToken || !/^[0-9a-zA-Z_-]{4,64}$/.test(roomToken)) {
+		throw new Error('A valid roomToken (4-64 alphanumeric characters) is required.')
+	}
 	return { roomToken }
 }
 
-export function validateTalkSendMessageArgs(args: Readonly<Record<string, unknown>>): { roomToken: string; message: string; replyTo?: number } {
+export function validateTalkSendMessageArgs(args: Readonly<Record<string, unknown>>): { roomToken: string, message: string, replyTo?: number } {
 	const roomToken = stringArgument(args.roomToken, 'roomToken').trim()
-	if (!roomToken || !/^[0-9a-zA-Z_-]{4,64}$/.test(roomToken)) throw new Error('A valid roomToken is required.')
+	if (!roomToken || !/^[0-9a-zA-Z_-]{4,64}$/.test(roomToken)) {
+		throw new Error('A valid roomToken is required.')
+	}
 	const message = stringArgument(args.message, 'message').trim()
-	if (!message || message.length > 4000) throw new Error('Message must be between 1 and 4000 characters.')
+	if (!message || message.length > 4000) {
+		throw new Error('Message must be between 1 and 4000 characters.')
+	}
 	const replyTo = args.replyTo !== undefined ? positiveInteger(args.replyTo, 'replyTo') : undefined
 	return { roomToken, message, replyTo }
 }
@@ -106,8 +131,14 @@ export function mailTools(host: MailTalkHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const { query, accountId } = validateMailReadArgs(args)
-				if (host.readMail) { const result = await host.readMail(args, c.signal); host.recordResult(c.callId, result, c); return result }
-				if (!host.files.mail) throw new Error('Nextcloud Mail service is unavailable.')
+				if (host.readMail) {
+					const result = await host.readMail(args, c.signal)
+					host.recordResult(c.callId, result, c)
+					return result
+				}
+				if (!host.files.mail) {
+					throw new Error('Nextcloud Mail service is unavailable.')
+				}
 				const result = await host.files.mail.readMail(query, accountId, c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -136,7 +167,9 @@ export function mailTools(host: MailTalkHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateMailDraftArgs(args)
-				if (!host.commitMailMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitMailMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitMailMutation('nc_mail_save_draft', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -159,7 +192,9 @@ export function mailTools(host: MailTalkHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateMailSendArgs(args)
-				if (!host.commitMailMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitMailMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitMailMutation('nc_mail_send_draft', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -185,8 +220,14 @@ export function talkTools(host: MailTalkHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const { roomToken } = validateTalkReadArgs(args)
-				if (host.readTalk) { const result = await host.readTalk(args, c.signal); host.recordResult(c.callId, result, c); return result }
-				if (!host.files.talk) throw new Error('Nextcloud Talk service is unavailable.')
+				if (host.readTalk) {
+					const result = await host.readTalk(args, c.signal)
+					host.recordResult(c.callId, result, c)
+					return result
+				}
+				if (!host.files.talk) {
+					throw new Error('Nextcloud Talk service is unavailable.')
+				}
 				const result = await host.files.talk.readContext(roomToken, c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -210,7 +251,9 @@ export function talkTools(host: MailTalkHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateTalkSendMessageArgs(args)
-				if (!host.commitTalkMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitTalkMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitTalkMutation('nc_talk_send_message', args, c)
 				host.recordResult(c.callId, result, c)
 				return result

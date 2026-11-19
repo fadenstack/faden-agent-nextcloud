@@ -1,11 +1,11 @@
 import axios from '@nextcloud/axios'
 import { getRequestToken } from '@nextcloud/auth'
 import { t } from '@nextcloud/l10n'
-import { generateUrl, generateRemoteUrl } from '@nextcloud/router'
-import type { FileApi, Identity, FileContext, Listing, Proposal, ReadResult, WriteArguments, WriteResult, SearchTransport, SearchPlan, FileMetadata, SearchCapabilities, NativeContentResults, DavCreatePlan, DavFolderCreatePlan, HistoryApi, ShareEntry, FolderListing, FolderCreateResult, FolderCreateProposal, FolderCreateOutcome, FileCopyMoveResult, AppCapabilities, TablesApi, TableSnapshot, DeckApi, DeckBoardSnapshot, CalendarApi, TasksApi, ContactsApi, DavCalendar, DavCalendarObject, DavAddressBook, DavContact, DavCollection, ShareListing } from './types.ts'
-import type { ResourcePurpose, NativeResource } from '../../platform/scope.ts'
-import { davSegment, davFilePath, strongEtagHeader, positiveInteger } from './adapterGuards.ts'
-import { parseDavProperties, parseDavDocument, contentProperty } from './caldav.ts'
+import { generateRemoteUrl, generateUrl } from '@nextcloud/router'
+import type { AppCapabilities, CalendarApi, ContactsApi, DavAddressBook, DavCalendar, DavCalendarObject, DavCollection, DavContact, DavCreatePlan, DavFolderCreatePlan, DeckApi, DeckBoardSnapshot, FileApi, FileContext, FileCopyMoveResult, FileMetadata, FolderCreateOutcome, FolderCreateProposal, FolderCreateResult, FolderListing, HistoryApi, Identity, Listing, NativeContentResults, Proposal, ReadResult, SearchCapabilities, SearchPlan, SearchTransport, ShareEntry, ShareListing, TablesApi, TableSnapshot, TasksApi, WriteArguments, WriteMark, WriteResult } from './types.ts'
+import type { NativeResource, ResourcePurpose } from '../../platform/scope.ts'
+import { davFilePath, davSegment, positiveInteger, strongEtagHeader } from './adapterGuards.ts'
+import { contentProperty, parseDavDocument, parseDavProperties } from './caldav.ts'
 import { folderDavPlan } from './folderCreate.ts'
 import { nativeProvidersApi } from '../../providers/client.ts'
 import { fileOperationsApi } from './fileOperations.ts'
@@ -13,12 +13,23 @@ import { fileOperationsApi } from './fileOperations.ts'
 const MAX_DAV_RESPONSE_BYTES = 512 * 1024
 
 function assertDavResponseText(value: unknown): asserts value is string {
-	if (typeof value !== 'string') throw new Error('Invalid DAV response text.')
-	if (new TextEncoder().encode(value).byteLength > MAX_DAV_RESPONSE_BYTES) throw new Error('DAV response exceeds maximum allowed size; narrow the request.')
+	if (typeof value !== 'string') {
+		throw new Error('Invalid DAV response text.')
+	}
+	if (new TextEncoder().encode(value).byteLength > MAX_DAV_RESPONSE_BYTES) {
+		throw new Error('DAV response exceeds maximum allowed size; narrow the request.')
+	}
 }
 
 function davRevision(value: unknown): string {
-	try { if (typeof value !== 'string') throw new Error(); return strongEtagHeader(value).slice(1, -1) } catch { throw new Error('Missing or invalid ETag revision metadata; one strong revision is required.') }
+	try {
+		if (typeof value !== 'string') {
+			throw new Error()
+		}
+		return strongEtagHeader(value).slice(1, -1)
+	} catch {
+		throw new Error('Missing or invalid ETag revision metadata; one strong revision is required.')
+	}
 }
 
 function davCollection<T>(items: T[], complete: boolean): DavCollection<T> {
@@ -28,29 +39,45 @@ function davCollection<T>(items: T[], complete: boolean): DavCollection<T> {
 
 function parseDavMultistatus(raw: string): Document {
 	assertDavResponseText(raw)
-	if (/<!DOCTYPE/i.test(raw)) throw new Error('Invalid DAV XML document type.')
+	if (/<!DOCTYPE/i.test(raw)) {
+		throw new Error('Invalid DAV XML document type.')
+	}
 	const doc = parseXmlDoc(raw)
-	if (!doc || doc.documentElement.namespaceURI !== 'DAV:' || doc.documentElement.localName !== 'multistatus') throw new Error('Invalid or malformed DAV XML response.')
+	if (!doc || doc.documentElement.namespaceURI !== 'DAV:' || doc.documentElement.localName !== 'multistatus') {
+		throw new Error('Invalid or malformed DAV XML response.')
+	}
 	return doc
 }
 
 function activeRoute(): Location | undefined {
-	if (typeof location === 'undefined') return undefined
+	if (typeof location === 'undefined') {
+		return undefined
+	}
 	const frame = typeof document === 'undefined' ? null : document.querySelector<HTMLIFrameElement>('#fadenstack-native-frame')
-	if (!frame) return location
-	try { return frame.contentDocument?.location } catch { return undefined }
+	if (!frame) {
+		return location
+	}
+	try {
+		return frame.contentDocument?.location
+	} catch {
+		return undefined
+	}
 }
 
 function resolveRouteTableId(): number | undefined {
 	const route = activeRoute()
-	if (!route) return undefined
+	if (!route) {
+		return undefined
+	}
 	const match = /(?:^#|^)\/table\/([1-9]\d*)(?:[/?]|$)/.exec(route.hash) ?? /\/apps\/tables\/table\/([1-9]\d*)(?:\/|$)/.exec(route.pathname)
 	return match ? Number(match[1]) : undefined
 }
 
 function resolveRouteBoardId(): number | undefined {
 	const route = activeRoute()
-	if (!route) return undefined
+	if (!route) {
+		return undefined
+	}
 	const match = /^#\/board\/([1-9]\d*)(?:[/?]|$)/.exec(route.hash) ?? /\/apps\/deck\/board\/([1-9]\d*)(?:\/|$)/.exec(route.pathname)
 	return match ? Number(match[1]) : undefined
 }
@@ -62,21 +89,24 @@ const HISTORY_CONFLICTS: Record<string, string> = {
 }
 
 export class NextcloudFiles implements FileApi {
-
 	constructor(readonly initial: Identity, private readonly nativeFetch: typeof fetch = globalThis.fetch.bind(globalThis)) {}
 	#cloudIdentity: ((signal?: AbortSignal) => Promise<string>) | undefined
 	setCloudIdentity(provider?: (signal?: AbortSignal) => Promise<string>): void { this.#cloudIdentity = provider }
 	readonly nativeProviders = nativeProvidersApi((path, body, signal) => this.post(path, body, signal), (path, body, signal) => this.authenticatedPost(path, body, signal))
-	readonly fileOperations = fileOperationsApi((path, body, signal) => this.post(path, body, signal), async id => {
-		if (!/^(?:[a-f0-9]{48}|request-[a-f0-9-]{36})$/.test(id)) throw new Error('Invalid Files cancellation identifier.')
+	readonly fileOperations = fileOperationsApi((path, body, signal) => this.post(path, body, signal), async (id) => {
+		if (!/^(?:[a-f0-9]{48}|request-[a-f0-9-]{36})$/.test(id)) {
+			throw new Error('Invalid Files cancellation identifier.')
+		}
 		await axios.post(generateUrl(`/apps/fadenstack_agent/files/operations/${id}/cancel`), {}, {
-			headers: { 'X-Fadenstack-Session': this.initial.binding }, timeout: 5000, signal: AbortSignal.timeout(5000),
+			headers: { 'X-Fadenstack-Session': this.initial.binding },
+			timeout: 5000,
+			signal: AbortSignal.timeout(5000),
 		})
 	})
 
 	readonly history: HistoryApi = {
-		availability: signal => this.authenticatedPost('/history/availability', {}, signal),
-		list: signal => this.authenticatedPost('/history/list', {}, signal),
+		availability: (signal) => this.authenticatedPost('/history/availability', {}, signal),
+		list: (signal) => this.authenticatedPost('/history/list', {}, signal),
 		prepare: (actionId, direction, signal) => this.authenticatedPost('/history/prepare', { actionId, direction }, signal),
 		approve: async (preview, signal) => { await this.authenticatedPost(this.historyPath(preview.id, preview.digest, 'approve'), { digest: preview.digest }, signal) },
 		execute: (preview, signal) => this.authenticatedPost(this.historyPath(preview.id, preview.digest, 'execute'), { digest: preview.digest }, signal),
@@ -87,9 +117,13 @@ export class NextcloudFiles implements FileApi {
 		readTable: async (tableId, signal): Promise<TableSnapshot> => {
 			await this.assertIdentity(signal)
 			const id = positiveInteger(tableId ?? resolveRouteTableId(), 'tableId')
-			if (!id) throw new Error('Choose an explicit table or open its native route.')
+			if (!id) {
+				throw new Error('Choose an explicit table or open its native route.')
+			}
 			const result = await this.nativeProviders.structuredRead!('tables', id, signal ?? new AbortController().signal)
-			if (result.resource.provider !== 'tables' || result.resource.collectionId !== String(id) || !('table' in result.snapshot) || result.snapshot.table.id !== id) throw new Error('Invalid native table result.')
+			if (result.resource.provider !== 'tables' || result.resource.collectionId !== String(id) || !('table' in result.snapshot) || result.snapshot.table.id !== id) {
+				throw new Error('Invalid native table result.')
+			}
 			return { ...result.snapshot, nativeResource: result.resource }
 		},
 		addColumn: async () => { throw new Error('Use an individually approved native Tables proposal.') },
@@ -102,9 +136,13 @@ export class NextcloudFiles implements FileApi {
 		readBoard: async (boardId, signal): Promise<DeckBoardSnapshot> => {
 			await this.assertIdentity(signal)
 			const id = positiveInteger(boardId ?? resolveRouteBoardId(), 'boardId')
-			if (!id) throw new Error('Choose an explicit board or open its native route.')
+			if (!id) {
+				throw new Error('Choose an explicit board or open its native route.')
+			}
 			const result = await this.nativeProviders.structuredRead!('deck', id, signal ?? new AbortController().signal)
-			if (result.resource.provider !== 'deck' || result.resource.collectionId !== String(id) || !('board' in result.snapshot) || result.snapshot.board.id !== id) throw new Error('Invalid native Deck result.')
+			if (result.resource.provider !== 'deck' || result.resource.collectionId !== String(id) || !('board' in result.snapshot) || result.snapshot.board.id !== id) {
+				throw new Error('Invalid native Deck result.')
+			}
 			return { ...result.snapshot, nativeResource: result.resource }
 		},
 		patchCard: async () => { throw new Error('Use an individually approved native Deck proposal.') },
@@ -184,7 +222,9 @@ export class NextcloudFiles implements FileApi {
 			const etag = davRevision(res.headers.etag)
 			const raw = res.data
 			const parsed = parseDavProperties(raw, 'VEVENT')
-			if (!parsed.instances) throw new Error('Malformed native component content.')
+			if (!parsed.instances) {
+				throw new Error('Malformed native component content.')
+			}
 			const values = parsed.values
 			return { etag, raw, values }
 		},
@@ -226,7 +266,7 @@ export class NextcloudFiles implements FileApi {
 	readonly tasks: TasksApi = {
 		listTaskLists: async (signal?: AbortSignal): Promise<DavCalendar[]> => {
 			const cals = await this.calendar.listCalendars(signal)
-			return davCollection(cals.filter(c => c.components.includes('VTODO')), cals.complete === true)
+			return davCollection(cals.filter((c) => c.components.includes('VTODO')), cals.complete === true)
 		},
 		readTasks: async (calendarId: string, signal?: AbortSignal): Promise<DavCalendarObject[]> => {
 			await this.assertIdentity(signal)
@@ -257,7 +297,9 @@ export class NextcloudFiles implements FileApi {
 			const etag = davRevision(res.headers.etag)
 			const raw = res.data
 			const parsed = parseDavProperties(raw, 'VTODO')
-			if (!parsed.instances) throw new Error('Malformed native component content.')
+			if (!parsed.instances) {
+				throw new Error('Malformed native component content.')
+			}
 			const values = parsed.values
 			return { etag, raw, values }
 		},
@@ -313,7 +355,7 @@ export class NextcloudFiles implements FileApi {
 			assertDavResponseText(res.data)
 			return parseAddressBooksXml(res.data, this.addressBookHomeUrl())
 		},
-		findContacts: async (query: string, signal?: AbortSignal): Promise<{ contacts: DavContact[]; complete: boolean }> => {
+		findContacts: async (query: string, signal?: AbortSignal): Promise<{ contacts: DavContact[], complete: boolean }> => {
 			await this.assertIdentity(signal)
 			const books = await this.contacts.listAddressBooks(signal)
 			const found: DavContact[] = []
@@ -336,7 +378,9 @@ export class NextcloudFiles implements FileApi {
 				complete &&= contacts.complete === true
 				for (const c of contacts) {
 					found.push(c)
-					if (found.length >= 20) return { contacts: found.slice(0, 20), complete: false }
+					if (found.length >= 20) {
+						return { contacts: found.slice(0, 20), complete: false }
+					}
 				}
 			}
 			return { contacts: found, complete }
@@ -355,7 +399,9 @@ export class NextcloudFiles implements FileApi {
 				const etag = davRevision(res.headers.etag)
 				const raw = res.data
 				const parsed = parseDavProperties(raw, 'VCARD')
-				if (!parsed.instances) throw new Error('Malformed native component content.')
+				if (!parsed.instances) {
+					throw new Error('Malformed native component content.')
+				}
 				const values = parsed.values
 				return { etag, raw, values }
 			}
@@ -412,23 +458,31 @@ export class NextcloudFiles implements FileApi {
 	private addressBookHref(href: string): string {
 		const base = this.addressBookHomeUrl()
 		const target = new URL(href, base)
-		if (target.origin !== base.origin || target.username || target.password || target.search || target.hash || !target.pathname.startsWith(base.pathname)) throw new Error('The native address-book path is unavailable.')
+		if (target.origin !== base.origin || target.username || target.password || target.search || target.hash || !target.pathname.startsWith(base.pathname)) {
+			throw new Error('The native address-book path is unavailable.')
+		}
 		return target.href
 	}
 
 	private historyPath(id: string, digest: string, operation: 'approve' | 'execute' | 'cancel'): string {
-		if (!/^[a-f0-9]{48}$/.test(id) || !/^[a-f0-9]{64}$/.test(digest)) throw new Error('Invalid history preview.')
+		if (!/^[a-f0-9]{48}$/.test(id) || !/^[a-f0-9]{64}$/.test(digest)) {
+			throw new Error('Invalid history preview.')
+		}
 		return `/history/${id}/${operation}`
 	}
 
 	private async authenticatedPost<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
 		signal?.throwIfAborted()
 		await this.assertIdentity(signal)
-		if (!this.#cloudIdentity) throw new Error('Sign in to Fadenstack again.')
+		if (!this.#cloudIdentity) {
+			throw new Error('Sign in to Fadenstack again.')
+		}
 		const token = await this.#cloudIdentity(signal)
 		signal?.throwIfAborted()
 		const url = generateUrl(`/apps/fadenstack_agent${path}`)
-		if (new URL(url, location.href).origin !== location.origin) throw new Error('The Nextcloud request origin changed.')
+		if (new URL(url, location.href).origin !== location.origin) {
+			throw new Error('The Nextcloud request origin changed.')
+		}
 		const response = await fetch(url, {
 			method: 'POST',
 			credentials: 'same-origin',
@@ -453,7 +507,7 @@ export class NextcloudFiles implements FileApi {
 	readonly searchTransport: SearchTransport = {
 		plan: (filters, signal) => this.post<SearchPlan>('/search/plan', { filters }, signal),
 		resolve: (resourceIds, scope, signal, content = false) => this.post<FileMetadata[]>('/search/resolve', { resourceIds, scope, content }, signal),
-		capabilities: signal => this.post<SearchCapabilities>('/search/capabilities', {}, signal),
+		capabilities: (signal) => this.post<SearchCapabilities>('/search/capabilities', {}, signal),
 		content: (query, limit, page, signal) => this.post<NativeContentResults>('/search/content', { query, limit, page }, signal),
 		dav: async (xml, signal) => {
 			await this.assertIdentity(signal)
@@ -466,7 +520,9 @@ export class NextcloudFiles implements FileApi {
 				signal,
 				timeout: 15000,
 			})
-			if (response.status !== 207) throw new Error('Native WebDAV SEARCH is unavailable on this Nextcloud server.')
+			if (response.status !== 207) {
+				throw new Error('Native WebDAV SEARCH is unavailable on this Nextcloud server.')
+			}
 			return response.data
 		},
 	}
@@ -482,7 +538,7 @@ export class NextcloudFiles implements FileApi {
 			|| now.fileProvenanceEnabled !== this.initial.fileProvenanceEnabled
 			|| now.providerReadsEnabled !== this.initial.providerReadsEnabled
 			|| now.development !== this.initial.development
-			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled', 'filesReadsEnabled', 'folderCreateEnabled', 'filesMutationsEnabled'] as const).some(key => now[key] !== this.initial[key])
+			|| (['extendedFilesEnabled', 'tablesEnabled', 'deckEnabled', 'calendarEnabled', 'tasksEnabled', 'contactsEnabled', 'filesReadsEnabled', 'folderCreateEnabled', 'filesMutationsEnabled'] as const).some((key) => now[key] !== this.initial[key])
 			|| now.scopePolicy?.version !== this.initial.scopePolicy?.version
 			|| now.serverUrl !== this.initial.serverUrl || now.agent !== this.initial.agent || !now.enabled) {
 			throw new Error('The Nextcloud session or agent configuration changed. Reload and sign in again.')
@@ -490,10 +546,14 @@ export class NextcloudFiles implements FileApi {
 	}
 
 	async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-		if ((this.initial.historyEnabled || this.initial.fileProvenanceEnabled) && (/^\/proposals(?:\/|$)/.test(path) || /^\/files\/(?:folder|operations)(?:\/|$)/.test(path) || path === '/creations/finish')) return this.authenticatedPost(path, body, signal)
+		if ((this.initial.historyEnabled || this.initial.fileProvenanceEnabled) && (/^\/proposals(?:\/|$)/.test(path) || /^\/files\/(?:folder|operations)(?:\/|$)/.test(path) || path === '/creations/finish')) {
+			return this.authenticatedPost(path, body, signal)
+		}
 		try {
 			return (await axios.post<T>(generateUrl(`/apps/fadenstack_agent${path}`), body, {
-				headers: { 'X-Fadenstack-Session': this.initial.binding }, signal, timeout: 20000,
+				headers: { 'X-Fadenstack-Session': this.initial.binding },
+				signal,
+				timeout: 20000,
 			})).data
 		} catch (error) { throw nextcloudError(error) }
 	}
@@ -508,19 +568,31 @@ export class NextcloudFiles implements FileApi {
 
 	async approve(id: string, signal?: AbortSignal): Promise<void> { await this.post(`/proposals/${encodeURIComponent(id)}/approve`, {}, signal) }
 	async cancelProposal(id: string): Promise<void> { await this.post(`/proposals/${encodeURIComponent(id)}/cancel`, {}, AbortSignal.timeout(5000)) }
-	async commit(id: string, signal?: AbortSignal, mark?: import('./types.ts').WriteMark): Promise<WriteResult> {
-		if (mark) throw new Error('Prepare marked content before approval; a commit cannot change it.')
+	async commit(id: string, signal?: AbortSignal, mark?: WriteMark): Promise<WriteResult> {
+		if (mark) {
+			throw new Error('Prepare marked content before approval; a commit cannot change it.')
+		}
 		const result = await this.post<WriteResult | DavCreatePlan>(`/proposals/${encodeURIComponent(id)}/commit`, { createProtocol: 1 }, signal)
-		if (!('kind' in result)) return result
+		if (!('kind' in result)) {
+			return result
+		}
 		const prefix = `/files/${encodeURIComponent(this.initial.userId)}/`
-		if (result.kind !== 'dav-create' || !result.dav_path.startsWith(prefix) || /[?#\r\n]/.test(result.dav_path)) throw new Error('Invalid approved Nextcloud creation plan.')
+		if (result.kind !== 'dav-create' || !result.dav_path.startsWith(prefix) || /[?#\r\n]/.test(result.dav_path)) {
+			throw new Error('Invalid approved Nextcloud creation plan.')
+		}
 		await this.assertIdentity(signal)
 		const [parent] = await this.searchTransport.resolve([result.parent_resource_id], 'all', signal ?? AbortSignal.timeout(20000))
-		if (!parent?.folder || parent.path !== result.parent_path || parent.etag !== result.parent_etag || !(parent.permissions & 4)) throw new Error('The approved destination changed. No write was performed.')
+		if (!parent?.folder || parent.path !== result.parent_path || parent.etag !== result.parent_etag || !(parent.permissions & 4)) {
+			throw new Error('The approved destination changed. No write was performed.')
+		}
 		const put = await axios.put(generateRemoteUrl('dav') + result.dav_path, result.content, {
-			headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-None-Match': '*', 'X-OC-CTime': String(Math.floor(Date.now() / 1000)) }, signal, timeout: 20000,
-		}).catch(error => { throw nextcloudError(error) })
-		if (put.status !== 201) throw new Error('Nextcloud did not confirm a new file creation. No success is claimed.')
+			headers: { 'Content-Type': 'text/plain; charset=utf-8', 'If-None-Match': '*', 'X-OC-CTime': String(Math.floor(Date.now() / 1000)) },
+			signal,
+			timeout: 20000,
+		}).catch((error) => { throw nextcloudError(error) })
+		if (put.status !== 201) {
+			throw new Error('Nextcloud did not confirm a new file creation. No success is claimed.')
+		}
 		await this.assertIdentity(signal)
 		return this.post('/creations/finish', { receiptId: result.receiptId }, signal)
 	}
@@ -531,7 +603,9 @@ export class NextcloudFiles implements FileApi {
 		const clientRequestId = `request-${crypto.randomUUID()}`
 		let cancelled = false
 		const cancel = () => {
-			if (cancelled) return
+			if (cancelled) {
+				return
+			}
 			cancelled = true
 			this.cancelFolderCreate(clientRequestId).catch(() => {})
 		}
@@ -540,7 +614,12 @@ export class NextcloudFiles implements FileApi {
 			const result = await this.post<FolderCreateProposal>('/files/folder/propose', { resourceId, name, expectedRevision, clientRequestId }, signal)
 			signal?.throwIfAborted()
 			return result
-		} catch (error) { cancel(); throw error } finally { signal?.removeEventListener('abort', cancel) }
+		} catch (error) {
+			cancel()
+			throw error
+		} finally {
+			signal?.removeEventListener('abort', cancel)
+		}
 	}
 
 	async approveFolderCreate(id: string, signal?: AbortSignal): Promise<void> {
@@ -581,12 +660,16 @@ export class NextcloudFiles implements FileApi {
 
 		const headers: Record<string, string> = { 'If-None-Match': '*', 'X-Fadenstack-Folder-Ticket': plan.receiptId, 'X-Fadenstack-Session': this.initial.binding, requesttoken: getRequestToken() ?? '' }
 		if (this.initial.historyEnabled) {
-			if (!this.#cloudIdentity) throw new Error('Sign in to Fadenstack again.')
+			if (!this.#cloudIdentity) {
+				throw new Error('Sign in to Fadenstack again.')
+			}
 			headers['X-Fadenstack-Agent-Token'] = await this.#cloudIdentity(signal)
 		}
 		signal?.throwIfAborted()
 		const target = generateRemoteUrl('dav').replace(/\/$/, '') + '/' + plan.dav_path.replace(/^\//, '')
-		if (new URL(target, location.href).origin !== location.origin) throw new Error('The native DAV request origin changed.')
+		if (new URL(target, location.href).origin !== location.origin) {
+			throw new Error('The native DAV request origin changed.')
+		}
 		let mkcolRes: Response
 		try {
 			mkcolRes = await this.nativeFetch(target, {
@@ -650,7 +733,10 @@ export class NextcloudFiles implements FileApi {
 
 	async pdf(contextId: string, signal?: AbortSignal): Promise<Uint8Array> {
 		const response = await axios.post<ArrayBuffer>(generateUrl('/apps/fadenstack_agent/context/content'), { contextId }, {
-			headers: { 'X-Fadenstack-Session': this.initial.binding }, responseType: 'arraybuffer', signal, timeout: 20000,
+			headers: { 'X-Fadenstack-Session': this.initial.binding },
+			responseType: 'arraybuffer',
+			signal,
+			timeout: 20000,
 		})
 		return new Uint8Array(response.data)
 	}
@@ -680,7 +766,9 @@ export class NextcloudFiles implements FileApi {
 			}
 		} catch (error) {
 			const status = (error as { response?: { status?: number } })?.response?.status
-			if (status !== 404) throw error
+			if (status !== 404) {
+				throw error
+			}
 		}
 
 		const response = await axios.request({
@@ -689,7 +777,9 @@ export class NextcloudFiles implements FileApi {
 			signal,
 			timeout: 15000,
 		})
-		if (response.status !== 201) throw new Error('Nextcloud did not confirm folder creation.')
+		if (response.status !== 201) {
+			throw new Error('Nextcloud did not confirm folder creation.')
+		}
 		return { path: `/${targetRel}`, name }
 	}
 
@@ -703,14 +793,20 @@ export class NextcloudFiles implements FileApi {
 
 	private async copyOrMove(method: 'COPY' | 'MOVE', sourcePath: string, destinationPath: string, expectedEtag: string, signal?: AbortSignal): Promise<FileCopyMoveResult> {
 		await this.assertIdentity(signal)
-		if (!expectedEtag) throw new Error('The expected source ETag is required.')
+		if (!expectedEtag) {
+			throw new Error('The expected source ETag is required.')
+		}
 		const cleanSource = davFilePath(sourcePath)
 		const destination = !destinationPath.startsWith('/') && !destinationPath.includes('/')
 			? `${sourcePath.slice(0, sourcePath.lastIndexOf('/') + 1)}${destinationPath}`
 			: destinationPath
 		const cleanDest = davFilePath(destination)
-		if (!cleanSource || !cleanDest) throw new Error('Valid source and destination paths are required.')
-		if (cleanSource === cleanDest) throw new Error('Choose a different destination.')
+		if (!cleanSource || !cleanDest) {
+			throw new Error('Valid source and destination paths are required.')
+		}
+		if (cleanSource === cleanDest) {
+			throw new Error('Choose a different destination.')
+		}
 
 		const baseDav = `${generateRemoteUrl('dav')}files/${encodeURIComponent(this.initial.userId)}/`
 		const sourceUrl = `${baseDav}${cleanSource}`
@@ -723,7 +819,9 @@ export class NextcloudFiles implements FileApi {
 			}
 		} catch (error) {
 			const status = (error as { response?: { status?: number } })?.response?.status
-			if (status !== 404) throw error
+			if (status !== 404) {
+				throw error
+			}
 		}
 
 		const fullDest = destUrl.startsWith('http') ? destUrl : (typeof location !== 'undefined' ? `${location.origin}${destUrl}` : destUrl)
@@ -758,7 +856,9 @@ export class NextcloudFiles implements FileApi {
 		const current = await axios.request<string>({ url: targetUrl, method: 'PROPFIND', data: '<d:propfind xmlns:d="DAV:"><d:prop><d:getetag/></d:prop></d:propfind>', headers: { Depth: '0', 'Content-Type': 'application/xml' }, responseType: 'text', signal, timeout: 10000 })
 		const doc = parseXmlDoc(current.data)
 		const observed = doc ? findElements(doc, 'DAV:', 'getetag')[0]?.textContent?.trim() : undefined
-		if (current.status !== 207 || !observed || strongEtagHeader(observed) !== revision) throw new Error('The share target revision changed. No share was sent.')
+		if (current.status !== 207 || !observed || strongEtagHeader(observed) !== revision) {
+			throw new Error('The share target revision changed. No share was sent.')
+		}
 		if (!recipientUserId || typeof recipientUserId !== 'string' || recipientUserId.length > 80) {
 			throw new Error('A valid recipient Nextcloud user ID is required.')
 		}
@@ -804,16 +904,13 @@ export class NextcloudFiles implements FileApi {
 		await this.assertIdentity(actualSignal)
 		return this.post<FolderListing>('/files/organize', { resourceId, expectedRevision }, actualSignal)
 	}
-
 }
 
 export class NextcloudRequestError extends Error {
-
 	constructor(readonly status: number, message: string, options?: { cause?: unknown }) {
 		super(message, options)
 		this.name = requestErrorName(status)
 	}
-
 }
 export function requestErrorName(status: number): string {
 	return ({ 403: 'NextcloudForbidden', 404: 'NextcloudNotFound', 409: 'NextcloudConflict', 412: 'NextcloudPreconditionFailed', 423: 'NextcloudLocked', 429: 'NextcloudTooManyRequests' } as Record<number, string>)[status] ?? (status >= 500 ? 'NextcloudServerError' : 'NextcloudRequestFailed')
@@ -839,18 +936,26 @@ function serverMessage(message: string): string {
 export function isAgentDisabled(error: unknown): boolean {
 	let current = error
 	for (let depth = 0; current && typeof current === 'object' && depth < 4; depth++) {
-		if ((current as { agentDisabled?: unknown }).agentDisabled === true) return true
+		if ((current as { agentDisabled?: unknown }).agentDisabled === true) {
+			return true
+		}
 		const response = (current as { response?: { status?: unknown, data?: { message?: unknown } } }).response
-		if (response?.status === 403 && response.data?.message === AGENT_DISABLED) return true
+		if (response?.status === 403 && response.data?.message === AGENT_DISABLED) {
+			return true
+		}
 		current = (current as { cause?: unknown }).cause
 	}
 	return false
 }
 
 function parseXmlDoc(raw: string): Document | null {
-	if (typeof DOMParser === 'undefined') return null
+	if (typeof DOMParser === 'undefined') {
+		return null
+	}
 	const doc = new DOMParser().parseFromString(raw, 'application/xml')
-	if (doc.querySelector('parsererror')) return null
+	if (doc.querySelector('parsererror')) {
+		return null
+	}
 	return doc
 }
 
@@ -864,7 +969,7 @@ function getElemText(parent: Element, ns: string, localName: string): string {
 }
 
 function escapeXml(value: string): string {
-	return value.replace(/[&<>"']/g, ch => ({
+	return value.replace(/[&<>"']/g, (ch) => ({
 		'&': '&amp;',
 		'<': '&lt;',
 		'>': '&gt;',
@@ -874,7 +979,9 @@ function escapeXml(value: string): string {
 }
 
 function validateDavHref(href: string, expectedParentUrl?: URL): string {
-	if (!href || typeof href !== 'string' || /[\\\\\x00-\x1f\x7f]/.test(href)) throw new Error('Missing or invalid DAV href.')
+	if (!href || typeof href !== 'string' || /[\\\\\x00-\x1f\x7f]/.test(href)) {
+		throw new Error('Missing or invalid DAV href.')
+	}
 	const base = expectedParentUrl ?? (typeof location !== 'undefined' ? new URL(location.href) : new URL('https://localhost/'))
 	let target: URL
 	try {
@@ -898,21 +1005,27 @@ function validateDavHref(href: string, expectedParentUrl?: URL): string {
 			throw new Error(`DAV href outside expected collection: ${target.pathname} is outside ${expectedParentUrl.pathname}`)
 		}
 		const child = targetPath === expectedPath ? '' : targetPath.slice(expectedPath.length + 1)
-		if (child.includes('/')) throw new Error('DAV href must identify a direct child of the expected collection.')
-		if (child) davSegment(decodeURIComponent(child))
+		if (child.includes('/')) {
+			throw new Error('DAV href must identify a direct child of the expected collection.')
+		}
+		if (child) {
+			davSegment(decodeURIComponent(child))
+		}
 	}
 	return target.pathname
 }
 
 function findSuccessfulPropstats(responseEl: Element): Element[] {
-	const propstats = Array.from(responseEl.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'propstat')
+	const propstats = Array.from(responseEl.children).filter((el) => el.namespaceURI === 'DAV:' && el.localName === 'propstat')
 	const successfulProps: Element[] = []
 	for (const ps of propstats) {
-		const statusEl = Array.from(ps.children).find(el => el.namespaceURI === 'DAV:' && el.localName === 'status')
+		const statusEl = Array.from(ps.children).find((el) => el.namespaceURI === 'DAV:' && el.localName === 'status')
 		const status = statusEl?.textContent?.trim()
 		if (status && /^HTTP\/\d(?:\.\d)?[ \t]+200(?:[ \t]|$)/.test(status)) {
-			const propEl = Array.from(ps.children).find(el => el.namespaceURI === 'DAV:' && el.localName === 'prop')
-			if (propEl) successfulProps.push(propEl)
+			const propEl = Array.from(ps.children).find((el) => el.namespaceURI === 'DAV:' && el.localName === 'prop')
+			if (propEl) {
+				successfulProps.push(propEl)
+			}
 		}
 	}
 	return successfulProps
@@ -921,39 +1034,54 @@ function findSuccessfulPropstats(responseEl: Element): Element[] {
 function getPropText(props: Element[], ns: string, localName: string): string {
 	for (const prop of props) {
 		const text = getElemText(prop, ns, localName)
-		if (text) return text
+		if (text) {
+			return text
+		}
 	}
 	return ''
 }
 
 function hasPropElement(props: Element[], ns: string, localName: string): boolean {
 	for (const prop of props) {
-		if (findElements(prop, ns, localName).length > 0) return true
+		if (findElements(prop, ns, localName).length > 0) {
+			return true
+		}
 	}
 	return false
 }
 
 function parseCalendarsXml(xmlText: string, expectedParentUrl?: URL): DavCollection<DavCalendar> {
 	const doc = parseDavMultistatus(xmlText)
-	const responses = Array.from(doc.documentElement.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'response')
+	const responses = Array.from(doc.documentElement.children).filter((el) => el.namespaceURI === 'DAV:' && el.localName === 'response')
 	const result: DavCalendar[] = []
 	let complete = true
 	for (const r of responses) {
 		const props = findSuccessfulPropstats(r)
-		if (!props.length) { complete = false; continue }
+		if (!props.length) {
+			complete = false
+			continue
+		}
 		const isCalendar = hasPropElement(props, 'urn:ietf:params:xml:ns:caldav', 'calendar')
-		if (!isCalendar) continue
+		if (!isCalendar) {
+			continue
+		}
 		const rawHref = getElemText(r, 'DAV:', 'href')
 		const validPath = validateDavHref(rawHref, expectedParentUrl)
-		if (!validPath) continue
+		if (!validPath) {
+			continue
+		}
 		const id = decodeURIComponent(validPath.replace(/\/$/, '').split('/').pop() ?? '')
-		if (!id) continue
+		if (!id) {
+			continue
+		}
 		const title = getPropText(props, 'DAV:', 'displayname') || id
 		const comps: string[] = []
 		for (const prop of props) {
 			for (const c of findElements(prop, 'urn:ietf:params:xml:ns:caldav', 'comp')) {
 				const name = c.getAttribute('name')
-				if (name && !comps.includes(name)) comps.push(name)
+				if (name && !comps.includes(name)) {
+					comps.push(name)
+				}
 			}
 		}
 		const canWrite = hasPropElement(props, 'DAV:', 'write')
@@ -966,14 +1094,21 @@ function parseCalendarsXml(xmlText: string, expectedParentUrl?: URL): DavCollect
 			canWrite,
 			color: color || undefined,
 		})
-		if (result.length >= 10) { complete &&= r === responses.at(-1); break }
+		if (result.length >= 10) {
+			complete &&= r === responses.at(-1)
+			break
+		}
 	}
 	return davCollection(result, complete)
 }
 
 function scalarTimezone(value: unknown): string | undefined {
-	if (value === undefined || value === null) return undefined
-	if (typeof value !== 'string') throw new Error('Invalid timezone parameter.')
+	if (value === undefined || value === null) {
+		return undefined
+	}
+	if (typeof value !== 'string') {
+		throw new Error('Invalid timezone parameter.')
+	}
 	return value
 }
 
@@ -987,34 +1122,48 @@ interface DavParsedTime {
 
 function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO', expectedParentUrl?: URL): DavCollection<DavCalendarObject> {
 	const doc = parseDavMultistatus(xmlText)
-	const responses = Array.from(doc.documentElement.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'response')
+	const responses = Array.from(doc.documentElement.children).filter((el) => el.namespaceURI === 'DAV:' && el.localName === 'response')
 	const result: DavCalendarObject[] = []
 	let complete = true
 	for (const r of responses) {
 		const rawHref = getElemText(r, 'DAV:', 'href')
 		const validPath = validateDavHref(rawHref, expectedParentUrl)
-		if (!validPath) continue
+		if (!validPath) {
+			continue
+		}
 
 		// Collections are collections, not leaf calendar objects
 		const isCollection = hasPropElement(findSuccessfulPropstats(r), 'DAV:', 'collection') || validPath.endsWith('/')
-		if (isCollection) continue
+		if (isCollection) {
+			continue
+		}
 
 		const props = findSuccessfulPropstats(r)
-		if (!props.length) { complete = false; continue }
+		if (!props.length) {
+			complete = false
+			continue
+		}
 
 		const rawEtag = getPropText(props, 'DAV:', 'getetag')
 		const etag = davRevision(rawEtag)
 
 		const rawData = getPropText(props, 'urn:ietf:params:xml:ns:caldav', 'calendar-data')
-		if (!rawData) { complete = false; continue }
+		if (!rawData) {
+			complete = false
+			continue
+		}
 
 		const filename = decodeURIComponent(validPath.split('/').pop() ?? '')
-		if (!filename.endsWith('.ics')) continue
+		if (!filename.endsWith('.ics')) {
+			continue
+		}
 
 		try {
 			const comp = parseDavDocument(rawData)
 			const sub = comp.getFirstSubcomponent(component.toLowerCase())
-			if (!sub) continue
+			if (!sub) {
+				continue
+			}
 
 			const dtstartProp = sub.getFirstProperty('dtstart')
 			const dtendProp = sub.getFirstProperty('dtend')
@@ -1084,7 +1233,9 @@ function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO',
 			for (const prop of sub.getAllProperties()) {
 				const key = prop.name.toUpperCase()
 				const property = contentProperty(prop.toICALString())
-				if (property) propertyParameters[key] = property.header
+				if (property) {
+					propertyParameters[key] = property.header
+				}
 			}
 
 			result.push({
@@ -1112,7 +1263,10 @@ function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO',
 				hasAttendees,
 				propertyParameters,
 			})
-			if (result.length >= 50) { complete &&= r === responses.at(-1); break }
+			if (result.length >= 50) {
+				complete &&= r === responses.at(-1)
+				break
+			}
 		} catch {
 			complete = false
 			continue
@@ -1123,56 +1277,82 @@ function parseCalendarObjectsXml(xmlText: string, component: 'VEVENT' | 'VTODO',
 
 function parseAddressBooksXml(xmlText: string, expectedParentUrl?: URL): DavCollection<DavAddressBook> {
 	const doc = parseDavMultistatus(xmlText)
-	const responses = Array.from(doc.documentElement.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'response')
+	const responses = Array.from(doc.documentElement.children).filter((el) => el.namespaceURI === 'DAV:' && el.localName === 'response')
 	const result: DavAddressBook[] = []
 	let complete = true
 	for (const r of responses) {
 		const props = findSuccessfulPropstats(r)
-		if (!props.length) { complete = false; continue }
+		if (!props.length) {
+			complete = false
+			continue
+		}
 		const isBook = hasPropElement(props, 'urn:ietf:params:xml:ns:carddav', 'addressbook')
-		if (!isBook) continue
+		if (!isBook) {
+			continue
+		}
 		const rawHref = getElemText(r, 'DAV:', 'href')
 		const validPath = validateDavHref(rawHref, expectedParentUrl)
-		if (!validPath) continue
+		if (!validPath) {
+			continue
+		}
 		const id = decodeURIComponent(validPath.replace(/\/$/, '').split('/').pop() ?? '')
-		if (!id) continue
+		if (!id) {
+			continue
+		}
 		const title = getPropText(props, 'DAV:', 'displayname') || id
 		const canWrite = hasPropElement(props, 'DAV:', 'write')
 		result.push({ id, title, href: validPath, canWrite })
-		if (result.length >= 10) { complete &&= r === responses.at(-1); break }
+		if (result.length >= 10) {
+			complete &&= r === responses.at(-1)
+			break
+		}
 	}
 	return davCollection(result, complete)
 }
 
 function parseContactsXml(xmlText: string, bookTitle: string, expectedParentUrl?: URL): DavCollection<DavContact> {
 	const doc = parseDavMultistatus(xmlText)
-	const responses = Array.from(doc.documentElement.children).filter(el => el.namespaceURI === 'DAV:' && el.localName === 'response')
+	const responses = Array.from(doc.documentElement.children).filter((el) => el.namespaceURI === 'DAV:' && el.localName === 'response')
 	const result: DavContact[] = []
 	let complete = true
 	for (const r of responses) {
 		const rawHref = getElemText(r, 'DAV:', 'href')
 		const validPath = validateDavHref(rawHref, expectedParentUrl)
-		if (!validPath) continue
+		if (!validPath) {
+			continue
+		}
 
 		// Collections are not leaf contacts
 		const isCollection = hasPropElement(findSuccessfulPropstats(r), 'DAV:', 'collection') || validPath.endsWith('/')
-		if (isCollection) continue
+		if (isCollection) {
+			continue
+		}
 
 		const props = findSuccessfulPropstats(r)
-		if (!props.length) { complete = false; continue }
+		if (!props.length) {
+			complete = false
+			continue
+		}
 
 		const rawEtag = getPropText(props, 'DAV:', 'getetag')
 		const etag = davRevision(rawEtag)
 
 		const rawData = getPropText(props, 'urn:ietf:params:xml:ns:carddav', 'address-data')
-		if (!rawData) { complete = false; continue }
+		if (!rawData) {
+			complete = false
+			continue
+		}
 
 		const filename = decodeURIComponent(validPath.split('/').pop() ?? '')
-		if (!filename.endsWith('.vcf')) continue
+		if (!filename.endsWith('.vcf')) {
+			continue
+		}
 
 		try {
 			const comp = parseDavDocument(rawData)
-			if (comp.name !== 'vcard') continue
+			if (comp.name !== 'vcard') {
+				continue
+			}
 
 			const uid = comp.getFirstPropertyValue('uid')
 			const fn = comp.getFirstPropertyValue('fn')
@@ -1194,7 +1374,10 @@ function parseContactsXml(xmlText: string, bookTitle: string, expectedParentUrl?
 				categories: typeof categories === 'string' ? categories : undefined,
 				etag,
 			})
-			if (result.length >= 50) { complete &&= r === responses.at(-1); break }
+			if (result.length >= 50) {
+				complete &&= r === responses.at(-1)
+				break
+			}
 		} catch {
 			complete = false
 			continue

@@ -4,9 +4,10 @@
  * Experimental definitions only. Engine brokers/transports and the declarative
  * manifest parser are not implemented by these tool wrappers.
  */
-import { defineTool, type ToolCallContext } from '@fadenstack/agents'
+import { defineTool } from '@fadenstack/agents'
+import type { ToolCallContext } from '@fadenstack/agents'
 import type { FileApi } from './types.ts'
-import { positiveInteger, stringArgument, optionalBoolean, jsonRecord, davFilePath, davSegment } from './adapterGuards.ts'
+import { davFilePath, davSegment, jsonRecord, optionalBoolean, positiveInteger, stringArgument } from './adapterGuards.ts'
 
 export const WHITEBOARD_MUTATIONS = new Set(['nc_whiteboard_create'])
 export const FLOW_MUTATIONS = new Set(['nc_flow_create_draft', 'nc_flow_update_rule'])
@@ -21,11 +22,15 @@ export interface WorkflowAgentfileHost {
 	commitWorkflowMutation?(name: string, args: Readonly<Record<string, unknown>>, call: ToolCallContext): Promise<unknown>
 }
 
-export function validateWhiteboardCreateArgs(args: Readonly<Record<string, unknown>>): { path: string; name: string } {
+export function validateWhiteboardCreateArgs(args: Readonly<Record<string, unknown>>): { path: string, name: string } {
 	const path = stringArgument(args.path, 'path').trim()
 	const name = stringArgument(args.name, 'name').trim()
-	if (!path) throw new Error('A valid destination directory path is required.')
-	if (!name || !name.endsWith('.whiteboard') || name.length > 100) throw new Error('A valid name ending with .whiteboard is required.')
+	if (!path) {
+		throw new Error('A valid destination directory path is required.')
+	}
+	if (!name || !name.endsWith('.whiteboard') || name.length > 100) {
+		throw new Error('A valid name ending with .whiteboard is required.')
+	}
 	davFilePath(path)
 	davSegment(name)
 	return { path, name }
@@ -38,8 +43,12 @@ export function validateFlowCreateDraftArgs(args: Readonly<Record<string, unknow
 } {
 	const description = stringArgument(args.description, 'description').trim()
 	const operation = stringArgument(args.operation, 'operation').trim()
-	if (!description || description.length > 200) throw new Error('Rule description must be between 1 and 200 characters.')
-	if (!operation) throw new Error('Rule operation identifier is required.')
+	if (!description || description.length > 200) {
+		throw new Error('Rule description must be between 1 and 200 characters.')
+	}
+	if (!operation) {
+		throw new Error('Rule operation identifier is required.')
+	}
 	const config = args.config === undefined ? {} : jsonRecord(args.config, 'config')
 	return { description, operation, config }
 }
@@ -52,7 +61,9 @@ export function validateFlowUpdateRuleArgs(args: Readonly<Record<string, unknown
 	const ruleId = positiveInteger(args.ruleId, 'ruleId')
 	const active = optionalBoolean(args.active, 'active')
 	const deleteRule = optionalBoolean(args.deleteRule, 'deleteRule')
-	if ((active === undefined && deleteRule !== true) || (active !== undefined && deleteRule === true)) throw new Error('Choose exactly one rule state change or deletion.')
+	if ((active === undefined && deleteRule !== true) || (active !== undefined && deleteRule === true)) {
+		throw new Error('Choose exactly one rule state change or deletion.')
+	}
 	return { ruleId, active, deleteRule }
 }
 
@@ -63,9 +74,15 @@ export function validateWindmillDraftArgs(args: Readonly<Record<string, unknown>
 } {
 	const path = stringArgument(args.path, 'path').trim()
 	const summary = stringArgument(args.summary, 'summary').trim()
-	if (!path || !/^[ufr]\/[a-zA-Z0-9_\-/]+$/.test(path)) throw new Error('Valid Windmill resource path (e.g. u/user/flow) is required.')
-	if (!summary || summary.length > 300) throw new Error('Summary must be between 1 and 300 characters.')
-	if (args.value === undefined) throw new Error('Flow definition value is required.')
+	if (!path || !/^[ufr]\/[a-zA-Z0-9_\-/]+$/.test(path)) {
+		throw new Error('Valid Windmill resource path (e.g. u/user/flow) is required.')
+	}
+	if (!summary || summary.length > 300) {
+		throw new Error('Summary must be between 1 and 300 characters.')
+	}
+	if (args.value === undefined) {
+		throw new Error('Flow definition value is required.')
+	}
 	return { path, summary, value: args.value }
 }
 
@@ -74,7 +91,9 @@ export function validateWindmillRunArgs(args: Readonly<Record<string, unknown>>)
 	args: Record<string, unknown>
 } {
 	const path = stringArgument(args.path, 'path').trim()
-	if (!path) throw new Error('A valid Windmill runnable path is required.')
+	if (!path) {
+		throw new Error('A valid Windmill runnable path is required.')
+	}
 	const flowArgs = args.args === undefined ? {} : jsonRecord(args.args, 'args')
 	return { path, args: flowArgs }
 }
@@ -85,8 +104,12 @@ export function validateN8nDraftArgs(args: Readonly<Record<string, unknown>>): {
 	connections: unknown
 } {
 	const name = stringArgument(args.name, 'name').trim()
-	if (!name || name.length > 200) throw new Error('Workflow name must be between 1 and 200 characters.')
-	if (!Array.isArray(args.nodes)) throw new Error('Nodes array is required.')
+	if (!name || name.length > 200) {
+		throw new Error('Workflow name must be between 1 and 200 characters.')
+	}
+	if (!Array.isArray(args.nodes)) {
+		throw new Error('Nodes array is required.')
+	}
 	jsonRecord({ nodes: args.nodes }, 'workflow')
 	const connections = args.connections === undefined ? {} : jsonRecord(args.connections, 'connections')
 	return { name, nodes: args.nodes, connections }
@@ -97,14 +120,18 @@ export function validateN8nExecuteArgs(args: Readonly<Record<string, unknown>>):
 	data?: Record<string, unknown>
 } {
 	const workflowId = stringArgument(args.workflowId, 'workflowId').trim()
-	if (!workflowId) throw new Error('A valid n8n workflowId is required.')
+	if (!workflowId) {
+		throw new Error('A valid n8n workflowId is required.')
+	}
 	const data = args.data === undefined ? undefined : jsonRecord(args.data, 'data')
 	return { workflowId, data }
 }
 
 export function validateAgentfileReadArgs(args: Readonly<Record<string, unknown>>): { pathOrContent: string } {
 	const pathOrContent = stringArgument(args.pathOrContent, 'pathOrContent').trim()
-	if (!pathOrContent) throw new Error('Manifest path or JSON string content is required.')
+	if (!pathOrContent) {
+		throw new Error('Manifest path or JSON string content is required.')
+	}
 	return { pathOrContent }
 }
 
@@ -115,7 +142,9 @@ export function validateNotesCreateArgs(args: Readonly<Record<string, unknown>>)
 } {
 	const title = stringArgument(args.title, 'title').trim()
 	const content = stringArgument(args.content, 'content')
-	if (!title || title.length > 200) throw new Error('Note title must be between 1 and 200 characters.')
+	if (!title || title.length > 200) {
+		throw new Error('Note title must be between 1 and 200 characters.')
+	}
 	const category = args.category !== undefined ? stringArgument(args.category, 'category').trim() : undefined
 	return { title, content, category }
 }
@@ -128,12 +157,14 @@ export function validateBookmarksCreateArgs(args: Readonly<Record<string, unknow
 	const url = stringArgument(args.url, 'url').trim()
 	try {
 		const parsed = new URL(url)
-		if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('HTTP/HTTPS URL required.')
+		if (!['http:', 'https:'].includes(parsed.protocol)) {
+			throw new Error('HTTP/HTTPS URL required.')
+		}
 	} catch {
 		throw new Error('A valid normalized HTTP/HTTPS URL is required.')
 	}
 	const title = args.title !== undefined ? stringArgument(args.title, 'title').trim() : undefined
-	const tags = Array.isArray(args.tags) ? args.tags.map(t => String(t).trim()).filter(Boolean) : undefined
+	const tags = Array.isArray(args.tags) ? args.tags.map((t) => String(t).trim()).filter(Boolean) : undefined
 	return { url, title, tags }
 }
 
@@ -154,8 +185,12 @@ export function whiteboardTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const path = stringArgument(args.path, 'path').trim()
-				if (!path) throw new Error('Path is required.')
-				if (!host.files.whiteboard) throw new Error('Whiteboard service is unavailable.')
+				if (!path) {
+					throw new Error('Path is required.')
+				}
+				if (!host.files.whiteboard) {
+					throw new Error('Whiteboard service is unavailable.')
+				}
 				const result = await host.files.whiteboard.readBoard(path, c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -177,7 +212,9 @@ export function whiteboardTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateWhiteboardCreateArgs(args)
-				if (!host.commitWorkflowMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitWorkflowMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitWorkflowMutation('nc_whiteboard_create', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -195,7 +232,9 @@ export function flowTools(host: WorkflowAgentfileHost) {
 			parameters: { type: 'object', properties: {}, additionalProperties: false },
 			run: async (_args, c) => {
 				c.signal.throwIfAborted()
-				if (!host.files.flow) throw new Error('Flow service is unavailable.')
+				if (!host.files.flow) {
+					throw new Error('Flow service is unavailable.')
+				}
 				const result = await host.files.flow.readRules(c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -218,7 +257,9 @@ export function flowTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateFlowCreateDraftArgs(args)
-				if (!host.commitWorkflowMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitWorkflowMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitWorkflowMutation('nc_flow_create_draft', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -241,7 +282,9 @@ export function flowTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateFlowUpdateRuleArgs(args)
-				if (!host.commitWorkflowMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitWorkflowMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitWorkflowMutation('nc_flow_update_rule', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -266,7 +309,9 @@ export function windmillTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const path = args.path !== undefined ? stringArgument(args.path, 'path').trim() : undefined
-				if (!host.files.windmill) throw new Error('Windmill service is unavailable.')
+				if (!host.files.windmill) {
+					throw new Error('Windmill service is unavailable.')
+				}
 				const result = await host.files.windmill.readFlows(path, c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -289,7 +334,9 @@ export function windmillTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateWindmillDraftArgs(args)
-				if (!host.commitWorkflowMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitWorkflowMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitWorkflowMutation('nc_windmill_draft', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -311,7 +358,9 @@ export function windmillTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateWindmillRunArgs(args)
-				if (!host.commitWorkflowMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitWorkflowMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitWorkflowMutation('nc_windmill_run', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -329,7 +378,9 @@ export function n8nTools(host: WorkflowAgentfileHost) {
 			parameters: { type: 'object', properties: {}, additionalProperties: false },
 			run: async (_args, c) => {
 				c.signal.throwIfAborted()
-				if (!host.files.n8n) throw new Error('n8n service is unavailable.')
+				if (!host.files.n8n) {
+					throw new Error('n8n service is unavailable.')
+				}
 				const result = await host.files.n8n.readWorkflows(c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -352,7 +403,9 @@ export function n8nTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateN8nDraftArgs(args)
-				if (!host.commitWorkflowMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitWorkflowMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitWorkflowMutation('nc_n8n_draft', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -374,7 +427,9 @@ export function n8nTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateN8nExecuteArgs(args)
-				if (!host.commitWorkflowMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitWorkflowMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitWorkflowMutation('nc_n8n_execute', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -400,7 +455,9 @@ export function agentfileTool(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const { pathOrContent } = validateAgentfileReadArgs(args)
-				if (!host.files.agentfile) throw new Error('Agentfile parser service is unavailable.')
+				if (!host.files.agentfile) {
+					throw new Error('Agentfile parser service is unavailable.')
+				}
 				const result = await host.files.agentfile.readManifest(pathOrContent, c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -425,7 +482,9 @@ export function notesTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const category = args.category !== undefined ? stringArgument(args.category, 'category').trim() : undefined
-				if (!host.files.notes) throw new Error('Notes service is unavailable.')
+				if (!host.files.notes) {
+					throw new Error('Notes service is unavailable.')
+				}
 				const result = await host.files.notes.readNotes(category, c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -448,7 +507,9 @@ export function notesTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateNotesCreateArgs(args)
-				if (!host.commitWorkflowMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitWorkflowMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitWorkflowMutation('nc_notes_create', args, c)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -473,7 +534,9 @@ export function bookmarksTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				const query = args.query !== undefined ? stringArgument(args.query, 'query').trim() : undefined
-				if (!host.files.bookmarks) throw new Error('Bookmarks service is unavailable.')
+				if (!host.files.bookmarks) {
+					throw new Error('Bookmarks service is unavailable.')
+				}
 				const result = await host.files.bookmarks.searchBookmarks(query, c.signal)
 				host.recordResult(c.callId, result, c)
 				return result
@@ -496,7 +559,9 @@ export function bookmarksTools(host: WorkflowAgentfileHost) {
 			run: async (args, c) => {
 				c.signal.throwIfAborted()
 				validateBookmarksCreateArgs(args)
-				if (!host.commitWorkflowMutation) throw new Error('The previewed mutation executor is unavailable.')
+				if (!host.commitWorkflowMutation) {
+					throw new Error('The previewed mutation executor is unavailable.')
+				}
 				const result = await host.commitWorkflowMutation('nc_bookmarks_create', args, c)
 				host.recordResult(c.callId, result, c)
 				return result

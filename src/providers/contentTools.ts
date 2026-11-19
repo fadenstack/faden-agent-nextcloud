@@ -1,4 +1,5 @@
-import { defineTool, type ToolCallContext } from '@fadenstack/agents'
+import { defineTool } from '@fadenstack/agents'
+import type { ToolCallContext } from '@fadenstack/agents'
 import type { ReadProviderId } from './client.ts'
 import { agentfileView } from './agentfile.ts'
 
@@ -15,7 +16,7 @@ const approval = ' Invoke this tool to request the real Allow/Deny preview. No e
 
 /** Saved definitions and separately authorized recorded-job inspection. */
 export function nativeEngineReadTools(host: ContentHost) {
-	return (['windmill', 'n8n'] as const).map(provider => defineTool({
+	return (['windmill', 'n8n'] as const).map((provider) => defineTool({
 		name: `nc_${provider}_read`,
 		toolClass: 'read',
 		description: `Read saved ${provider} workflows through your own configured native connection. Call with no arguments to discover your permitted connection IDs. Then supply connectionId to list at most 20 workflows, or also reference to read a saved definition (Windmill path or n8n workflow ID returned by that list). ${provider === 'n8n' ? 'The result also identifies explicitly configured executionTargets for the visible workflows.' : 'For a known own-user private draft path, use sourceKind own-draft explicitly; there is no fallback to the deployed flow.'} A definition read returns copySource reference, kind and revision for a native source-bound draft copy. Alternatively supply actionId alone to inspect an authorized recorded run without repeating it; no logs, code, results or credential values are returned. Graphs may contain inline inputs, code and credential references; credential stores are never read. Unsaved editor state, execution and deployment are excluded.`,
@@ -56,7 +57,7 @@ export function nativeEngineRunTools(host: ContentHost) {
 }
 
 export function nativeEngineDraftTools(host: ContentHost) {
-	return (['windmill', 'n8n'] as const).map(provider => defineTool({
+	return (['windmill', 'n8n'] as const).map((provider) => defineTool({
 		name: `nc_${provider}_draft`,
 		toolClass: 'destructive',
 		description: `Create one new private inactive ${provider} draft through your own configured connection. Supply definitionJson as bounded JSON. ${provider === 'windmill' ? 'Use summary, description, value.modules as an array, and schema. The server chooses a new own-user path and never deploys it.' : 'Use name (up to 80 characters), description, nodes as an array of 1 to 200 native node objects, connections, settings, optional staticData and nodeGroups. No IDs, sharing, project, activation, meta or pinned data. The server adds a unique name suffix, disables subworkflow callers and MCP availability, and appends hidden signed AI origin to the first existing node notes before approval. Existing notes and execution parameters are preserved; no provenance node is inserted. Empty workflows are outside this export-preserving subset.'} To COPY an existing workflow, read it first and supply sourceReference, sourceKind and sourceRevision exactly from copySource. In copy mode definitionJson contains only explicit TOP-LEVEL replacements, e.g. a new ${provider === 'windmill' ? 'summary' : 'name'}; use {} for an unchanged graph copy. The server preserves unspecified supported draft fields and native prior origin independently of the model. Do not include origin metadata, IDs, runtime metadata or native ownership fields in replacements. A supplied nested object or nodes array replaces that entire field; there is no deep merge. Changed or revoked sources invalidate approval. Signed AI origin is added before preview. Existing graphs are never replaced.` + approval,

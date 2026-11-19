@@ -1,7 +1,9 @@
 /** Nextcloud Deck adapter and tools (NC09) */
-import { defineTool, type ToolCallContext } from '@fadenstack/agents'
+import { defineTool } from '@fadenstack/agents'
+import type { ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
-import type { DeckCard, DeckBoardSnapshot, DeckStack } from './types.ts'
+import type { StructuredProposal } from '../../providers/client.ts'
+import type { DeckBoardSnapshot, DeckCard, DeckStack } from './types.ts'
 import { optionalPositiveInteger } from './adapterGuards.ts'
 
 export const DECK_MUTATIONS = new Set([
@@ -13,7 +15,7 @@ export const DECK_MUTATIONS = new Set([
 ])
 
 export interface DeckProposal {
-	native?: import('../../providers/client.ts').StructuredProposal
+	native?: StructuredProposal
 	name: string
 	args: Record<string, unknown>
 	target: string
@@ -23,21 +25,19 @@ export interface DeckProposal {
 	board: DeckBoardSnapshot
 	card?: DeckCard
 	stack?: DeckStack
-	label?: { id: number; title: string }
+	label?: { id: number, title: string }
 }
 
 export function cardContent(card: DeckCard): Record<string, unknown> {
-	return Object.fromEntries(
-		['id', 'title', 'description', 'type', 'owner', 'order', 'stackId', 'duedate', 'startdate', 'color', 'archived', 'done', 'assignedUsers', 'labels']
-			.map(k => [k, card[k]]),
-	)
+	return Object.fromEntries(['id', 'title', 'description', 'type', 'owner', 'order', 'stackId', 'duedate', 'startdate', 'color', 'archived', 'done', 'assignedUsers', 'labels']
+		.map((k) => [k, card[k]]))
 }
 
 export function validateDeckPatchArgs(args: Readonly<Record<string, unknown>>): {
 	boardId?: number
 	cardId: number
 	expectedRevision: string
-	changes: { title?: string; description?: string; duedate?: string | null; done?: string | null }
+	changes: { title?: string, description?: string, duedate?: string | null, done?: string | null }
 } {
 	if (typeof args.cardId !== 'number' || !Number.isSafeInteger(args.cardId) || args.cardId < 1) {
 		throw new Error('A positive integer cardId is required.')
@@ -53,10 +53,10 @@ export function validateDeckPatchArgs(args: Readonly<Record<string, unknown>>): 
 	if (!keys.length) {
 		throw new Error('At least one card field change is required.')
 	}
-	if (keys.some(k => !['title', 'description', 'duedate', 'done'].includes(k))) {
+	if (keys.some((k) => !['title', 'description', 'duedate', 'done'].includes(k))) {
 		throw new Error('Unsupported card patch fields.')
 	}
-	const changes: { title?: string; description?: string; duedate?: string | null; done?: string | null } = {}
+	const changes: { title?: string, description?: string, duedate?: string | null, done?: string | null } = {}
 	if ('title' in raw) {
 		if (typeof raw.title !== 'string' || !raw.title.trim() || raw.title.length > 255) {
 			throw new Error('Title must be between 1 and 255 characters.')
@@ -74,7 +74,9 @@ export function validateDeckPatchArgs(args: Readonly<Record<string, unknown>>): 
 			changes.duedate = null
 		} else if (typeof raw.duedate === 'string') {
 			const d = new Date(raw.duedate)
-			if (!Number.isFinite(d.getTime())) throw new Error('Invalid duedate.')
+			if (!Number.isFinite(d.getTime())) {
+				throw new Error('Invalid duedate.')
+			}
 			changes.duedate = d.toISOString()
 		} else {
 			throw new Error('duedate must be an ISO date string or null.')
@@ -119,7 +121,9 @@ export function validateDeckCreateArgs(args: Readonly<Record<string, unknown>>):
 			duedate = null
 		} else if (typeof args.duedate === 'string') {
 			const d = new Date(args.duedate)
-			if (!Number.isFinite(d.getTime())) throw new Error('Invalid duedate.')
+			if (!Number.isFinite(d.getTime())) {
+				throw new Error('Invalid duedate.')
+			}
 			duedate = d.toISOString()
 		} else {
 			throw new Error('duedate must be an ISO date string or null.')

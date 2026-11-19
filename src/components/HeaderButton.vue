@@ -4,6 +4,7 @@ import { t } from '@nextcloud/l10n'
 defineProps<{ state: { open: boolean } }>()
 const emit = defineEmits<{ toggle: [] }>()
 </script>
+
 <template>
 	<NcButton class="fadenstack-header-button"
 		variant="tertiary"
@@ -17,6 +18,7 @@ const emit = defineEmits<{ toggle: [] }>()
 		</template>
 	</NcButton>
 </template>
+
 <style>
 .fadenstack-header-button { color: var(--color-header-text) !important; }
 

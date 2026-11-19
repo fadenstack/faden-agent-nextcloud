@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, watch, onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import type { PairingStart } from '@fadenstack/client'
 import { t } from '@nextcloud/l10n'
 import NcButton from '@nextcloud/vue/components/NcButton'
@@ -10,7 +10,7 @@ import { errorMessage } from '../integrations/nextcloud/files.ts'
 import type { FileContext } from '../integrations/nextcloud/types.ts'
 import AgentChat from './AgentChat.vue'
 
-const props = defineProps<{ runtime: Runtime; fileId?: number; documentName?: string; selectionEpoch?: number }>()
+const props = defineProps<{ runtime: Runtime, fileId?: number, documentName?: string, selectionEpoch?: number }>()
 const email = ref('')
 const password = ref('')
 const busy = ref(false)
@@ -27,7 +27,10 @@ async function select(id?: number) {
 	selected.value = undefined
 	loadingContext.value = false
 	props.runtime.state.host?.offerSelection()
-	if (!id) { props.runtime.state.host?.offerSelection(); return }
+	if (!id) {
+		props.runtime.state.host?.offerSelection()
+		return
+	}
 	loadingContext.value = true
 	try {
 		const context = await props.runtime.ensure().selection.select(id)
@@ -35,14 +38,33 @@ async function select(id?: number) {
 			props.runtime.state.host?.offerSelection()
 			throw new Error(t('fadenstack_agent', 'The active document changed. Reopen the assistant to attach it.'))
 		}
-		if (revision === selectionRevision) { selected.value = context; props.runtime.state.host?.offerSelection(context) }
-	} catch (error) { if (revision === selectionRevision) problem.value = errorMessage(error) } finally { if (revision === selectionRevision) loadingContext.value = false }
+		if (revision === selectionRevision) {
+			selected.value = context
+			props.runtime.state.host?.offerSelection(context)
+		}
+	} catch (error) {
+		if (revision === selectionRevision) {
+			problem.value = errorMessage(error)
+		}
+	} finally {
+		if (revision === selectionRevision) {
+			loadingContext.value = false
+		}
+	}
 }
 watch(() => [props.fileId, props.selectionEpoch] as const, ([id]) => select(id), { immediate: true })
-watch(() => props.runtime.state.host, (host) => { if (host) void select(props.fileId); else selected.value = undefined })
+watch(() => props.runtime.state.host, (host) => {
+	if (host) {
+		void select(props.fileId)
+	} else {
+		selected.value = undefined
+	}
+})
 
 async function signIn() {
-	if (busy.value) return
+	if (busy.value) {
+		return
+	}
 	busy.value = true
 	problem.value = ''
 	const secret = password.value
@@ -57,7 +79,9 @@ async function signIn() {
 }
 const clear = () => props.runtime.clear()
 async function pair() {
-	if (busy.value) return
+	if (busy.value) {
+		return
+	}
 	const stop = new AbortController()
 	pairingStop = stop
 	busy.value = true
@@ -70,20 +94,33 @@ async function pair() {
 		pairing.value = start
 		await host.completePairing(start, stop.signal)
 		stop.signal.throwIfAborted()
-		if (props.runtime.state.host !== host) throw new Error('The native session changed. Sign in again.')
+		if (props.runtime.state.host !== host) {
+			throw new Error('The native session changed. Sign in again.')
+		}
 		props.runtime.connected()
 	} catch (error) {
-		if (!stop.signal.aborted) problem.value = errorMessage(error)
-		if (props.runtime.state.host === host) props.runtime.clear()
+		if (!stop.signal.aborted) {
+			problem.value = errorMessage(error)
+		}
+		if (props.runtime.state.host === host) {
+			props.runtime.clear()
+		}
 	} finally {
 		pairing.value = undefined
 		pairingStop = undefined
 		busy.value = false
 	}
 }
-function cancelPairing() { pairingStop?.abort(new DOMException('Pairing cancelled.', 'AbortError')) }
-onMounted(() => { void props.runtime.verify() })
-onUnmounted(() => { ++selectionRevision; cancelPairing() })
+function cancelPairing() {
+	pairingStop?.abort(new DOMException('Pairing cancelled.', 'AbortError'))
+}
+onMounted(() => {
+	void props.runtime.verify()
+})
+onUnmounted(() => {
+	++selectionRevision
+	cancelPairing()
+})
 </script>
 
 <template>

@@ -1,7 +1,7 @@
 import { markRaw, shallowReactive } from 'vue'
 import { getLanguage } from '@nextcloud/l10n'
 import { NextcloudAgent } from './createAgent.ts'
-import { NextcloudFiles, errorMessage } from '../integrations/nextcloud/files.ts'
+import { errorMessage, NextcloudFiles } from '../integrations/nextcloud/files.ts'
 import type { Identity } from '../integrations/nextcloud/types.ts'
 import { NativeWorkspace } from '../workspace/nativeWorkspace.ts'
 import { WorkspaceCoordinator } from '../workspace/coordinator.ts'
@@ -30,15 +30,37 @@ export function createRuntime(config: Identity) {
 		void host?.dispose()
 	}
 	const verify = async () => {
-		if (!state.host) return
+		if (!state.host) {
+			return
+		}
 		state.checking = true
-		try { await files.assertIdentity() } catch (error) { clear(errorMessage(error)) } finally { state.checking = false }
+		try {
+			await files.assertIdentity()
+		} catch (error) {
+			clear(errorMessage(error))
+		} finally {
+			state.checking = false
+		}
 	}
-	const timer = setInterval(() => { void verify() }, 15000)
-	const onVisibility = () => { if (!document.hidden) void verify() }
+	const timer = setInterval(() => {
+		void verify()
+	}, 15000)
+	const onVisibility = () => {
+		if (!document.hidden) {
+			void verify()
+		}
+	}
 	document.addEventListener('visibilitychange', onVisibility)
-	window.addEventListener('pagehide', () => { clear(); workspace.dispose(); clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility) }, { once: true })
-	const connected = () => { state.signedIn = true; state.error = '' }
+	window.addEventListener('pagehide', () => {
+		clear()
+		workspace.dispose()
+		clearInterval(timer)
+		document.removeEventListener('visibilitychange', onVisibility)
+	}, { once: true })
+	const connected = () => {
+		state.signedIn = true
+		state.error = ''
+	}
 	return { config, files, workspace, state, ensure, clear, verify, connected }
 }
 export type Runtime = ReturnType<typeof createRuntime>

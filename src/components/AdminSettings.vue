@@ -13,9 +13,17 @@ const message = ref('')
 const saving = ref(false)
 async function save() {
 	saving.value = true
-	try { await axios.put(generateUrl('/apps/fadenstack_agent/config'), config); message.value = t('fadenstack_agent', 'Saved. Reload Files to use the new configuration.') } catch (error) { message.value = errorMessage(error) } finally { saving.value = false }
+	try {
+		await axios.put(generateUrl('/apps/fadenstack_agent/config'), config)
+		message.value = t('fadenstack_agent', 'Saved. Reload Files to use the new configuration.')
+	} catch (error) {
+		message.value = errorMessage(error)
+	} finally {
+		saving.value = false
+	}
 }
 </script>
+
 <template>
 	<form class="fadenstack-settings" @submit.prevent="save">
 		<h2>Fadenstack Agent</h2>
@@ -38,6 +46,7 @@ async function save() {
 		</p>
 	</form>
 </template>
+
 <style>
 .fadenstack-settings { margin: 30px; max-width: 650px; }
 

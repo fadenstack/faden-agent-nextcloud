@@ -1,4 +1,5 @@
-import { fileCapability, stricterRisk, type NextcloudToolName, type ToolRisk, type ToolSubsystem } from '../platform/catalog.ts'
+import { fileCapability, stricterRisk } from '../platform/catalog.ts'
+import type { NextcloudToolName, ToolRisk, ToolSubsystem } from '../platform/catalog.ts'
 import type { PublishedTool } from '../platform/scope.ts'
 
 export type ProviderId = ToolSubsystem
@@ -40,16 +41,15 @@ export interface AvailableProviderTool {
 
 /** Intersection only: this registry cannot publish, grant or lower a tool's risk. */
 export class ProviderRegistry {
-
 	readonly #implementations = new Map<ProviderId, Readonly<ProviderImplementation>>()
 
 	constructor(implementations: readonly ProviderImplementation[]) {
 		for (const implementation of implementations) {
 			if (this.#implementations.has(implementation.provider) || !implementation.apiVersions.length
-				|| implementation.apiVersions.some(version => !version || version.length > 100)
+				|| implementation.apiVersions.some((version) => !version || version.length > 100)
 				|| new Set(implementation.tools).size !== implementation.tools.length
-				|| implementation.tools.some(name => fileCapability(name)?.subsystem !== implementation.provider)
-				|| implementation.certifiedHistoryTools?.some(name => !implementation.tools.includes(name) || fileCapability(name)?.risk === 'read')) throw new Error('Invalid provider implementation registration.')
+				|| implementation.tools.some((name) => fileCapability(name)?.subsystem !== implementation.provider)
+				|| implementation.certifiedHistoryTools?.some((name) => !implementation.tools.includes(name) || fileCapability(name)?.risk === 'read')) { throw new Error('Invalid provider implementation registration.') }
 			this.#implementations.set(implementation.provider, Object.freeze({
 				...implementation,
 				apiVersions: Object.freeze([...implementation.apiVersions]),
@@ -63,7 +63,9 @@ export class ProviderRegistry {
 		const result: AvailableProviderTool[] = []
 		const seen = new Set<ProviderId>()
 		for (const value of discovered) {
-			if (seen.has(value.provider)) throw new Error('Duplicate native provider capability.')
+			if (seen.has(value.provider)) {
+				throw new Error('Duplicate native provider capability.')
+			}
 			seen.add(value.provider)
 			const implementation = this.#implementations.get(value.provider)
 			if (!implementation || value.enabled !== true || value.canRead !== true || !value.policyVersion
@@ -72,15 +74,21 @@ export class ProviderRegistry {
 				|| !['conditional', 'native', 'read-only'].includes(value.conflict)
 				|| !['certified', 'audit-only', 'not-applicable'].includes(value.history)
 				|| !['native-event', 'route', 'child-reload', 'manual'].includes(value.refresh)
-				|| !Array.isArray(value.tools) || new Set(value.tools).size !== value.tools.length) continue
+				|| !Array.isArray(value.tools) || new Set(value.tools).size !== value.tools.length) { continue }
 			for (const name of implementation.tools) {
-				if (value.discoveryOnly && (value.provider !== 'calendar' || name !== 'nc_calendar_list')) continue
+				if (value.discoveryOnly && (value.provider !== 'calendar' || name !== 'nc_calendar_list')) {
+					continue
+				}
 				const host = fileCapability(name)!
-				const matches = published.filter(tool => tool.name === name)
+				const matches = published.filter((tool) => tool.name === name)
 				const contract = matches.length === 1 ? matches[0] : undefined
-				if (!value.tools.includes(name) || !contract || !['read', 'write', 'destructive'].includes(contract.risk)) continue
+				if (!value.tools.includes(name) || !contract || !['read', 'write', 'destructive'].includes(contract.risk)) {
+					continue
+				}
 				const risk = stricterRisk(host.risk, contract.risk)
-				if (risk !== 'read' && (value.canWrite !== true || value.conflict === 'read-only')) continue
+				if (risk !== 'read' && (value.canWrite !== true || value.conflict === 'read-only')) {
+					continue
+				}
 				// Native metadata cannot conjure an inverse that the host never implemented.
 				const history = host.risk === 'read'
 					? 'not-applicable'
@@ -97,5 +105,4 @@ export class ProviderRegistry {
 		}
 		return Object.freeze(result)
 	}
-
 }

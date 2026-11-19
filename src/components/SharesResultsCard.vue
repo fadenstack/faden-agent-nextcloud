@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { t } from '@nextcloud/l10n'
-import type { ShareOverviewResults, ShareEntry } from '../integrations/nextcloud/types.ts'
+import type { ShareEntry, ShareOverviewResults } from '../integrations/nextcloud/types.ts'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { Icon } from '@fadenstack/ui-vue'
 import { useObservable } from '../agent/useObservable.ts'
 import { nativeFileLink } from '../integrations/nextcloud/fileReadResults.ts'
 
-const props = defineProps<{ result: ShareOverviewResults; host: NextcloudAgent }>()
+const props = defineProps<{ result: ShareOverviewResults, host: NextcloudAgent }>()
 const version = typeof props.host?.chat?.subscribe === 'function' ? useObservable(props.host.chat) : ref(0)
 
 function linkTarget(resourceId?: string): string | undefined {
@@ -15,21 +15,30 @@ function linkTarget(resourceId?: string): string | undefined {
 }
 
 function shareRecipient(share: ShareEntry): string {
-	if (share.shareType === 3) return t('fadenstack_agent', 'Public link')
+	if (share.shareType === 3) {
+		return t('fadenstack_agent', 'Public link')
+	}
 	return share.shareWithDisplayName || share.shareWith || t('fadenstack_agent', 'Unnamed recipient')
 }
 
 function shareTypeLabel(type: number): string {
-	if (type === 0) return t('fadenstack_agent', 'User')
-	if (type === 1) return t('fadenstack_agent', 'Group')
-	if (type === 3) return t('fadenstack_agent', 'Public link')
+	if (type === 0) {
+		return t('fadenstack_agent', 'User')
+	}
+	if (type === 1) {
+		return t('fadenstack_agent', 'Group')
+	}
+	if (type === 3) {
+		return t('fadenstack_agent', 'Public link')
+	}
 	return t('fadenstack_agent', 'Share')
 }
 
 function formatPermissions(perm: number): string {
-	if (perm === 1) return t('fadenstack_agent', 'Read only')
-	const labels = [[1, t('fadenstack_agent', 'Read')], [2, t('fadenstack_agent', 'Edit')], [4, t('fadenstack_agent', 'Create')],
-		[8, t('fadenstack_agent', 'Delete')], [16, t('fadenstack_agent', 'Share')]] as const
+	if (perm === 1) {
+		return t('fadenstack_agent', 'Read only')
+	}
+	const labels = [[1, t('fadenstack_agent', 'Read')], [2, t('fadenstack_agent', 'Edit')], [4, t('fadenstack_agent', 'Create')], [8, t('fadenstack_agent', 'Delete')], [16, t('fadenstack_agent', 'Share')]] as const
 	return labels.filter(([bit]) => (perm & bit) !== 0).map(([, label]) => label).join(', ') || t('fadenstack_agent', 'No permissions')
 }
 </script>

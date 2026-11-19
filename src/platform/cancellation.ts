@@ -4,14 +4,33 @@ export function interruptibleRead<T>(operation: () => Promise<T>, signal: AbortS
 	return new Promise<T>((resolve, reject) => {
 		let settled = false
 		const finish = () => {
-			if (settled) return false
+			if (settled) {
+				return false
+			}
 			settled = true
 			signal.removeEventListener('abort', cancel)
 			return true
 		}
-		const cancel = () => { if (finish()) reject(signal.reason ?? new DOMException('The request was stopped.', 'AbortError')) }
+		const cancel = () => {
+			if (finish()) {
+				reject(signal.reason ?? new DOMException('The request was stopped.', 'AbortError'))
+			}
+		}
 		signal.addEventListener('abort', cancel, { once: true })
-		Promise.resolve().then(() => { signal.throwIfAborted(); return operation() }).then(value => { if (finish()) resolve(value) }, error => { if (finish()) reject(error) })
-		if (signal.aborted) cancel()
+		Promise.resolve().then(() => {
+			signal.throwIfAborted()
+			return operation()
+		}).then((value) => {
+			if (finish()) {
+				resolve(value)
+			}
+		}, (error) => {
+			if (finish()) {
+				reject(error)
+			}
+		})
+		if (signal.aborted) {
+			cancel()
+		}
 	})
 }

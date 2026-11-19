@@ -1,6 +1,8 @@
 /** Nextcloud Tables adapter and tools (NC09) */
-import { defineTool, type ToolCallContext } from '@fadenstack/agents'
+import { defineTool } from '@fadenstack/agents'
+import type { ToolCallContext } from '@fadenstack/agents'
 import type { JsonSchema } from '@fadenstack/client'
+import type { StructuredProposal } from '../../providers/client.ts'
 import type { TableColumn, TableRow, TableSnapshot } from './types.ts'
 import { optionalPositiveInteger } from './adapterGuards.ts'
 
@@ -12,7 +14,7 @@ export const TABLES_MUTATIONS = new Set([
 ])
 
 export interface TablesProposal {
-	native?: import('../../providers/client.ts').StructuredProposal
+	native?: StructuredProposal
 	name: string
 	args: Record<string, unknown>
 	target: string
@@ -23,17 +25,14 @@ export interface TablesProposal {
 	row?: TableRow
 }
 
-export const canonical = (value: unknown): string =>
-	JSON.stringify(value, (_k, v) =>
-		v && typeof v === 'object' && !Array.isArray(v)
-			? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
-			: v,
-	)
+export const canonical = (value: unknown): string => JSON.stringify(value, (_k, v) => v && typeof v === 'object' && !Array.isArray(v)
+	? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+	: v)
 
 export async function sha256Hex(value: unknown): Promise<string> {
 	const data = new TextEncoder().encode(canonical(value))
 	const digest = await crypto.subtle.digest('SHA-256', data)
-	return [...new Uint8Array(digest)].map(x => x.toString(16).padStart(2, '0')).join('')
+	return [...new Uint8Array(digest)].map((x) => x.toString(16).padStart(2, '0')).join('')
 }
 
 export function rowContent(row: TableRow): Record<string, unknown> {
@@ -84,7 +83,7 @@ export function validateCells(cells: unknown, columns?: TableColumn[]): Record<s
 			throw new Error('Column IDs must be positive integers.')
 		}
 		if (columns) {
-			const c = columns.find(c => String(c.id) === id)
+			const c = columns.find((c) => String(c.id) === id)
 			if (!c || !['text', 'number'].includes(c.type) || (c.type === 'text' && !['line', ''].includes(c.subtype))) {
 				throw new Error('Only existing plain-text and number columns are supported.')
 			}
@@ -101,7 +100,9 @@ export function validateCells(cells: unknown, columns?: TableColumn[]): Record<s
 			}
 		} else {
 			if (typeof value === 'string') {
-				if (value.length > 2000) throw new Error('Text must have at most 2000 characters.')
+				if (value.length > 2000) {
+					throw new Error('Text must have at most 2000 characters.')
+				}
 				result[id] = value
 			} else if (typeof value === 'number' && Number.isFinite(value)) {
 				result[id] = value

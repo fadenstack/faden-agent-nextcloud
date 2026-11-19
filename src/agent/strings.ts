@@ -1,11 +1,12 @@
-import { builtInStrings, withStrings, type UiStrings } from '@fadenstack/ui'
+import { builtInStrings, withStrings } from '@fadenstack/ui'
+import type { UiStrings } from '@fadenstack/ui'
 
 /**
  * The SDK's texts in every language it brings, with what is different in Nextcloud: a file write (the
  * "destructive" class) always needs the user's own approval of the exact proposal, also in Auto, and Nextcloud
  * keeps the file's earlier versions, so it is not "cannot be undone". Everything else is the SDK's wording.
  */
-const fileActions: Record<'en' | 'de' | 'es' | 'fr' | 'zh-Hans', { why: string; label: string; ask: string; auto: string }> = {
+const fileActions: Record<'en' | 'de' | 'es' | 'fr' | 'zh-Hans', { why: string, label: string, ask: string, auto: string }> = {
 	en: {
 		why: 'This action needs your individual approval.',
 		label: 'Individual approval',

@@ -2,14 +2,15 @@
 import { computed, h, nextTick, ref, watch } from 'vue'
 import { t } from '@nextcloud/l10n'
 import { ApprovalPart, ToolCallPart } from '@fadenstack/ui'
-import { AgentAvatar, ChatPanel, Icon, MyDataSettings, StopEverythingButton, ToolCallView, type ChatTheme, type PartRenderer } from '@fadenstack/ui-vue'
+import { AgentAvatar, ChatPanel, Icon, MyDataSettings, StopEverythingButton, ToolCallView } from '@fadenstack/ui-vue'
+import type { ChatTheme, PartRenderer } from '@fadenstack/ui-vue'
 import NcDialog from '@nextcloud/vue/components/NcDialog'
 import '@fadenstack/ui-web/styles.css'
 import type { NextcloudAgent } from '../agent/createAgent.ts'
 import { useObservable } from '../agent/useObservable.ts'
-import { WRITE_TOOLS, HISTORY_TOOLS } from '../integrations/nextcloud/tools.ts'
+import { HISTORY_TOOLS, WRITE_TOOLS } from '../integrations/nextcloud/tools.ts'
 import { EXTENDED_FILES_MUTATIONS } from '../integrations/nextcloud/filesExtended.ts'
-import { CALENDAR_MUTATIONS, TASKS_MUTATIONS, CONTACTS_MUTATIONS } from '../integrations/nextcloud/caldav.ts'
+import { CALENDAR_MUTATIONS, CONTACTS_MUTATIONS, TASKS_MUTATIONS } from '../integrations/nextcloud/caldav.ts'
 import { TABLES_MUTATIONS } from '../integrations/nextcloud/tables.ts'
 import { DECK_MUTATIONS } from '../integrations/nextcloud/deck.ts'
 import { MAIL_MUTATIONS, TALK_MUTATIONS } from '../integrations/nextcloud/mailTalk.ts'
@@ -27,18 +28,33 @@ import EngineConnections from './EngineConnections.vue'
 import { currentEngineSurface } from '../workspace/engineSurface.ts'
 import '../styles/nextcloud.css'
 
-const props = defineProps<{ host: NextcloudAgent; context?: FileContext; loadingContext?: boolean; documentContext?: boolean; contextError?: string }>()
+// `context` stays declared so the panel's binding does not fall through as an attribute; drop both after 8 Dec.
+// eslint-disable-next-line vue/no-unused-properties
+const props = defineProps<{ host: NextcloudAgent, context?: FileContext, loadingContext?: boolean, documentContext?: boolean, contextError?: string }>()
 const emit = defineEmits<{ 'signed-out': [] }>()
 const chat = props.host.chat
 const version = useObservable(chat)
 const attachmentVersion = ref(0)
 // A chip toggle notifies its own public view model, not the chat. Subscribe without proxying SDK objects.
-watch(() => { void version.value; return props.host.contextAttachment }, (attachment, _previous, cleanup) => {
+watch(() => {
+	void version.value
+	return props.host.contextAttachment
+}, (attachment, _previous, cleanup) => {
 	attachmentVersion.value = attachment?.version ?? 0
-	if (attachment) cleanup(attachment.subscribe(() => { attachmentVersion.value = attachment.version }))
+	if (attachment) {
+		cleanup(attachment.subscribe(() => {
+			attachmentVersion.value = attachment.version
+		}))
+	}
 }, { immediate: true })
-const composerContext = computed(() => { void version.value; return props.host.selection.snapshot() })
-const displayContext = computed(() => { void version.value; return chat.isBusy ? props.host.turnContext : composerContext.value })
+const composerContext = computed(() => {
+	void version.value
+	return props.host.selection.snapshot()
+})
+const displayContext = computed(() => {
+	void version.value
+	return chat.isBusy ? props.host.turnContext : composerContext.value
+})
 const engineSurface = computed(() => {
 	void version.value
 	return currentEngineSurface(document)
@@ -50,24 +66,52 @@ const engineTarget = computed(() => {
 const nativeContext = computed(() => {
 	void version.value
 	const app = props.host.workspace?.dependencies.guard.snapshot().app
-	if (app === 'calendar') return t('fadenstack_agent', 'Calendar view · Ask about an event by name.')
-	if (app === 'tasks') return t('fadenstack_agent', 'Tasks view · Ask about a task by name.')
-	if (app === 'contacts') return t('fadenstack_agent', 'Contacts view · Ask about a contact by name.')
-	if (app === 'tables') return t('fadenstack_agent', 'Tables view · Ask about this table or a row by its content.')
-	if (app === 'deck') return t('fadenstack_agent', 'Deck view · Ask about a card by name.')
-	if (app === 'mail') return t('fadenstack_agent', 'Mail view · Read messages or prepare a draft. Sending needs your approval.')
-	if (app === 'spreed') return t('fadenstack_agent', 'Talk view · Ask about this conversation or prepare a message.')
-	if (app === 'collectives') return t('fadenstack_agent', 'Collectives view · Read the page hierarchy or prepare a page change. Body editing stays in the native app.')
-	if (app === 'forms') return t('fadenstack_agent', 'Forms view · Prepare a private form or review a response before submitting it.')
-	if (app === 'notes') return t('fadenstack_agent', 'Notes view · Read notes or create a new one. Switch native editors to Preview before an automatic refresh.')
-	if (app === 'bookmarks') return t('fadenstack_agent', 'Bookmarks view · Read saved links or prepare a bookmark. Native URL fetching needs your approval.')
-	if (app === 'flow') return t('fadenstack_agent', 'Personal Flow · Review blocked drafts or approve a rule change.')
+	if (app === 'calendar') {
+		return t('fadenstack_agent', 'Calendar view · Ask about an event by name.')
+	}
+	if (app === 'tasks') {
+		return t('fadenstack_agent', 'Tasks view · Ask about a task by name.')
+	}
+	if (app === 'contacts') {
+		return t('fadenstack_agent', 'Contacts view · Ask about a contact by name.')
+	}
+	if (app === 'tables') {
+		return t('fadenstack_agent', 'Tables view · Ask about this table or a row by its content.')
+	}
+	if (app === 'deck') {
+		return t('fadenstack_agent', 'Deck view · Ask about a card by name.')
+	}
+	if (app === 'mail') {
+		return t('fadenstack_agent', 'Mail view · Read messages or prepare a draft. Sending needs your approval.')
+	}
+	if (app === 'spreed') {
+		return t('fadenstack_agent', 'Talk view · Ask about this conversation or prepare a message.')
+	}
+	if (app === 'collectives') {
+		return t('fadenstack_agent', 'Collectives view · Read the page hierarchy or prepare a page change. Body editing stays in the native app.')
+	}
+	if (app === 'forms') {
+		return t('fadenstack_agent', 'Forms view · Prepare a private form or review a response before submitting it.')
+	}
+	if (app === 'notes') {
+		return t('fadenstack_agent', 'Notes view · Read notes or create a new one. Switch native editors to Preview before an automatic refresh.')
+	}
+	if (app === 'bookmarks') {
+		return t('fadenstack_agent', 'Bookmarks view · Read saved links or prepare a bookmark. Native URL fetching needs your approval.')
+	}
+	if (app === 'flow') {
+		return t('fadenstack_agent', 'Personal Flow · Review blocked drafts or approve a rule change.')
+	}
 	if (app === 'windmill') {
-		if (engineTarget.value) return t('fadenstack_agent', 'Windmill target: {name} · Native editor unobservable.', { name: engineTarget.value.name })
+		if (engineTarget.value) {
+			return t('fadenstack_agent', 'Windmill target: {name} · Native editor unobservable.', { name: engineTarget.value.name })
+		}
 		return t('fadenstack_agent', 'Windmill workspace · Select a workflow target above to begin.')
 	}
 	if (app === 'n8n') {
-		if (engineTarget.value) return t('fadenstack_agent', 'n8n target: {name} · Native editor unobservable.', { name: engineTarget.value.name })
+		if (engineTarget.value) {
+			return t('fadenstack_agent', 'n8n target: {name} · Native editor unobservable.', { name: engineTarget.value.name })
+		}
 		return t('fadenstack_agent', 'n8n workspace · Select a workflow target above to begin.')
 	}
 	return ''
@@ -75,9 +119,15 @@ const nativeContext = computed(() => {
 const contextLabel = computed(() => {
 	void version.value
 	void attachmentVersion.value
-	if (chat.isBusy && props.host.history.active) return t('fadenstack_agent', 'Action')
-	if (chat.isBusy) return t('fadenstack_agent', 'This response')
-	if (composerContext.value && !props.host.selectionIncluded) return t('fadenstack_agent', 'Not included')
+	if (chat.isBusy && props.host.history.active) {
+		return t('fadenstack_agent', 'Action')
+	}
+	if (chat.isBusy) {
+		return t('fadenstack_agent', 'This response')
+	}
+	if (composerContext.value && !props.host.selectionIncluded) {
+		return t('fadenstack_agent', 'Not included')
+	}
 	return t('fadenstack_agent', 'Next message')
 })
 const detailsOpen = ref(false)
@@ -89,7 +139,10 @@ let myDataLoaded = false
 function openMyData() {
 	chat.setSettingsOpen(false)
 	myDataOpen.value = true
-	if (!myDataLoaded) { myDataLoaded = true; void props.host.myData.load() }
+	if (!myDataLoaded) {
+		myDataLoaded = true
+		void props.host.myData.load()
+	}
 }
 const detailsButton = ref<HTMLButtonElement>()
 let detailsTrigger: HTMLElement | undefined
@@ -100,8 +153,11 @@ function openDetails(event: Event) {
 async function closeDetails() {
 	detailsOpen.value = false
 	await nextTick()
-	if (detailsTrigger?.isConnected) detailsTrigger.focus()
-	else detailsButton.value?.focus()
+	if (detailsTrigger?.isConnected) {
+		detailsTrigger.focus()
+	} else {
+		detailsButton.value?.focus()
+	}
 }
 // The SDK's panel in Nextcloud's own colours (styles/nextcloud.css maps its tokens onto the user's theme).
 const theme = 'nextcloud' as ChatTheme
@@ -115,7 +171,9 @@ const renderers: PartRenderer[] = [
 		}
 		if (part instanceof ToolCallPart && part.source === 'host' && part.state === 'succeeded') {
 			const placement = props.host.placement(part)
-			if (placement) return [h(ToolCallView, { part, strings }), h(ProvenanceNote, { summary: placement, showExempt: props.host.chat.showUnmarkedNotice })]
+			if (placement) {
+				return [h(ToolCallView, { part, strings }), h(ProvenanceNote, { summary: placement, showExempt: props.host.chat.showUnmarkedNotice })]
+			}
 			const result = props.host.toolResult(part)
 			if (result) {
 				if (result.kind === 'nextcloud-agentfile-result') {
@@ -135,7 +193,9 @@ const renderers: PartRenderer[] = [
 ]
 
 function summarize() {
-	if (chat.isBusy) return
+	if (chat.isBusy) {
+		return
+	}
 	props.host.offerSelection(props.host.selection.snapshot())
 	chat.setInput(t('fadenstack_agent', 'Summarize this document'))
 	chat.requestComposerFocus()
@@ -143,17 +203,25 @@ function summarize() {
 // Esc belongs to the panel: it closes a menu, or stops the answer (the composer stops it), but never also the
 // Nextcloud drawer around it, which closes on Esc.
 function escape(event: KeyboardEvent) {
-	if (event.key !== 'Escape') return
+	if (event.key !== 'Escape') {
+		return
+	}
 	event.stopPropagation()
-	if (detailsOpen.value) void closeDetails()
-	else if (engineConnectionsOpen.value) engineConnectionsOpen.value = false
-	else if (myDataOpen.value) myDataOpen.value = false
-	else if (actionsOpen.value) actionsOpen.value = false
-	else if (chat.isSettingsOpen || chat.isModeMenuOpen || chat.isHistoryOpen) {
+	if (detailsOpen.value) {
+		void closeDetails()
+	} else if (engineConnectionsOpen.value) {
+		engineConnectionsOpen.value = false
+	} else if (myDataOpen.value) {
+		myDataOpen.value = false
+	} else if (actionsOpen.value) {
+		actionsOpen.value = false
+	} else if (chat.isSettingsOpen || chat.isModeMenuOpen || chat.isHistoryOpen) {
 		chat.setSettingsOpen(false)
 		chat.setModeMenuOpen(false)
 		chat.setHistoryOpen(false)
-	} else if (chat.isBusy) props.host.stop()
+	} else if (chat.isBusy) {
+		props.host.stop()
+	}
 }
 function signOut() {
 	chat.setSettingsOpen(false)
