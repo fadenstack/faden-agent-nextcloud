@@ -32,8 +32,8 @@ erklären die Teile, die er mit dem Server gemeinsam hat:
 
 - **Bei der Arbeit**: Fragen Sie zuerst Ihren Administrator. Er sieht die Einstellungen Ihrer Organisation für den
   Agenten. Im Panel sagt **Problem melden** unter **Info** (in den Einstellungen), wen Sie fragen, und **Details
-  kopieren** kopiert, was dabei hilft: die Versionen, die Zeit und das letzte Protokoll des Agenten, nichts aus
-  Ihren Chats.
+  kopieren** kopiert, was dabei hilft: die Versionen, Ihren Browser und Ihr System, den Modus, den Agenten und
+  sein Modell, die Adresse Ihres Servers, die Zeit und das letzte Protokoll des Agenten, nichts aus Ihren Chats.
 - **Der Support von Fadenstack**: [fadenstack.com/de/support](https://fadenstack.com/de/support/). Im Panel öffnet
   ihn auch **Hilfe und Kontakt** unter **Info** (in den Einstellungen).
 - **Ein Problem im Code der App**: Die App ist freie Software, ihr Quellcode und ihr Issue-Tracker liegen unter

@@ -27,18 +27,25 @@ to be written), so that your organisation's rules can allow or refuse it.
 - **Your chats and approvals** stay in the page's memory. They are gone when you close or reload the page.
 - **The panel's settings** you change are kept in your browser, for your Nextcloud account only.
 - **The record of tool calls**: each tool call shows in the chat, with what was decided. The agent's record of them
-  stays in the page's memory and is gone with the page. The lasting records are the server's (above) and
-  Nextcloud's (below).
+  stays in the page's memory and is gone with the page; while the page is open, you can save it as a web page
+  ([below](#your-data-in-this-browser)). The lasting records are the server's (above) and Nextcloud's (below).
 - **A log of the agent's own work**: which requests it made to the server and when, which tools ran, and errors,
-  never your messages, the answers, file contents or what a tool was given. It keeps at most 500 entries for up to
-  7 days, in your browser and for your account only. **Report a problem** copies its last entries for your IT.
+  never your messages, the answers, file contents or what a tool was given. It is kept in your browser for your
+  account, at most 500 entries; entries older than 7 days are deleted the next time the agent writes to the log.
+  The first entries after the page opens come before the agent knows who is signed in; they go to a log of this
+  browser without a person. **Report a problem** copies the log's last entries for your IT.
 
 ## Your data in this browser {#your-data-in-this-browser}
 
 Open the settings (the gear in the panel's header) and select **Your data in this browser**:
 
 - **Export my data** saves what the agent keeps for you in this browser as a file.
-- **Remove my data…** deletes it, after asking: the log and the panel's settings.
+- **Remove my data…** deletes it, after asking: your log and the panel's settings.
+- **Remove all my Fadenstack data in this browser…** deletes, after asking, all the Fadenstack data this browser
+  keeps for you on this Nextcloud, including the log kept before the agent knew who was signed in.
+  **Export all my Fadenstack data** saves all of it as a file.
+- **Export the record of tool calls…** saves the agent's record of tool calls as a web page, while the page is
+  open. A line above it says how many entries the record holds and whether it is intact.
 
 ## Export a chat
 
@@ -64,8 +71,9 @@ content of your files or chats.
 ## Remove your data
 
 - **Chats**: close or reload the page.
-- **The log and the panel's settings**: **Remove my data…** in **Your data in this browser** (above). The log also
-  removes its own entries after 7 days.
+- **The log and the panel's settings**: **Remove my data…** in **Your data in this browser** (above). Entries older
+  than 7 days are deleted the next time the agent writes to the log. The log kept before the agent knew who was
+  signed in goes only with **Remove all my Fadenstack data in this browser…**.
 - **Your Nextcloud account deleted**: Nextcloud erases your records of the agent's changes at once. If that fails,
   they expire as the table above says.
 - **The app disabled or removed** by your administrator: Nextcloud erases all records of the agent's changes and the

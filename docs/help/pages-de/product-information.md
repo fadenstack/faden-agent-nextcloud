@@ -81,8 +81,9 @@ Pflichten, die dazugehören. Den vollständigen Text finden Sie unter
   zeigt nicht, ob die Kennzeichnung an ist. Veröffentlichen Sie eine solche Datei nicht, als trüge sie eine. Wenn Sie
   einen solchen Text veröffentlichen, um die Öffentlichkeit über Angelegenheiten von öffentlichem Interesse zu
   informieren, müssen Sie ihn selbst als mit KI erstellt kennzeichnen.
-- Das eigene Protokoll des Agenten über Tool-Aufrufe liegt nur im Arbeitsspeicher der Seite und lässt sich nicht
-  exportieren; die dauerhaften Aufzeichnungen sind der Server Ihrer Organisation und Nextcloud (unten).
+- Das eigene Protokoll des Agenten über Tool-Aufrufe liegt nur im Arbeitsspeicher der Seite; solange die Seite offen
+  ist, können Sie es unter **Ihre Daten in diesem Browser** als Webseite speichern. Die dauerhaften Aufzeichnungen sind
+  der Server Ihrer Organisation und Nextcloud (unten).
 
 ## Was protokolliert wird {#what-is-logged}
 
@@ -100,7 +101,12 @@ Pflichten, die dazugehören. Den vollständigen Text finden Sie unter
   verschlüsselt 7 Tage lang fest, den Beleg der Änderung ohne Text 30 weitere Tage. Eine Änderung mit unklarem Ergebnis
   bleibt, bis sie geprüft wird. Das geschieht, ob der Verlauf an ist oder nicht. Das Log von Nextcloud enthält keine
   Inhalte.
-- **In diesem Browser** werden nur Ihre Sprache und eine Anzeigeeinstellung aufbewahrt.
+- **In diesem Browser** werden Ihre Sprache, eine Anzeigeeinstellung und das Protokoll des Agenten aufbewahrt. Das
+  Protokoll sagt, welche Anfragen der Agent wann gestellt hat, welche Tools liefen, und Fehler; nie Ihre Nachrichten,
+  die Antworten, Dateiinhalte oder was ein Tool bekommen hat. Es hält höchstens 500 Einträge; Einträge, die älter als
+  7 Tage sind, werden gelöscht, wenn der Agent das nächste Mal hineinschreibt. **Ihre Daten in diesem Browser** in den
+  Einstellungen des Panels exportiert und entfernt sie. **Problem melden** kopiert die letzten 50 Einträge des
+  Protokolls, mit ersetzten Tool-Namen, nur wenn Sie **Details kopieren** wählen; die App sendet nichts.
 - **Was das Journal löscht:** Löschen Sie Ihr Nextcloud-Konto, werden Ihre Einträge sofort gelöscht (schlägt das fehl,
   laufen sie wie oben ab); wird die App deaktiviert oder entfernt, werden das ganze Journal, alle offenen Freigaben und
   die gespeicherten Schlüssel für externe Workflow-Dienste gelöscht, außer der Administrator entfernt die App mit

@@ -32,12 +32,15 @@ ablehnen können.
 - **Die Einstellungen des Panels**, die Sie ändern, werden in Ihrem Browser gespeichert, nur für Ihr
   Nextcloud-Konto.
 - **Die Aufzeichnung der Tool-Aufrufe**: Jeder Tool-Aufruf erscheint im Chat, mit dem, was entschieden wurde. Die
-  Aufzeichnung des Agenten dazu bleibt im Speicher der Seite und ist mit der Seite weg. Die dauerhaften
+  Aufzeichnung des Agenten dazu bleibt im Speicher der Seite und ist mit der Seite weg; solange die Seite offen
+  ist, können Sie sie als Webseite speichern ([unten](#your-data-in-this-browser)). Die dauerhaften
   Aufzeichnungen sind die des Servers (oben) und die von Nextcloud (unten).
 - **Ein Protokoll der Arbeit des Agenten**: welche Anfragen er wann an den Server gestellt hat, welche Tools liefen,
-  und Fehler, nie Ihre Nachrichten, die Antworten, Dateiinhalte oder was ein Tool bekommen hat. Es hält höchstens
-  500 Einträge für bis zu 7 Tage, in Ihrem Browser und nur für Ihr Konto. **Problem melden** kopiert seine letzten
-  Einträge für Ihre IT.
+  und Fehler, nie Ihre Nachrichten, die Antworten, Dateiinhalte oder was ein Tool bekommen hat. Es liegt in Ihrem
+  Browser für Ihr Konto, mit höchstens 500 Einträgen; Einträge, die älter als 7 Tage sind, werden gelöscht, wenn
+  der Agent das nächste Mal hineinschreibt. Die ersten Einträge nach dem Öffnen der Seite entstehen, bevor der
+  Agent weiß, wer angemeldet ist; sie gehen in ein Protokoll dieses Browsers ohne Person. **Problem melden**
+  kopiert die letzten Einträge des Protokolls für Ihre IT.
 
 ## Ihre Daten in diesem Browser {#your-data-in-this-browser}
 
@@ -45,7 +48,12 @@ ablehnen können.
 Browser**:
 
 - **Meine Daten exportieren** speichert, was der Agent in diesem Browser für Sie aufbewahrt, als Datei.
-- **Meine Daten entfernen…** löscht es nach einer Rückfrage: das Protokoll und die Einstellungen des Panels.
+- **Meine Daten entfernen…** löscht es nach einer Rückfrage: Ihr Protokoll und die Einstellungen des Panels.
+- **Alle meine Fadenstack-Daten in diesem Browser entfernen…** löscht nach einer Rückfrage alle Fadenstack-Daten,
+  die dieser Browser auf dieser Nextcloud für Sie aufbewahrt, auch das Protokoll aus der Zeit, bevor der Agent
+  wusste, wer angemeldet ist. **Alle meine Fadenstack-Daten exportieren** speichert sie alle als Datei.
+- **Protokoll der Tool-Aufrufe exportieren…** speichert die Aufzeichnung der Tool-Aufrufe als Webseite, solange
+  die Seite offen ist. Eine Zeile darüber sagt, wie viele Einträge sie hat und ob sie unversehrt ist.
 
 ## Einen Chat exportieren {#export-a-chat}
 
@@ -73,7 +81,9 @@ eigene Protokoll von Nextcloud enthält keine Inhalte Ihrer Dateien oder Chats.
 
 - **Chats**: Schließen Sie die Seite oder laden Sie sie neu.
 - **Das Protokoll und die Einstellungen des Panels**: **Meine Daten entfernen…** unter **Ihre Daten in diesem
-  Browser** (oben). Das Protokoll entfernt seine Einträge außerdem nach 7 Tagen selbst.
+  Browser** (oben). Einträge, die älter als 7 Tage sind, werden gelöscht, wenn der Agent das nächste Mal in das
+  Protokoll schreibt. Das Protokoll aus der Zeit, bevor der Agent wusste, wer angemeldet ist, löscht nur
+  **Alle meine Fadenstack-Daten in diesem Browser entfernen…**.
 - **Ihr Nextcloud-Konto wird gelöscht**: Nextcloud löscht Ihre Aufzeichnungen der Änderungen des Agenten sofort.
   Schlägt das fehl, laufen sie ab, wie die Tabelle oben sagt.
 - **Die App wird von Ihrem Administrator deaktiviert oder entfernt**: Nextcloud löscht alle Aufzeichnungen der

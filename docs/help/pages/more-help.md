@@ -30,7 +30,8 @@ parts it shares with the server:
 
 - **At work**: ask your administrator first. They can see your organisation's settings for the agent. In the panel,
   **Report a problem** under **About** (in the settings) says whom to ask, and **Copy details** copies what helps
-  them: the versions, the time and the agent's recent log, nothing from your chats.
+  them: the versions, your browser and system, the mode, the agent and its model, your server's address, the time
+  and the agent's recent log, nothing from your chats.
 - **Fadenstack's support**: [fadenstack.com/support](https://fadenstack.com/support/). In the panel, **Help and
   contact** under **About** (in the settings) opens it too.
 - **A problem in the app's code**: the app is free software, and its source and issue tracker are at

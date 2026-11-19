@@ -70,8 +70,9 @@ The full text is in [Privacy policy and terms](https://fadenstack.com/legal/next
   service. An administrator can also switch the AI marks on files off then: the agent writes files without a mark, and
   the approval card does not show whether marking is on. Do not publish such a file as if it carried one. If you publish
   such a text to inform the public on matters of public interest, you must label it as made with AI yourself.
-- The agent's own record of tool calls is kept only in the page's memory and cannot be exported; the lasting records are
-  your organisation's server and Nextcloud (below).
+- The agent's own record of tool calls is kept only in the page's memory; while the page is open you can save it as a
+  web page under **Your data in this browser**. The lasting records are your organisation's server and Nextcloud
+  (below).
 
 ## What is logged
 
@@ -88,7 +89,11 @@ The full text is in [Privacy policy and terms](https://fadenstack.com/legal/next
 - **In Nextcloud,** for each change you approve, a journal keeps the file's text before and after, encrypted, for
   7 days, and the record of the change without the text for 30 more days. A change whose result is unclear is kept until
   it is inspected. This happens whether or not History is on. Nextcloud's own log holds no content.
-- **In this browser,** only your language and a display setting are kept.
+- **In this browser,** your language, a display setting and the agent's log are kept. The log says which requests the
+  agent made and when, which tools ran, and errors; never your messages, the answers, file contents or what a tool was
+  given. It keeps at most 500 entries; entries older than 7 days are deleted the next time the agent writes to it.
+  **Your data in this browser** in the panel's settings exports and removes them. **Report a problem** copies the
+  log's last 50 entries, with tool names replaced, only when you select **Copy details**; the app sends nothing.
 - **What erases the journal:** deleting your Nextcloud account erases your rows at once (if that fails, they expire as
   above); disabling or removing the app erases the whole journal, all open approvals and the keys people stored for
   outside workflow services, unless the administrator removes the app with `occ app:remove --keep-data`. Files the agent

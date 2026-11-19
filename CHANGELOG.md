@@ -91,10 +91,14 @@ only with a Fadenstack server (governed mode). See
 - "Your data in this browser" in the panel's settings (the SDK's control):
   "Export my data" saves what the agent keeps for this person in this browser,
   "Remove my data…" deletes it after asking: the agent's log and the panel's
-  settings.
+  settings. "Remove all my Fadenstack data in this browser…" also deletes the
+  log kept before the agent knew who was signed in; "Export the record of tool
+  calls…" saves the page's record of tool calls as a web page.
 - A small log of the agent's own work in the browser (the SDK's `useBrowserLog`):
-  at most 500 entries for 7 days, never a message, an answer, a file's text or
-  a tool's arguments (see Data fields). "Report a problem" under About copies
+  at most 500 entries, those older than 7 days deleted at the next write, never
+  a message, an answer, a file's text or a tool's arguments (see Data fields).
+  The first entries after the page opens, before the agent knows who is signed
+  in, go to a log without a person. "Report a problem" under About copies
   its last entries with "Copy details", tool names replaced and routes as
   templates; in governed mode without an address from the organisation it
   writes no mail and points to the organisation's Help (SDK 0.3.1).
@@ -159,7 +163,7 @@ of this release.
 | Added | Record of tool calls: one entry per call, with `time`, `app`, `agent`, `chat`, `turn`, `tool`, `class`, `source`, `server`, `decision`, `scope`, `outcome` and `argumentsSha256` (no content) | Kept in the page's memory only (the SDK's `MemoryAuditLog`); no browser database | G | Shows the person what the agent did and who allowed it | On; no switch | Gone when the page closes | Yes |
 | Changed | Action journal (`fdn_journal` and its `fdn_jr_*` tables: which change the agent made for whom, when, its state and an encrypted snapshot) and open approvals (`fdn_provider_tickets`) | Nextcloud's database | G | Undo and Redo of approved changes | On; no one | Was: 7 days for snapshots, 30 days for the rest, also after the account was deleted. Now also erased when the account is deleted, and when the app is disabled or removed | Yes (it records what a person had the agent do) |
 | Changed | A person's workflow-engine keys (user preferences `engine_connection_*`) | Nextcloud's database, sealed with the instance secret | G | Run n8n and Windmill workflows under the person's own key | Set by the person | Was: until the person disconnects or the account is deleted. Now also erased when the app is disabled or removed | No |
-| Added | The agent's log in the browser: per entry the time, level, category, event, message and fields such as a tool's name, a request's route (as a template), status and duration, and turn and conversation ids; never a prompt, an answer, a file's text or a tool's arguments or result | The person's browser, IndexedDB `fadenstack-log:<tenant>:<user>` | G | Troubleshooting: "Report a problem" copies its last 50 entries (tool names replaced) for the organisation's IT, on the person's click; nothing is sent | On; no switch. "Remove my data…" in "Your data in this browser" deletes it | At most 500 entries and 7 days, the oldest dropped first | Yes (it records which tools the agent ran for the person, and when) |
+| Added | The agent's log in the browser: per entry the time, level, category, event, message and fields such as a tool's name, a request's route (as a template), status and duration, and turn and conversation ids; never a prompt, an answer, a file's text or a tool's arguments or result | The person's browser, IndexedDB `fadenstack-log:<tenant>:<user>`; the entries before the agent knows who is signed in: `fadenstack-log`, without a person | G | Troubleshooting: "Report a problem" copies its last 50 entries (tool names replaced) for the organisation's IT, on the person's click; nothing is sent | On; no switch. "Remove my data…" in "Your data in this browser" deletes the person's log; "Remove all my Fadenstack data in this browser…" also the one without a person | At most 500 entries; older than 7 days deleted at the next write; the oldest dropped first | Yes (it records which tools the agent ran for the person, and when) |
 | Changed | Link parameter `ref` (`nextcloud-panel`, `nextcloud-about`; before, `sdk-panel` and `sdk-about`) and `v` (the SDK's major.minor) | In the address of a fadenstack.com page the person opens from the panel; reaches fadenstack.com only when they open it | G | Lets the website and its support page tell which agent a visit came from | On; no one | Per fadenstack.com's privacy policy | No |
 | Changed | App manifest `version` | Sent to the organisation's Fadenstack server, `PUT /v1/agents/{agent}/manifest` | G | Now the app's own version; before, a fixed "0.1.5" | On; no one | Per the server's manifest records | No |
 
